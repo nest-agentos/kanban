@@ -27,3 +27,5 @@ KanbanProjectRecord.activity 是宿主投影的只读日志元数据，不作为
 observe-execution 状态/错误/产物不变时只续租，不追加事件或推进事项 revision/updatedAt；正常 inspect 不记录诊断。历史相同观察事件仅在任务详情展示中折叠，原始审计不重写，错误变化与恢复仍保留。workResources/cleanupWorkResource 是可选宿主能力，资源生命周期和清理授权由宿主检查；UI 仅在展开资源区时查询，不在首屏或活动轮询中检查工作区。库不识别 Git、worktree 路径或强制删除规则。
 
 delete-board 仅允许人工协调者，拒绝负责人/移交与未结算派发，宿主 verifyDeletion 核对实际执行。逻辑删除保留原状态、资源关联及事件，隐藏 catalog/list，拒绝后续命令；示例安装不得复活墓碑。Session 和资源生命周期不进入 reducer。
+
+Deletion preview may include itemTitles for the item IDs referenced by blockers and resources. The host resolves these labels in its existing catalog read; UI callers must not issue per-item lookup requests merely to format confirmation text.

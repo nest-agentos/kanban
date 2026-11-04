@@ -3,6 +3,8 @@ export interface KanbanDeletionPreview {
     boardId: string; title: string; revision: number; version: string;
     blockers: Array<{code: string; itemId?: string; sessionId?: string}>;
     pendingItems: number;
+    /** Display labels for items referenced by blockers and resources. */
+    itemTitles?: Record<string, string>;
     resources: Array<{itemId: string; resource: KanbanWorkResource}>;
 }
 export interface KanbanDeletionRequest {
