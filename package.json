@@ -1,6 +1,6 @@
 {
   "name": "@nestos/kanban",
-  "version": "0.1.0",
+  "version": "0.5.1",
   "description": "Portable VFS-backed work coordination and transactional file protocols.",
   "type": "module",
   "main": "./src/index.ts",
@@ -22,7 +22,7 @@
     "example": "tsx examples/standalone.ts"
   },
   "peerDependencies": {
-    "@nestos/vfs-core": "^5.3.4"
+    "@nestos/vfs-core": "^0.5.1"
   },
   "devDependencies": {
     "@nestos/vfs-core": "workspace:*",
@@ -115,7 +115,7 @@
     }
   },
   "dependencies": {
-    "@nestos/ui-common": "^0.1.0"
+    "@nestos/ui-common": "^0.5.1"
   },
   "repository": {
     "type": "git",
