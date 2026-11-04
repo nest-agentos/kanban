@@ -1,0 +1,120 @@
+{
+  "name": "@itookit/kanban",
+  "version": "0.1.0",
+  "description": "Portable VFS-backed work coordination and transactional file protocols.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contracts": "./src/contracts/index.ts",
+    "./storage": "./src/storage.ts",
+    "./execution": "./src/execution.ts",
+    "./discovery": "./src/discovery-entry.ts",
+    "./ui": "./src/ui/index.ts",
+    "./ui.css": "./src/ui/kanban.css",
+    "./activity": "./src/activity.ts"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "example": "tsx examples/standalone.ts"
+  },
+  "peerDependencies": {
+    "@itookit/vfs-core": "^5.3.4"
+  },
+  "devDependencies": {
+    "@itookit/vfs-core": "workspace:*",
+    "typescript": "^5.9.3",
+    "tsup": "^8.5.0",
+    "vitest": "^3.2.4",
+    "jsdom": "^27.4.0",
+    "tsx": "^4.20.6"
+  },
+  "files": [
+    "dist",
+    "examples"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.cjs",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.cts",
+          "default": "./dist/index.cjs"
+        }
+      },
+      "./contracts": {
+        "import": {
+          "types": "./dist/contracts/index.d.ts",
+          "default": "./dist/contracts/index.js"
+        },
+        "require": {
+          "types": "./dist/contracts/index.d.cts",
+          "default": "./dist/contracts/index.cjs"
+        }
+      },
+      "./storage": {
+        "import": {
+          "types": "./dist/storage.d.ts",
+          "default": "./dist/storage.js"
+        },
+        "require": {
+          "types": "./dist/storage.d.cts",
+          "default": "./dist/storage.cjs"
+        }
+      },
+      "./execution": {
+        "import": {
+          "types": "./dist/execution.d.ts",
+          "default": "./dist/execution.js"
+        },
+        "require": {
+          "types": "./dist/execution.d.cts",
+          "default": "./dist/execution.cjs"
+        }
+      },
+      "./discovery": {
+        "import": {
+          "types": "./dist/discovery.d.ts",
+          "default": "./dist/discovery.js"
+        },
+        "require": {
+          "types": "./dist/discovery.d.cts",
+          "default": "./dist/discovery.cjs"
+        }
+      },
+      "./ui": {
+        "import": {
+          "types": "./dist/ui/index.d.ts",
+          "default": "./dist/ui/index.js"
+        },
+        "require": {
+          "types": "./dist/ui/index.d.cts",
+          "default": "./dist/ui/index.cjs"
+        }
+      },
+      "./ui.css": "./dist/ui/kanban.css",
+      "./activity": {
+        "import": {
+          "types": "./dist/activity.d.ts",
+          "default": "./dist/activity.js"
+        },
+        "require": {
+          "types": "./dist/activity.d.cts",
+          "default": "./dist/activity.cjs"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "@itookit/ui-common": "^0.1.0"
+  }
+}

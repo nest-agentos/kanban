@@ -1,0 +1,42 @@
+import {createVFS,MemoryBackend} from '@itookit/vfs-core';
+import {createKanbanModule,SeqKanbanStore} from '../../src';
+import {createKanbanExecutionBridge} from '../../src/execution';
+import {mountKanban} from '../../src/ui';
+import '../../src/ui/kanban.css';
+import {t,ACTION_ICONS,CHAT_ICONS} from '@itookit/common';
+import {KanbanAutomationJournal} from '../../../../backend/app-core/src/kanban/automation-journal';
+import {createTaskFix} from '../../../../backend/app-core/src/kanban/task-fix';
+import {UserEventService} from '../../../../backend/app-core/src/events/service';
+import {developmentObserver} from '../../../../backend/app-core/src/presets/kanban-development-observer';
+import {initializeWorkspaceMessages} from '../../../../backend/app-core/src/run/workspace-messages';
+import type {KanbanCommand,KanbanDispatch} from '../../src/contracts';
+
+const {manager}=await createVFS({rootBackend:new MemoryBackend()}),fs=await manager.openFileSystem('/'),store=await SeqKanbanStore.open(fs);
+const journal=new KanbanAutomationJournal(fs);await journal.open();const events=await UserEventService.open(fs);
+let clock=Date.now(),serial=0,dispatch:KanbanDispatch|undefined,nativeOutcome='running',currentSession='',fixId='';
+const actor={kind:'human' as const,id:'admin'},workerActor={kind:'service' as const,id:'worker'};
+const service=createKanbanModule({store,actor,authorize:async()=>{},now:()=>clock,verifyOutputs:async()=>true,log(){}});
+const worker=createKanbanModule({store,actor:workerActor,authorize:async()=>{},now:()=>clock,log(){}});
+const target={kind:'agent' as const,id:'executor',version:'1',digest:'a'.repeat(64)};
+const projects={get:async()=>({path:'/x1'}),openWorkspace:async()=>({fs,dispose:async()=>{}})};
+await service.create({id:'development',title:'开发',scope:{kind:'system'},policy:{requireEstimate:false,review:'independent'},members:[{...actor,responsibility:'Review',roles:['coordinator','reviewer','worker']}]});
+const command=async(value:KanbanCommand)=>service.execute('development',{operationId:'browser-'+ ++serial,expectedRevision:(await service.read('development')).revision,command:value});
+await command({type:'configure-automation',settings:{enabled:true,autoAccept:false,planner:{system:'nestos-published-agent',id:'executor',revision:JSON.stringify(['1',target.digest])},executor:{system:'nestos-published-agent',id:'executor',revision:JSON.stringify(['1',target.digest])},coordinator:actor,worker:workerActor,preparation:{system:'nestos-work-preparation',id:'git-worktree',revision:'1'}}});
+const observer=developmentObserver({fs,events,projects:projects as never,kernel:{inspectSession:async()=>({getShared:async()=>undefined})},wake(){}});
+const inspect=async()=>observer.observe({boardId:'development',dispatch:dispatch!,service,worker,observation:{outcome:nativeOutcome as 'running'|'succeeded',executionSessionId:'execution-'+dispatch!.id,controlCapabilities:{pause:'boundary',resume:true}}});
+const bridge=await createKanbanExecutionBridge({fs,directory:'/execution',boardId:'development',service,worker:async()=>worker,autoDispatch:true,now:()=>clock,authorize:async()=>{},log(){},executor:{
+    prepare:async(d)=>{dispatch=d;const directory='/workspace/_nestos/worktrees/'+d.id;await journal.update('worktree:'+d.id,()=>({directory,branch:'work/'+d.id,baseCommit:'a'.repeat(40)}));await initializeWorkspaceMessages(fs,directory+'/_nestos/kanban',{runId:d.planId,itemId:d.itemId,attemptId:d.id});return {id:d.id};},start:inspect,inspect}});
+const submitted=new Map<string,unknown>();
+const fixOptions={fs,service,journal,events,prepareSession:async(id:string)=>id,log(){},automation:{projects,catalog:async()=>({entries:[{name:'Executor',target}],issues:[]}),prepareWork:async()=>target,kernel:{},calls:{prepareTaskCall:async()=>({}),submitPreparedTaskCall:async(input:any)=>{submitted.set(input.request.submission.id,input);},inspectTaskCallSubmission:async(input:any)=>({executionSessionId:'fix-session-'+input.request.submission.id,submission:{task:{sessionId:input.request.expectedSessionId,taskId:'root'}}}),list:async({sessionId}:any)=>[{input:submitted.get(sessionId),callerState:{settled:false}}]}}};
+const fixes=createTaskFix(fixOptions as never);
+const refresh=async()=>{await bridge.scan();const item=dispatch?(await service.item('development',dispatch.itemId)).item:undefined;if(item?.control?.state==='requested')await command({type:'control-receipt',itemId:item.id,controlId:item.control.id,state:item.control.action==='pause'?'paused':'resumed'});view.invalidateFromEvents();};
+const client={...service,itemResources:async()=>({required:true,resources:[{reference:{system:'nestos-remote-project',id:'x1'},label:'x1'}]}),
+    execute:async(board:string,request:any)=>{const result=await service.execute(board,request);if(request.command.type==='create-item') {const item=(await service.item(board,request.command.item.id)).item;await command({type:'publish-plan',plan:{schema:'kanban.plan/1',id:'plan-'+item.id,revision:1,sealed:true,items:[{id:item.id,title:item.title,responsibility:item.responsibility,acceptance:item.acceptance,expectedRevision:item.revision,assignee:workerActor,dependsOn:item.planning?.dependencies??[]}]}});}setTimeout(()=>void refresh(),0);return result;},
+    fixTask:async(board:string,request:any)=>{const fix=await fixes.fixTask(board,request);fixId=fix.id;return fix;},
+    replyTask:async(_board:string,request:any)=>{await fs.driver.createFile({parentPath:root()+'/outbox',name:'reply-'+request.operationId+'.yaml',content:JSON.stringify({schema:'work-reply/1',type:'user-response',...request})});await publish('resolved','resolved','Resolved with the answer',request.replyTo);}};
+const view=await mountKanban(document.querySelector('#app')!,{service:client,initialResource:'/board/development',presentation:{text:(key,values)=>t(('kanban.'+key) as never,values),icons:{refreshView:ACTION_ICONS.refreshView,more:CHAT_ICONS.more,close:ACTION_ICONS.close,run:ACTION_ICONS.run,pause:ACTION_ICONS.pause,resume:ACTION_ICONS.run,edit:ACTION_ICONS.edit,fix:ACTION_ICONS.fix}},selected(){},openSession:async id=>{currentSession=id;document.querySelector<HTMLElement>('#session')!.hidden=false;document.querySelector('#process')!.textContent='Session '+id+'\nOriginal process is retained';}});
+function root(){return '/workspace/_nestos/worktrees/'+dispatch!.id+'/_nestos/kanban';}
+async function publish(id:string,type:string,content:string,replyTo?:string){const scope={runId:dispatch!.planId,itemId:dispatch!.itemId,attemptId:dispatch!.id};await fs.driver.createFile({parentPath:root()+'/inbox',name:id+'.yaml',content:JSON.stringify({schema:replyTo?'work-message/2':'work-message/1',...scope,id,type,content,...(replyTo?{replyTo}:{})})});await refresh();}
+document.querySelector('#close-session')!.addEventListener('click',()=>{document.querySelector<HTMLElement>('#session')!.hidden=true;});
+document.querySelector('#reply')!.addEventListener('submit',event=>{event.preventDefault();void fixes.intercept(currentSession,{id:'browser-confirm',text:String(new FormData(event.target as HTMLFormElement).get('text')),files:[],agentId:'executor',branch:'main',createdAt:clock,state:'pending'}).then(()=>{document.querySelector('#process')!.textContent='Definition accepted; development is waiting';view.invalidateFromEvents();});});
+Object.assign(window,{acceptance:{tick:async(delta:number)=>{clock+=delta;await refresh();},publish,result:async()=>{nativeOutcome='succeeded';await publish('result','result','Delivered browser fixture');},proposal:async()=>{await fs.driver.createFile({parentPath:'/workspace/_nestos/worktrees/'+fixId+'/_nestos/kanban/fix/'+fixId,name:'proposal.yaml',recursive:true,content:JSON.stringify({schema:'kanban.fix-proposal/1',title:'Browser fix',responsibility:'Repair browser behavior',acceptance:'Browser checks pass',type:'fix',dependencies:[dispatch!.itemId]})});},snapshot:async()=>({board:await service.read('development'),notifications:await events.listNotifications(),dispatches:await service.workflow('development')}),files:async()=>{const output:Record<string,string>={};for(const child of await fs.driver.getChildren(root()+'/outbox'))if(child.type==='file')output['outbox-'+child.name]=await fs.driver.readContent(child.path,{encoding:'utf-8'});if(fixId)for(const name of ['confirmation.yaml','kanban.yaml','accepted.yaml'])output[name]=await fs.driver.readContent('/workspace/_nestos/worktrees/'+fixId+'/_nestos/kanban/fix/'+fixId+'/'+name,{encoding:'utf-8'});return output;}}});
