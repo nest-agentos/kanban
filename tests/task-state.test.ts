@@ -1,5 +1,5 @@
 import {afterEach, expect, it, vi} from 'vitest';
-import {createVFS, MemoryBackend} from '@itookit/vfs-core';
+import {createVFS, MemoryBackend} from '@nestos/vfs-core';
 import {createKanbanModule, SeqKanbanStore, projectKanbanTask, taskStartAt} from '../src';
 import {createKanbanExecutionBridge} from '../src/execution';
 import type {KanbanCommand, KanbanService, KanbanItem} from '../src/contracts';

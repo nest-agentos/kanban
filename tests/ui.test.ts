@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {afterEach, expect, it, vi} from 'vitest';
-import {createVFS, MemoryBackend} from '@itookit/vfs-core';
+import {createVFS, MemoryBackend} from '@nestos/vfs-core';
 import {createKanbanModule, SeqKanbanStore} from '../src';
 import {mountKanban, type KanbanPresentation} from '../src/ui';
 const closes: Array<() => Promise<void>> = [];

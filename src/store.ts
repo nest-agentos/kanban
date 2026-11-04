@@ -1,6 +1,6 @@
 import {numberEntities, boardCounterKey, boardNumberKey, counter, allocateBoardNumber, patchBoardNumber} from './numbering';
 import type { KanbanEvent, KanbanArchivedItem } from './contracts';
-import { FSError, type IFileSystem } from '@itookit/vfs-core';
+import { FSError, type IFileSystem } from '@nestos/vfs-core';
 import { KanbanError, type KanbanState, type KanbanStore } from './ports';
 import {indexedView, viewFromState, archiveKey, boardKey as key, rowKeys, hydrate, encodeBoard, rowChanges, encodeRow, decodeRow, receiptDigest, verifyReceipt, type StoredBoard, type KanbanBodyStore} from './storage-codec';
 
@@ -83,14 +83,14 @@ export class SeqKanbanStore implements KanbanStore {
         const replay = await this.read(id); if (!replay) throw new KanbanError('CORRUPT_RECEIPT'); return replay;
     }
 }
-async function writeRows(tx: import('@itookit/vfs-core').ISeqFileTransaction, path: string, rows: Array<{key: string; value: string | null}>): Promise<void> {
+async function writeRows(tx: import('@nestos/vfs-core').ISeqFileTransaction, path: string, rows: Array<{key: string; value: string | null}>): Promise<void> {
     for (const row of rows) {
         if (row.value === null) await tx.deleteEntry(path, row.key);
         else await tx.setEntry(path, row.key, row.value);
     }
 }
 
-async function commitBoardNumber(tx: import('@itookit/vfs-core').ISeqFileTransaction, path: string, id: string, before: StoredBoard, next: KanbanState, encoded: StoredBoard): Promise<void> {
+async function commitBoardNumber(tx: import('@nestos/vfs-core').ISeqFileTransaction, path: string, id: string, before: StoredBoard, next: KanbanState, encoded: StoredBoard): Promise<void> {
     const previous = counter(await tx.getEntry(path, boardCounterKey));
     next.board.number = allocateBoardNumber(before.raw, previous);
     const owner = await tx.getEntry(path, boardNumberKey(next.board.number));

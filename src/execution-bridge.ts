@@ -1,7 +1,7 @@
 import {boardAllowsStart} from './contracts/board-control';
 import {taskDue} from './contracts/task-projection';
 import {sha256HexSync, randomUUID} from './utils';
-import type {IFileSystem} from '@itookit/vfs-core';
+import type {IFileSystem} from '@nestos/vfs-core';
 import type {KanbanDispatch, KanbanService, KanbanItem, KanbanArtifactRef, KanbanPrincipal, KanbanEstimate} from './contracts';
 import {KanbanError} from './ports';
 import {executionObservationChanged} from './execution-observation';

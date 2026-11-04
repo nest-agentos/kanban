@@ -1,5 +1,5 @@
 import {afterEach, expect, it, vi} from 'vitest';
-import {createVFS, MemoryBackend} from '@itookit/vfs-core';
+import {createVFS, MemoryBackend} from '@nestos/vfs-core';
 import {createKanbanModule, SeqKanbanStore} from '../src';
 import {createKanbanDiscovery, discoveryState} from '../src/discovery-entry';
 import {DEFAULT_KANBAN_SCAN_POLICY, type KanbanScanInput, type KanbanDiscoveryChange} from '../src/contracts';

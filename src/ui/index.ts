@@ -3,7 +3,7 @@ import {projectKanbanTask} from '../contracts/task-projection';
 import {editTaskForm} from './forms';
 import {automationForm, analysisView, preparationFields} from './automation';
 import {KanbanSuggestions} from './suggestions';
-import {mountTitleBar as mountSharedTitleBar} from '@itookit/ui-common';
+import {mountTitleBar as mountSharedTitleBar} from '@nestos/ui-common';
 import {KanbanDrawer, drawerMarkup, preserveBoardScroll} from './drawer';
 import {escapeHTML} from './html';
 import {childrenView, childType} from './children';

@@ -1,5 +1,5 @@
 import type {KanbanClient, KanbanExternalReference, KanbanBoardSummary, KanbanItem} from '../contracts';
-import type {ContentTitleBarParts} from '@itookit/ui-common';
+import type {ContentTitleBarParts} from '@nestos/ui-common';
 export interface KanbanPresentation {
     text(key: string, values?: Record<string, string | number>): string;
     icons: {refreshView: string; more: string; close: string; back?: string; copy?: string; run?: string; pause?: string; resume?: string; fix?: string; edit?: string};

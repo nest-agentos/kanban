@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {afterEach, expect, it, vi} from 'vitest';
-import type {KanbanSuggestionPage} from '@itookit/kanban/contracts';
+import type {KanbanSuggestionPage} from '@nestos/kanban/contracts';
 import {KanbanSuggestionPicker} from '../src/ui';
 import type {SuggestionField} from '../src/ui';
 const log = vi.fn();

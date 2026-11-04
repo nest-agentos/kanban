@@ -1,5 +1,5 @@
 import {afterEach, expect, it, vi} from 'vitest';
-import {createVFS, MemoryBackend} from '@itookit/vfs-core';
+import {createVFS, MemoryBackend} from '@nestos/vfs-core';
 import {SeqKanbanStore, type KanbanCommand} from '../src';
 import {createKanbanActivityModule} from '../src/activity';
 import {createKanbanSessionActivity} from '../src/session-activity';

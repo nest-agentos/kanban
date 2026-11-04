@@ -1,4 +1,4 @@
-import {FSError, type IFileSystem} from '@itookit/vfs-core';
+import {FSError, type IFileSystem} from '@nestos/vfs-core';
 import {sha256HexSync} from './utils';
 export interface WorkMessageScope {runId:string;itemId:string;attemptId:string}
 export interface WorkMessage extends WorkMessageScope {schema:'work-message/1'|'work-message/2';id:string;type:'progress'|'clarification'|'error'|'result'|'resolved';content:string;replyTo?:string}

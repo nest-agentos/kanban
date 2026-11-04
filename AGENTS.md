@@ -1,6 +1,6 @@
-# @itookit/kanban
+# @nestos/kanban
 
-独立、平台中立的协调库。运行依赖允许 `@itookit/vfs-core`，可选 UI 入口另用零依赖的 `@itookit/ui-common`，宿主注入可信身份、授权、产物核验、提交后回调及日志。
+独立、平台中立的协调库。运行依赖允许 `@nestos/vfs-core`，可选 UI 入口另用零依赖的 `@nestos/ui-common`，宿主注入可信身份、授权、产物核验、提交后回调及日志。
 
 - `src/contracts/` 是无副作用的公开 DTO；`src/index.ts` 显式导出公共 API。
 - `src/module.ts` 管理准入、授权、诊断及 quiesce；reducer 不进行 I/O。

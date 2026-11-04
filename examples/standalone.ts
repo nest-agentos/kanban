@@ -1,6 +1,6 @@
-import {createVFS, MemoryBackend} from '@itookit/vfs-core';
-import {createKanbanModule, SeqKanbanStore} from '@itookit/kanban';
-import {createKanbanExecutionBridge} from '@itookit/kanban/execution';
+import {createVFS, MemoryBackend} from '@nestos/vfs-core';
+import {createKanbanModule, SeqKanbanStore} from '@nestos/kanban';
+import {createKanbanExecutionBridge} from '@nestos/kanban/execution';
 
 // No application runtime, Session, Flow, Kernel or model is needed.
 const {manager} = await createVFS({rootBackend: new MemoryBackend()});

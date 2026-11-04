@@ -1,9 +1,9 @@
-import {createVFS,MemoryBackend} from '@itookit/vfs-core';
+import {createVFS,MemoryBackend} from '@nestos/vfs-core';
 import {createKanbanModule,SeqKanbanStore} from '../../src';
 import {createKanbanExecutionBridge} from '../../src/execution';
 import {mountKanban} from '../../src/ui';
 import '../../src/ui/kanban.css';
-import {t,ACTION_ICONS,CHAT_ICONS} from '@itookit/common';
+import {t,ACTION_ICONS,CHAT_ICONS} from '@nestos/common';
 import {KanbanAutomationJournal} from '../../../../backend/app-core/src/kanban/automation-journal';
 import {createTaskFix} from '../../../../backend/app-core/src/kanban/task-fix';
 import {UserEventService} from '../../../../backend/app-core/src/events/service';

@@ -1,5 +1,5 @@
 import {afterEach, expect, it, vi} from 'vitest';
-import {createVFS, MemoryBackend} from '@itookit/vfs-core';
+import {createVFS, MemoryBackend} from '@nestos/vfs-core';
 import {createKanbanModule, SeqKanbanStore, type KanbanCommand, type KanbanModuleHandle} from '../src';
 import {createKanbanExecutionBridge, type KanbanExecutionPort} from '../src/execution';
 const closes: Array<()=>Promise<void>>=[];

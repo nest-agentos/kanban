@@ -1,9 +1,9 @@
-# @itookit/kanban
+# @nestos/kanban
 
-基于 VFS 的通用看板与工作协调库，仅依赖 `@itookit/vfs-core`。提供唯一责任人、估算与在制额度、依赖、验收、归档、日志和决策，以及持久派发意图。库不调用模型、不创建 Session/Task、不安装后台调度器。包含可独立挂载的 DOM UI；执行、来源与资源活动通过可选端口接入。
+基于 VFS 的通用看板与工作协调库，仅依赖 `@nestos/vfs-core`。提供唯一责任人、估算与在制额度、依赖、验收、归档、日志和决策，以及持久派发意图。库不调用模型、不创建 Session/Task、不安装后台调度器。包含可独立挂载的 DOM UI；执行、来源与资源活动通过可选端口接入。
 
 ```ts
-import {SeqKanbanStore, createKanbanModule} from '@itookit/kanban';
+import {SeqKanbanStore, createKanbanModule} from '@nestos/kanban';
 
 const service = createKanbanModule({
     store: await SeqKanbanStore.open(authorizedFS, '/work'),
@@ -36,8 +36,8 @@ const service = createKanbanModule({
 ## 独立 UI
 
 ```ts
-import {mountKanban} from '@itookit/kanban/ui';
-import '@itookit/kanban/ui.css';
+import {mountKanban} from '@nestos/kanban/ui';
+import '@nestos/kanban/ui.css';
 
 const view = await mountKanban(container, {
     service,
@@ -69,10 +69,10 @@ await view.dispose();
 ## 验证
 
 ```bash
-pnpm --filter @itookit/kanban typecheck
-pnpm --filter @itookit/kanban test
-pnpm --filter @itookit/kanban build
-pnpm --filter @itookit/kanban example
+pnpm --filter @nestos/kanban typecheck
+pnpm --filter @nestos/kanban test
+pnpm --filter @nestos/kanban build
+pnpm --filter @nestos/kanban example
 ```
 
 [独立示例](examples/standalone.ts) 只使用 VFS 与假执行器，完成两节点依赖计划，显式自动验收后关闭；没有 NestOS Runtime、模型或网络调用。内存后端用于演示，生产需提供持久后端和实际授权。
