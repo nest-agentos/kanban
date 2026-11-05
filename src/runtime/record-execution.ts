@@ -276,7 +276,7 @@ async function finishDecisionCancellation(options: Options, boardId: string, rec
         if(state!=='cancelled')return;
         await cancelDecision(options,boardId,recordId,operationId);
     }
-    if(control.after)await cleanupRecordTasks(options.service,options.journal,runs,control.after==='delete'?'delete':'archive',operationId,options.archiveSession,options.planningSession,options.archiveItemResources);
+    if(control.after)await cleanupRecordTasks(options.service,options.journal,runs.filter(run=>run.archivedAt===undefined),control.after==='delete'?'delete':'archive',operationId,options.archiveSession,options.planningSession,options.archiveItemResources);
     if(control.after)await options.journal.update<SavedRun[]>('record-runs:'+boardId,old=>(old??[]).map(row=>runs.some(run=>run.id===row.id)?{...row,archivedAt:row.archivedAt??Date.now()}:row));
     if(control.after==='restart')await restartDecision(options,boardId,recordId,operationId);
     else if(control.after)await journalCommand(options.journal,options.service,boardId,'record-dispose:'+operationId,{type:control.after==='delete'?'delete-record':'archive-record',recordId});
