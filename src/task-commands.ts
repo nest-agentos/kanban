@@ -9,7 +9,7 @@ import {validatePlan, catalog} from './planning';
 import {attachReference} from './planning-commands';
 import {requireCoordinator} from './workflow-plans';
 
-const types = ['set-launch-mode', 'retry-analysis', 'begin-edit', 'end-edit', 'save-edit', 'request-run', 'admit-item', 'report-analysis', 'request-control', 'control-receipt', 'report-issue', 'resolve-issue'];
+const types = ['reopen-item', 'set-launch-mode', 'retry-analysis', 'begin-edit', 'end-edit', 'save-edit', 'request-run', 'admit-item', 'report-analysis', 'request-control', 'control-receipt', 'report-issue', 'resolve-issue'];
 export function taskCommand(command: KanbanCommand): command is KanbanTaskCommand {return types.includes(command.type);}
 export function assertDefinitionEditable(item: KanbanItem, now: number, editId?: string, actor?: KanbanActor): void {
     requireValue(item.control?.action !== 'cancel', 'TASK_CANCELLING');
@@ -19,7 +19,8 @@ export function assertDefinitionEditable(item: KanbanItem, now: number, editId?:
 export function applyTaskCommand(state: KanbanState, command: KanbanTaskCommand, actor: KanbanActor, now: number): void {
     const item = state.board.items.find(i => i.id === command.itemId); requireValue(item, 'ITEM_NOT_FOUND');
     item.launch ??= {startAt: taskStartAt(item)};
-    if (['begin-edit', 'end-edit', 'save-edit'].includes(command.type)) edit(state, item, command, actor, now);
+    if (command.type === 'reopen-item') reopen(state, item, command.reopenId, actor, now);
+    else if (['begin-edit', 'end-edit', 'save-edit'].includes(command.type)) edit(state, item, command, actor, now);
     else if(command.type==='retry-analysis') {
         identity(command.retryId);requireValue(['failed','clarification'].includes(item.analysis?.state??'')&&!item.owner,'ANALYSIS_NOT_RETRYABLE');
         item.launch.analysisEpoch=command.retryId;delete item.analysis;
@@ -132,4 +133,18 @@ function applyControlReceipt(state: KanbanState, item: KanbanItem, command: Extr
     }
     requireValue(item.control!.state !== 'cancelled' || command.state === 'cancelled', 'STALE_CONTROL_RECEIPT');
     item.control!.state = command.state; item.control!.code = command.code;
+}
+
+
+/** Explicit human recovery is limited to tasks which never acquired an execution plan. */
+function reopen(state: KanbanState, item: KanbanItem, reopenId: string, actor: KanbanActor, now: number): void {
+    requireValue(principal(actor).kind === 'human', 'FORBIDDEN'); identity(reopenId);
+    requireValue(item.status === 'cancelled', 'TASK_NOT_CANCELLED');
+    requireValue(!item.owner && !item.transfer && (!item.control || item.control.state === 'cancelled'), 'CONTROL_UNSETTLED');
+    requireValue(!Object.values(state.workflow?.plans ?? {}).some(plan => plan.itemIds.includes(item.id))
+        && !Object.values(state.workflow?.dispatches ?? {}).some(dispatch => dispatch.itemId === item.id)
+        && !catalog(state).some(child => child.planning.parentId === item.id), 'TASK_REOPEN_REQUIRES_NEW_ATTEMPT');
+    item.status = 'backlog'; item.readyAt = now;
+    item.launch = {mode: 'manual', startAt: now + 300000, analysisEpoch: reopenId};
+    delete item.control; delete item.analysis; delete item.closedAt; delete item.closureReason;
 }

@@ -1,6 +1,6 @@
 {
   "name": "@nestos/kanban",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Portable VFS-backed Kanban domain, coordination runtime and contracts.",
   "type": "module",
   "main": "./src/index.ts",

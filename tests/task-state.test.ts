@@ -144,3 +144,28 @@ it('reports unsupported execution controls as errors instead of claiming the exe
     await f.run({type:'control-receipt',itemId:'task',controlId:control.id,state:'failed',code:'TASK_CONTROL_UNSUPPORTED'});
     expect((await f.service.catalog())[0].executionPhase).toBe('error');
 });
+
+it('explicitly reopens a cancelled unstarted task into manual backlog and preserves its cancellation audit', async () => {
+    const f = await fixture();
+    await f.run({type: 'create-item', item: {id: 'unstarted', title: 'Retry', responsibility: 'Inspect', acceptance: 'Evidence'}});
+    await f.run({type: 'request-control', itemId: 'unstarted', controlId: 'cancel-before-start', action: 'cancel'});
+    await f.run({type: 'control-receipt', itemId: 'unstarted', controlId: 'cancel-before-start', state: 'cancelled'});
+    await expect(f.run({type: 'reopen-item', itemId: 'unstarted', reopenId: 'retry'}, f.service)).rejects.toMatchObject({code: 'FORBIDDEN'});
+    const request = {operationId: 'recover-original', expectedRevision: (await f.human.read('board')).revision,
+        command: {type: 'reopen-item' as const, itemId: 'unstarted', reopenId: 'retry'}};
+    await f.human.execute('board', request); await f.human.execute('board', request);
+    const result = await f.human.item('board', 'unstarted');
+    expect(result.item).toMatchObject({id: 'unstarted', status: 'backlog', launch: {mode: 'manual', analysisEpoch: 'retry'}});
+    expect(result.item.control).toBeUndefined(); expect(result.item.closedAt).toBeUndefined();
+    expect(result.task).toMatchObject({phase: 'waiting-start'});
+    const events = await f.human.events('board');
+    expect(events.filter(event => event.kind === 'reopen-item')).toHaveLength(1);
+    expect(events.some(event => event.kind === 'control-receipt' && event.itemId === 'unstarted')).toBe(true);
+});
+it('refuses reopening a cancelled task which already belongs to an execution plan', async () => {
+    const f = await fixture();
+    await f.run({type: 'request-control', itemId: 'task', controlId: 'cancel-planned', action: 'cancel'});
+    await f.run({type: 'control-receipt', itemId: 'task', controlId: 'cancel-planned', state: 'cancelled'});
+    await expect(f.run({type: 'reopen-item', itemId: 'task', reopenId: 'unsafe'}, f.human)).rejects.toThrow();
+    expect((await f.item()).status).toBe('cancelled'); expect(f.executor.start).not.toHaveBeenCalled();
+});

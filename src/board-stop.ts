@@ -26,7 +26,7 @@ export function stopBoard(state: KanbanState, command: StopCommand, actor: Kanba
 export function protectStoppedBoard(state: KanbanState, command: KanbanCommand): void {
     if (!state.board.lifecycle) return;
     if (command.type === 'append-record' && command.record.kind === 'decision') requireValue(false,'BOARD_STOPPING');
-    const fresh = ['create-item','admit-item','prepare-dispatch','continue-execution','publish-plan','request-run','apply-discovery','begin-edit','save-edit'];
+    const fresh = ['reopen-item','create-item','admit-item','prepare-dispatch','continue-execution','publish-plan','request-run','apply-discovery','begin-edit','save-edit'];
     requireValue(!fresh.includes(command.type),'BOARD_STOPPING');
     if (command.type === 'set-board-control') requireValue(command.paused !== false && command.mode !== 'automatic','BOARD_STOPPING');
     if (command.type === 'configure-automation') requireValue(!command.settings.enabled,'BOARD_STOPPING');
