@@ -12,9 +12,9 @@ pnpm build
 pnpm pack
 ```
 
-根入口与 `/contracts` 入口不依赖 NestOS 服务；可选 `/ui` 入口使用原生 DOM，并通过宿主传入文案、图标及导航。按需引入 `@nestos/kanban/ui.css`。Node 或只使用领域功能的消费者无需导入 UI。
+本包提供领域服务与运行时，不包含 DOM 界面、CSS 或 UI 依赖。`/contracts` 为前台与远程调用提供无 I/O 的契约和纯函数。
 
-基于 VFS 的通用看板与工作协调库，核心依赖 `@nestos/vfs-core`，可选 UI 使用 `@nestos/ui-common`。提供唯一责任人、估算与在制额度、依赖、验收、归档、日志和决策，以及持久派发意图。库不调用模型、不创建 Session/Task、不安装后台调度器。包含可独立挂载的 DOM UI；执行、来源与资源活动通过可选端口接入。
+基于 VFS 的通用看板与工作协调库，存储与运行时通过可选 peer `@nestos/vfs-core` 接入 VFS；使用这些入口时显式安装该依赖。提供唯一责任人、估算与在制额度、依赖、验收、归档、日志和决策，以及持久派发意图。库不调用模型、不创建 Session/Task、不安装后台调度器。执行、来源与资源活动通过可选端口接入。
 
 ```ts
 import {SeqKanbanStore, createKanbanModule} from '@nestos/kanban';
@@ -40,39 +40,17 @@ const service = createKanbanModule({
 | `/storage` | `SeqKanbanStore`、`ConditionalKanbanStore`、内容安装与传输端口 |
 | `/execution` | `createKanbanExecutionBridge`；宿主提供 prepare/start/inspect |
 | `/discovery` | `createKanbanDiscovery`；宿主提供来源、分析和授权 |
+| `/runtime` | `createKanbanRuntime`；单一工厂、执行意图/句柄/回执及完整协调 |
+| `/integration` | 自定义宿主的装配、业务协调与语义状态接口 |
 | `/activity` | `createKanbanActivityModule`；注入来源和外部引用 namespace |
-| `/ui`、`/ui.css` | DOM 工作区、`mountKanban` 与独立样式 |
 
 `createKanban(options)` 提供 `boards.create/get/list/overview`、`items.get/query`、`records.get/query`、`planning.get`、`references.resolve/suggest`、`execute`、`events`、`tick` 和 `quiesce/dispose`。execute 返回 `{boardId, operationId, revision}`；幂等重放时 revision 是当前返回快照的版本。需要 KanbanService（例如 UI、执行桥）时直接使用 `createKanbanModule`，二者共享同一实现与命令协议。
 
 主体 ID、Session/Task/Message ID 及历史持久格式保留。独立 Agent 可以只提供自己的 ID；若提供执行身份，所有权继续按该身份隔离。NestOS 在适配边界继续要求真实 Session/Task，宿主始终负责实际权限核验。
 
-## 独立 UI
+## 前台界面
 
-```ts
-import {mountKanban} from '@nestos/kanban/ui';
-import '@nestos/kanban/ui.css';
-
-const view = await mountKanban(container, {
-    service,
-    presentation: {
-        text: (key, values) => translations(key, values),
-        icons: {refreshView, more, close},
-        log: logMetadata,
-        referenceUrl: path => resourceUrl(path),
-    },
-    selected: path => saveNavigation(path),
-    openSession: id => openResource(id),
-});
-await view.open({boardId: 'work'});
-await view.dispose();
-```
-
-文案 key 不带 `kanban.` 前缀；图标为可信宿主提供的 SVG/HTML。主题通过 `--kanban-*` CSS 变量设置；NestOS 在适配样式中映射原有主题变量。所有呈现配置按实例注入，不存在全局语言、当前宿主或跨实例回调。UI 不导入 NestOS、common 或 vfs-ui。资源活动为可选能力；未接入时不显示执行筛选，也不安装活动轮询。接入时可见且没有未保存输入才轮询，销毁后停止；通知不会覆盖草稿。错误只展示安全错误码与宿主文案，不输出正文或完整请求。
-
-来源发现仅通过内置 `apply-discovery` 提交受校验的变更与检查点，二者同事务保存。宿主不提供可变 reducer 扩展。来源可声明 system/project/collection scope；历史 projectId 仍兼容。库不提供内部 mechanisms 入口。消费者直接从 `/contracts` 导入 DTO 和 KanbanClient，不经过应用包转出。
-
-执行桥不解释模型或业务。执行桥和来源扫描的 `tick()`（兼容 `scan()`）由宿主显式驱动；扫描 `quiesce/dispose` 拒绝新准入并排空已接纳操作。只有注入 subscribe 才接收唤醒。executionReference 将实际执行 ID 映射为宿主命名空间，不在核心写死 NestOS 引用。`ConditionalKanbanStore` 只要求 query/transaction 与可选正文资产端口，适配器负责授权连接及 unknown 写入核对，不在 Store 内盲重试。
+界面由独立包 `@nestos/kanban-ui` 提供，样式入口为 `@nestos/kanban-ui/style.css`。前台仅通过本库 `/contracts` 中的 KanbanClient 接入本地或远程服务，不依赖后台存储、执行或恢复实现。
 
 ## 版本化内容安装
 
@@ -134,3 +112,55 @@ Boards may store automation settings with opaque planner/executor references and
 宿主已有工作区导航时，可直接构造 `KanbanWorkbench` 并省略 `sidebar`，通过 `createBoard()` 接入导航动作，通过 `committed` 刷新目录；`mountKanban` 的独立默认侧栏保持可用。父项详情提供子事项分页与新建入口，子项通过 `planning.parentId` 关联父项，执行依赖仍单独保存在 `planning.dependencies`。
 
 Task 的持久 startAt、编辑租约、单一状态投影与文件协议见 [执行规范](https://github.com/nest-agentos/NestOS/blob/main/doc/design/kanban-task-execution.md)。`item().task` 和 query 的 `task` 为相同宿主事实的投影，`phase` 过滤在服务端执行。
+
+事项支持 `request-control action=cancel` 的持久取消中状态及宿主停止回执；父项取消原子登记后代取消意图。`delete-item`、`delete-record` 保存逻辑删除墓碑，默认查询隐藏，`includeDeleted` 显式包含，原 ID 和审计保留。决策取消分为 `request-record-cancellation` 与结算后的 `cancel-record`。可选宿主端口 `controlRecord`、`taskFixes`、`cancelFix` 提供关联执行控制及修复澄清放弃；库不自行控制 Session。资源 `ownership` 独立于 `state`，归属未知或其他事项的资源必须保留，不得从归属未知推断执行已停止。
+
+看板 `lifecycle` 支持整体取消与等待删除屏障：`request-board-stop` 冻结新任务/计划/准入/派发/续办，`observe-board-stop` 保存收尾阶段。宿主可提供 `cancelBoard`、`requestBoardDeletion`；后者保存跨重启删除请求，默认 drain 等待原执行结束，或显式 cancel 后再删除。独立库不自装调度器，宿主扫描负责最终预检和自动删除，UI 显示请求已接纳与具体阻塞项。
+
+## 完整运行时
+
+普通接入使用一个工厂，直接获得可查询、提交命令、扫描和关停的看板实例：
+
+```ts
+import {createKanbanRuntime} from '@nestos/kanban/runtime';
+
+const kanban = await createKanbanRuntime({
+    fs: authorizedFS,
+    actor: authenticatedPrincipal,
+    authorize: authorizeOperation,
+    execution: executionAdapter, // Optional for boards without automated execution.
+});
+
+await kanban.scan();
+await kanban.dispose();
+```
+
+默认目录为 `/kanban`，可通过 `directory` 设置。`resources` 注入资源目录与权限校验，`activity` 注入执行活动来源，`onCommitted` 接入已有事件通道，`log` 接入诊断。库不自动创建定时器。返回值只包含看板语义操作，不暴露 store、journal、serviceFor 或原始 VFS。
+
+执行适配器只实现以下协议：
+
+```ts
+const executionAdapter = {
+    catalog: () => authorizedTargets(),
+    prepare: intent => prepareExternalRequest(intent),
+    submit: handle => submitExternalRequest(handle),
+    inspect: handle => inspectExternalReceipt(handle),
+    control: (handle, command) => controlExternalExecution(handle, command),
+};
+```
+
+- `ExecutionIntent` 包含稳定身份、作用域、目标与结构化上下文；`purpose` 区分规划和工作。规划返回 `ready/dependencies/reason` 及可选 estimate/subtasks，不引入宿主 Session/Flow DTO。
+- `ExecutionHandle` 是可持久化的 `{id,data?}`，由适配器解释。prepare 不能启动外部执行；运行时先保存句柄再 submit，恢复时使用原句柄 inspect。
+- 回执返回 `outcome`、可选 `result/executionId/code/controlCapabilities`。运行时保存并校验结果，通过 `kanban.results(boardId, dispatchId)` 读取授权产物。成功但结果未到达时保持 unknown；无正文结果显式返回 `result: null`。
+- 控制统一接收句柄与 `{operationId,action}`。不提供 control 时返回明确的 `TASK_CONTROL_UNSUPPORTED`，不能把取消意图当作取消完成。
+- 当前事项正文只放在 context.task 一处；决策只携带身份与修订，规划的 related 为摘要。执行依赖只传直接依赖的已验收产物。适配器按需通过授权查询读取额外内容。
+
+运行时负责幂等认领、回执丢失恢复、日志投影、产物归属、取消协调和删除屏障。宿主无需了解持久键，也无需自行编写这些状态机。完整接入、重启恢复、失败处理和取消验收见 `tests/public-runtime.test.ts`。
+
+## 自定义宿主集成
+
+`/integration` 面向需要自定义预设、交互确认或底层装配的受信任宿主，显式导出 `assembleKanbanRuntime`、协调组件与语义状态接口。它与普通 `/runtime` 入口分开；远程 HTTP/MCP 服务应只暴露经过授权的看板语义操作，不能透传 integration 对象。
+
+`KanbanCollaboration` 提供修复准备、冻结确认、接纳与决策快照，`collaborationRelations` 提供关联执行投影；适配器无需读取 fix、record-runs 或 task-reply 的内部持久键。宿主仍负责确认文案、通道交互和系统事件投影。
+
+`KanbanOperationRecord` 与 `coordinateOperation` 提供自定义业务操作的统一持久协调；执行请求和结果保持不透明，业务插件负责结果约束。只有正式“未启动”回执允许重试提交，连接中断只核对原身份。

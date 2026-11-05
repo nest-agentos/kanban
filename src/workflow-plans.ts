@@ -43,7 +43,7 @@ export function publishPlan(state: KanbanState, plan: KanbanWorkPlan, actor: Kan
 function adoptItem(state: KanbanState, definition: KanbanWorkDefinition, apply: ApplyWorkCommand): void {
     const item = state.board.items.find(item => item.id === definition.id);
     requireValue(item && definition.expectedRevision === item.revision && ['backlog', 'open'].includes(item.status)
-        && !item.owner && !item.blocked, 'PLAN_ITEM_CHANGED_REQUIRES_NEW_ID');
+        && !item.owner && !item.blocked && (!item.control || item.control.action === 'resume' && item.control.state === 'resumed'), 'PLAN_ITEM_CHANGED_REQUIRES_NEW_ID');
     requireValue(!definition.workType||definition.workType===item.planning?.kind,'PLAN_ITEM_CHANGED_REQUIRES_NEW_ID');
     requireValue(!definition.externalRefs||definition.externalRefs.every(ref=>item.externalRefs?.some(existing=>JSON.stringify(existing)===JSON.stringify(ref))),'PLAN_RESOURCE_MISMATCH');
     requireValue(item.title === definition.title && item.responsibility === definition.responsibility

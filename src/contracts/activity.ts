@@ -34,6 +34,8 @@ export interface KanbanExecutionSessionDetail {
 
 /** Transport-facing service with optional authorized resource activity. */
 export interface KanbanClient extends KanbanService {
+    cancelBoard?(boardId: string, request: {operationId:string; expectedRevision:number}): Promise<void>;
+    requestBoardDeletion?(boardId:string, request:import('./deletion').KanbanDeletionRequest & {mode:'drain'|'cancel'}):Promise<void>;
     previewDeletion?(boardId: string): Promise<import('./deletion').KanbanDeletionPreview>;
     deleteBoard?(boardId: string, request: import('./deletion').KanbanDeletionRequest): Promise<void>;
     itemOperations?(boardId: string, itemId: string): Promise<import('./operations').KanbanItemOperations>;
@@ -42,6 +44,9 @@ export interface KanbanClient extends KanbanService {
     workResources?(boardId: string, itemId: string, query?: import('./work-resources').KanbanWorkResourceQuery): Promise<import('./work-resources').KanbanWorkResource[]>;
     cleanupWorkResource?(boardId: string, request: import('./work-resources').KanbanWorkResourceCleanup): Promise<import('./work-resources').KanbanWorkResource>;
     replyTask?(boardId:string,request:{itemId:string;attemptId:string;replyTo:string;operationId:string;content:string}):Promise<void>;
+    taskFixes?(boardId: string, itemId: string): Promise<import('./task-state').KanbanFixSession[]>;
+    cancelFix?(boardId: string, request: {fixId: string; operationId: string}): Promise<import('./task-state').KanbanFixSession>;
+    controlRecord?(boardId: string, request: {recordId: string; operationId: string; action: 'pause' | 'resume' | 'cancel'}): Promise<void>;
     fixTask?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./task-state').KanbanFixSession>;
     itemResources?(boardId:string,parentId?:string):Promise<import('./record-execution').KanbanItemResourceCatalog>;
     recordResources?(): Promise<import('./record-execution').KanbanRecordResource[]>;

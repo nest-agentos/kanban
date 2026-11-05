@@ -39,6 +39,7 @@ export interface KanbanModuleOptions {
     authorize(input: { actor: KanbanActor; board: KanbanBoard; action: 'create' | 'read' | 'install-content' | KanbanCommand['type']; command?: KanbanCommand }): Promise<void>;
     /** Confirm an automated owner has settled before releasing responsibility. */
     verifyDeletion?(board: KanbanBoard): Promise<void>;
+    verifyLifecycle?(board: KanbanBoard, command: KanbanCommand): Promise<void>;
     verifyRelease?(input: {actor: KanbanActor; board: KanbanBoard; item: import('./contracts').KanbanItem}): Promise<boolean>;
     now?: () => number;
     id?: () => string;

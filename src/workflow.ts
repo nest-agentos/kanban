@@ -24,7 +24,7 @@ export function protectWorkflowItem(state: KanbanState, command: KanbanCommand):
     requireValue(!['edit-item','plan-item','review-amendment'].includes(command.type),'PLAN_ITEM_CHANGED_REQUIRES_NEW_ID');
     if (plan.sealed) requireValue(!['claim','submit','review','close-plan'].includes(command.type),'WORKFLOW_COMMAND_REQUIRED');
     const live=Object.values(state.workflow.dispatches).some(dispatch=>dispatch.itemId===command.itemId&&['prepared','running','unknown','succeeded'].includes(dispatch.outcome));
-    if (live) requireValue(!['request-transfer','accept-transfer','release-item','cancel-item'].includes(command.type),'EXECUTION_UNSETTLED');
+    if (live) requireValue(!['delete-item','request-transfer','accept-transfer','release-item','cancel-item'].includes(command.type),'EXECUTION_UNSETTLED');
 }
 export function applyWorkflow(state: KanbanState, command: KanbanWorkflowCommand, actor: KanbanActor, now: number, apply: ApplyWorkCommand): boolean {
     state.workflow ??= {plans:{},dispatches:{},ready:[],completedPlans:[]};
@@ -39,6 +39,8 @@ export function applyWorkflow(state: KanbanState, command: KanbanWorkflowCommand
 }
 function prepare(state: KanbanState, command: Extract<KanbanWorkflowCommand,{type:'prepare-dispatch'}>, actor: KanbanActor, now: number, apply: ApplyWorkCommand): void {
     identity(command.dispatchId); const workflow=state.workflow!;
+    const controlled = state.board.items.find(item => item.id === command.itemId);
+    requireValue(!controlled?.control || controlled.control.action === 'resume' && controlled.control.state === 'resumed', 'TASK_CONTROL_PENDING');
     requireValue(!workflow.dispatches[command.dispatchId], 'DISPATCH_EXISTS'); refreshReady(state);
     requireValue(workflow.ready.includes(command.itemId), 'WORK_NOT_READY');
     const plan=Object.values(workflow.plans).find(plan=>plan.itemIds.includes(command.itemId))!;
@@ -84,6 +86,7 @@ function observe(state: KanbanState, command: Extract<KanbanWorkflowCommand,{typ
 }
 function accept(state: KanbanState, command: Extract<KanbanWorkflowCommand,{type:'accept-execution'}>, actor: KanbanActor, apply: ApplyWorkCommand): void {
     requireCoordinator(state,actor);const dispatch=activeDispatch(state,command.dispatchId);
+    requireValue(state.board.items.find(item => item.id === dispatch.itemId)?.control?.action !== 'cancel', 'TASK_CANCELLING');
     requireValue(dispatch.outcome==='succeeded','EXECUTION_NOT_SUCCEEDED');
     apply({type:'review',itemId:dispatch.itemId,accept:command.accept},actor);
     dispatch.outcome=command.accept?'accepted':'rejected';
@@ -102,6 +105,6 @@ export function validateOutputs(outputs: KanbanArtifactRef[]): void {
 export function refreshReady(state: KanbanState): void {
     if(!state.workflow) return; const all=catalog(state), included=new Set(Object.values(state.workflow.plans).filter(plan=>plan.sealed).flatMap(plan=>plan.itemIds));
     state.workflow.completedPlans=Object.values(state.workflow.plans).filter(plan=>plan.sealed&&plan.itemIds.every(id=>all.find(item=>item.id===id)?.status==='completed')).map(plan=>plan.id);
-    state.workflow.ready=state.board.items.filter(item=>included.has(item.id)&&executableWorkItem(state.board,item)&&['backlog','open'].includes(item.status)&&!item.owner&&!item.blocked&&item.control?.action!=='pause'
+    state.workflow.ready=state.board.items.filter(item=>included.has(item.id)&&executableWorkItem(state.board,item)&&['backlog','open'].includes(item.status)&&!item.owner&&!item.blocked&&(!item.control || item.control.action==='resume' && item.control.state==='resumed')
         &&(item.planning?.dependencies ?? []).every(id=>all.find(other=>other.id===id)?.status==='completed')).map(item=>item.id);
 }

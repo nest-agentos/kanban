@@ -5,10 +5,11 @@ export interface KanbanBoardControl {
     controls: Record<string, string>;
 }
 /** Manual mode still honors an explicit per-task run request. */
-export function boardAllowsStart(board: Pick<KanbanBoard, 'executionControl'>, item?: Pick<KanbanItem, 'launch'>): boolean {
-    return !board.executionControl?.paused && (board.executionControl?.mode !== 'manual' || item?.launch?.requestedAt !== undefined);
+export function boardAllowsStart(board: Pick<KanbanBoard, 'executionControl' | 'lifecycle'>, item?: Pick<KanbanItem, 'launch'>): boolean {
+    return !board.lifecycle && !board.executionControl?.paused && (board.executionControl?.mode !== 'manual' || item?.launch?.requestedAt !== undefined);
 }
-export function boardControlPhase(board: Pick<KanbanBoard, 'executionControl'> & {items: Array<Pick<KanbanItem, 'id' | 'status' | 'control'>>}): 'automatic' | 'manual' | 'pausing' | 'paused' | 'resuming' | 'error' {
+export function boardControlPhase(board: Pick<KanbanBoard, 'executionControl' | 'lifecycle'> & {items: Array<Pick<KanbanItem, 'id' | 'status' | 'control'>>}): 'automatic' | 'manual' | 'pausing' | 'paused' | 'resuming' | 'error' | 'cancelling' | 'cancelled' | 'waiting-deletion' {
+    if (board.lifecycle) return board.lifecycle.intent === 'delete' ? 'waiting-deletion' : board.lifecycle.phase === 'ready' ? 'cancelled' : 'cancelling';
     const policy = board.executionControl;
     const controls = Object.entries(policy?.controls ?? {}).flatMap(([id, controlId]) => {
         const item = board.items.find(item => item.id === id);

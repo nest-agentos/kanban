@@ -42,6 +42,7 @@ function operate(item: KanbanItem, command: OperationalCommand, now: number, act
     item.updatedAt = now; item.revision++;
 }
 function updatePlan(state: KanbanState, item: KanbanItem, command: PlanCommand, now: number): void {
+    if (command.type === 'close-plan') requireValue(item.control?.action !== 'cancel', 'TASK_CANCELLING');
     if(command.type==='cancel-item')requireValue(item.launch?.admittedAt===undefined,'TASK_CONTROL_REQUIRED');
     if (command.type === 'publish-proposal') {
         requireValue(item.status === 'proposed', 'NOT_PROPOSED'); return setStage(state, item, command.stage ?? 'backlog', now);

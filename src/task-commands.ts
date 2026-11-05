@@ -12,6 +12,7 @@ import {requireCoordinator} from './workflow-plans';
 const types = ['set-launch-mode', 'retry-analysis', 'begin-edit', 'end-edit', 'save-edit', 'request-run', 'admit-item', 'report-analysis', 'request-control', 'control-receipt', 'report-issue', 'resolve-issue'];
 export function taskCommand(command: KanbanCommand): command is KanbanTaskCommand {return types.includes(command.type);}
 export function assertDefinitionEditable(item: KanbanItem, now: number, editId?: string, actor?: KanbanActor): void {
+    requireValue(item.control?.action !== 'cancel', 'TASK_CANCELLING');
     requireValue(['proposed', 'backlog', 'open'].includes(item.status) && !item.owner && item.launch?.admittedAt === undefined, 'TASK_DEFINITION_FROZEN');
     if (taskEditing(item, now)) requireValue(item.launch!.editing!.id === editId && !!actor && principalKey(item.launch!.editing!.principal) === principalKey(principal(actor)), 'EDIT_LEASE_ACTIVE');
 }
@@ -28,19 +29,18 @@ export function applyTaskCommand(state: KanbanState, command: KanbanTaskCommand,
     else if (command.type === 'admit-item') {
         requireCoordinator(state, actor); assertDefinitionEditable(item, now);
         requireValue(boardAllowsStart(state.board, item), 'BOARD_EXECUTION_PAUSED');
+        requireValue(!item.control || item.control.action === 'resume' && item.control.state === 'resumed', 'TASK_CONTROL_PENDING');
         requireValue(command.trigger === 'manual' ? item.launch.requestedAt !== undefined : taskDue(item, now), 'START_NOT_DUE');
         requireValue(!item.blocked && item.control?.action !== 'pause', 'ITEM_BLOCKED');
         requireValue(item.planning?.dependencies.every(id => catalog(state).find(i => i.id === id)?.status === 'completed') ?? true, 'DEPENDENCIES_UNFINISHED');
         item.launch.admittedAt = now;
     } else if (command.type === 'report-analysis') {
         requireCoordinator(state, actor); identity(command.operationId); requireValue(command.status.itemId === item.id, 'ANALYSIS_SCOPE_MISMATCH');
+        requireValue(item.control?.action !== 'cancel' && !['completed','cancelled'].includes(item.status), 'TASK_CANCELLING');
         item.analysis = structuredClone(command.status);
-    } else if (command.type === 'request-control') requestControl(state, item, command);
-    else if (command.type === 'control-receipt') {
-        requireCoordinator(state, actor); requireValue(item.control?.id === command.controlId, 'STALE_CONTROL_RECEIPT');
-        requireValue(['accepted', 'paused', 'resumed', 'failed', 'unknown'].includes(command.state), 'INVALID_CONTROL_STATE');
-        item.control!.state = command.state; item.control!.code = command.code;
-    } else issues(state, item, command, actor);
+    } else if (command.type === 'request-control') {requestControl(state, item, command); if (command.action === 'cancel') cancelChildren(state, item, command.controlId);}
+    else if (command.type === 'control-receipt') applyControlReceipt(state, item, command, actor, now);
+    else issues(state, item, command, actor);
     item.updatedAt = now; item.revision++;
 }
 function edit(state: KanbanState, item: KanbanItem, command: KanbanTaskCommand, actor: KanbanActor, now: number): void {
@@ -66,13 +66,14 @@ function edit(state: KanbanState, item: KanbanItem, command: KanbanTaskCommand, 
     delete item.launch!.editing;
 }
 function requestControl(state: KanbanState, item: KanbanItem, command: Extract<KanbanTaskCommand, {type: 'request-control'}>): void {
-    requireValue(!['completed', 'cancelled', 'review'].includes(item.status), 'ITEM_COMPLETED'); identity(command.controlId);
-    requireValue(['pause', 'resume'].includes(command.action), 'INVALID_CONTROL_ACTION');
+    requireValue(!['completed', 'cancelled'].includes(item.status), 'ITEM_COMPLETED'); identity(command.controlId);
+    requireValue(['pause', 'resume', 'cancel'].includes(command.action), 'INVALID_CONTROL_ACTION');
     if (item.control?.id === command.controlId) {requireValue(item.control.action === command.action, 'IDEMPOTENCY_CONFLICT'); return;}
-    requireValue(!item.control || !['requested', 'unknown'].includes(item.control.state), 'CONTROL_UNSETTLED');
-    const dispatch = Object.values(state.workflow?.dispatches ?? {}).find(d => d.itemId === item.id && ['prepared', 'running', 'unknown'].includes(d.outcome));
-    requireValue(dispatch || item.launch?.admittedAt === undefined, 'TASK_CONTROL_UNSUPPORTED');
-    requireValue(command.action === 'pause' || item.control?.action === 'pause', 'TASK_NOT_PAUSED');
+    if (command.action === 'cancel' && item.control?.action === 'cancel' && item.control.state !== 'failed') return;
+    requireValue(command.action === 'cancel' || !item.control || !['requested', 'unknown'].includes(item.control.state), 'CONTROL_UNSETTLED');
+    const dispatch = Object.values(state.workflow?.dispatches ?? {}).filter(d => d.itemId === item.id).sort((a,b) => b.attempt-a.attempt)[0];
+    requireValue(!item.owner || dispatch || command.action === 'cancel', 'TASK_CONTROL_UNSUPPORTED');
+    requireValue(command.action !== 'resume' || item.control?.action === 'pause', 'TASK_NOT_PAUSED');
     item.control = {id: command.controlId, dispatchId: dispatch?.id, action: command.action, state: 'requested'};
 }
 function issues(state: KanbanState, item: KanbanItem, command: KanbanTaskCommand, actor: KanbanActor): void {
@@ -99,4 +100,36 @@ export function initializeTaskLaunch(state:KanbanState,item:KanbanItem):boolean 
 function setMode(item: KanbanItem, mode: 'automatic' | 'manual'): void {
     requireValue(['automatic', 'manual'].includes(mode), 'INVALID_LAUNCH_MODE');
     item.launch!.mode = mode; delete item.launch!.requestedAt;
+}
+
+function cancelChildren(state: KanbanState, parent: KanbanItem, controlId: string): void {
+    const ids = new Set([parent.id]);
+    for (let pass = 0; pass < state.board.items.length; pass++) {
+        const children = state.board.items.filter(item => item.planning?.parentId && ids.has(item.planning.parentId) && !ids.has(item.id));
+        if (!children.length) return;
+        for (const child of children) {
+            ids.add(child.id);
+            if (['completed','cancelled'].includes(child.status) || child.control?.action === 'cancel') continue;
+            requestControl(state, child, {type:'request-control', itemId:child.id, controlId:sha256HexSync(JSON.stringify([controlId, child.id])), action:'cancel'});
+            child.updatedAt = parent.updatedAt; child.revision++;
+        }
+    }
+}
+
+function applyControlReceipt(state: KanbanState, item: KanbanItem, command: Extract<KanbanTaskCommand, {type:'control-receipt'}>, actor: KanbanActor, now: number): void {
+    requireCoordinator(state, actor); requireValue(item.control?.id === command.controlId, 'STALE_CONTROL_RECEIPT');
+    requireValue(['accepted', 'paused', 'resumed', 'cancelled', 'failed', 'unknown'].includes(command.state), 'INVALID_CONTROL_STATE');
+    requireValue(command.code === undefined || /^[A-Z][A-Z0-9_]{0,79}$/.test(command.code),'INVALID_ERROR_CODE');
+    if (command.state === 'cancelled') {
+        requireValue(item.control!.action === 'cancel', 'INVALID_CONTROL_STATE');
+        for (const dispatch of Object.values(state.workflow?.dispatches ?? {}).filter(d => d.itemId === item.id && ['prepared','running','unknown','succeeded'].includes(d.outcome))) {
+            requireValue(dispatch.id === item.control!.dispatchId && item.owner?.token === dispatch.fence, 'STALE_EXECUTION_RESULT');
+            dispatch.outcome = 'cancelled'; dispatch.code = 'USER_CANCELLED';
+        }
+        requireValue(!catalog(state).some(i => i.planning.parentId === item.id && !['completed','cancelled'].includes(i.status)), 'CHILDREN_UNFINISHED');
+        item.status = 'cancelled'; item.closedAt = now; item.closureReason = 'USER_CANCELLED';
+        delete item.owner; delete item.transfer; delete item.blocked; delete item.launch!.editing;
+    }
+    requireValue(item.control!.state !== 'cancelled' || command.state === 'cancelled', 'STALE_CONTROL_RECEIPT');
+    item.control!.state = command.state; item.control!.code = command.code;
 }

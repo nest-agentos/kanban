@@ -6,7 +6,7 @@ export interface KanbanItemResourceCatalog {resources:KanbanRecordResource[];sel
 export interface KanbanRecordExecution {
     id: string; recordId: string; recordRevision: number; boardId: string;
     rootItemId?: string; itemIds?: string[];
-    state: 'preparing' | 'running' | 'blocked' | 'review' | 'completed' | 'failed';
+    state: 'preparing' | 'running' | 'blocked' | 'review' | 'completed' | 'failed' | 'cancelling' | 'cancelled' | 'pausing' | 'paused' | 'resuming' | 'unknown';
     createdAt: number; updatedAt: number; code?: string;
 }
 export interface KanbanRecordRunRequest {

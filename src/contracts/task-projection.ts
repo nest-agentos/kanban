@@ -1,23 +1,29 @@
 import type {KanbanDispatch,KanbanItem,KanbanItemSummary,KanbanWorkflowState,KanbanTaskProjection,KanbanTaskPhase} from './index';
 
-type Item=Pick<KanbanItem,'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>;
+type Item=Pick<KanbanItem,'deletedAt'|'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>;
 type Fact={phase:KanbanTaskPhase;reason?:string;actions?:KanbanTaskProjection['actions']};
 export const TASK_START_DELAY_MS=300000;
 export function taskStartAt(item:Pick<Item,'createdAt'|'launch'>):number {return item.launch?.startAt??item.createdAt+TASK_START_DELAY_MS;}
 export function taskEditing(item:Pick<Item,'launch'>,now:number):boolean {return (item.launch?.editing?.expiresAt??0)>now;}
 export function taskDue(item:Item,now:number):boolean {
-    return !taskEditing(item,now)&&!item.blocked&&item.control?.action!=='pause'
+    return !taskEditing(item,now)&&!item.blocked&&(!item.control || item.control.action === 'resume' && item.control.state === 'resumed')
         &&(item.launch?.requestedAt!==undefined||item.launch?.mode!=='manual'&&taskStartAt(item)<=now);
 }
 /** Ordered evidence projection shared by storage queries, CLI and UI. Session idle never proves acceptance. */
 export function projectKanbanTask(item:Item,workflow?:KanbanWorkflowState,now=Date.now(),all:Array<Pick<KanbanItemSummary,'id'|'status'>>=[]):KanbanTaskProjection {
     const dispatch=Object.values(workflow?.dispatches??{}).filter(d=>d.itemId===item.id).sort((a,b)=>b.attempt-a.attempt)[0];
-    const fact=terminalFact(item)??issueFact(item,dispatch)??failureFact(item,dispatch)??controlFact(item)??executionFact(item,dispatch)??waitingFact(item,now,all);
+    const fact=terminalFact(item)??controlFact(item)??issueFact(item,dispatch)??failureFact(item,dispatch)??executionFact(item,dispatch)??waitingFact(item,now,all);
+    const extra: KanbanTaskProjection['actions'] = [];
+    if (!['completed','cancelled'].includes(item.status) && item.control?.action !== 'cancel') {
+        if (!fact.actions?.includes('cancel')) extra.push('cancel');
+        if (item.status !== 'review' && !fact.actions?.includes('pause') && !fact.actions?.includes('resume') && (dispatch?.controlCapabilities?.pause === 'boundary' || !dispatch)) extra.push('pause');
+    }
     return {...fact,startAt:taskStartAt(item),dispatchId:dispatch?.id,sessionId:dispatch?.executionSessionId,
-        actions:[...fact.actions??[],...(dispatch||item.launch?.admittedAt!==undefined||['claimed','review','completed'].includes(item.status)?['fix' as const]:[]),...(dispatch?.executionSessionId?['open-session' as const]:[])]};
+        actions:item.deletedAt === undefined ? [...fact.actions??[],...extra,...(dispatch||item.launch?.admittedAt!==undefined||['claimed','review','completed'].includes(item.status)?['fix' as const]:[]),...(dispatch?.executionSessionId?['open-session' as const]:[])] : []};
 }
 function terminalFact(item:Item):Fact|undefined {
-    if(item.status==='completed'||item.status==='cancelled')return {phase:item.status};
+    if(item.status==='completed'||item.status==='cancelled')return {phase:item.status,actions:['delete']};
+    if(item.control?.action==='cancel')return {phase:item.control.state==='failed'?'error':item.control.state==='unknown'?'unknown':'cancelling',reason:item.control.code,actions:item.control.state==='failed'?['cancel']:[]};
     if(item.status==='review')return {phase:'review',actions:['review']};
 }
 function issueFact(item:Item,dispatch?:KanbanDispatch):Fact|undefined {

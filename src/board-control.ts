@@ -18,7 +18,7 @@ export function setBoardControl(state: KanbanState, command: Command, actor: Kan
     if (policy.paused) policy.controls = {};
     state.board.items.forEach((item, index) => {
         if (['completed', 'cancelled', 'review'].includes(item.status)) return;
-        const active = Object.values(state.workflow?.dispatches ?? {}).some(d => d.itemId === item.id && ['prepared', 'running', 'unknown'].includes(d.outcome));
+        const active = item.analysis?.state === 'analyzing' || item.launch?.admittedAt !== undefined || Object.values(state.workflow?.dispatches ?? {}).some(d => d.itemId === item.id && ['prepared', 'running', 'unknown'].includes(d.outcome));
         const managed = policy.controls[item.id] === item.control?.id;
         if (policy.paused ? !active || item.control?.action === 'pause' : !managed || item.control?.action !== 'pause') return;
         if (item.control && ['requested', 'unknown'].includes(item.control.state)) return;

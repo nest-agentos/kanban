@@ -20,6 +20,7 @@ export interface KanbanAssignment extends KanbanActor { principalId?: string; to
 export interface KanbanItem {
     launch?: import('./task-state').KanbanLaunch; analysis?: import('./automation').KanbanAnalysisStatus;
     control?: import('./task-state').KanbanTaskControl; issues?: import('./task-state').KanbanTaskIssue[];
+    deletedAt?: number;
     number?: number;
     origin?: {kind: 'direct' | 'discovery'; principal: KanbanPrincipal; runId?: string; fingerprint?: string}; amendments?: KanbanAmendment[];
     id: string; title: string; responsibility: string; acceptance: string; eligibleAgentIds?: string[]; eligiblePrincipals?: KanbanPrincipal[];
@@ -34,6 +35,7 @@ export interface KanbanItem {
     planning?: KanbanPlanning; closedAt?: number; restoredAt?: number; closureReason?: string;
 }
 export interface KanbanBoard {
+    lifecycle?: {operationId: string; intent: 'cancel' | 'delete'; mode: 'drain' | 'cancel'; phase: 'waiting' | 'ready' | 'blocked'; code?: string};
     /** Logical deletion retains audit, Session and resource associations. */
     deletedAt?: number;
     executionControl?: import('./board-control').KanbanBoardControl;
@@ -50,6 +52,12 @@ export interface KanbanEvent {
     data: { status?: KanbanItem['status']; reference?: KanbanExternalReference; code?: string; itemTitle?: string; dispatchId?: string; readyItemIds?: string[]; planId?: string; recordId?: string; recordIds?: string[]; itemIds?: string[]; planning?: KanbanPlanning; message?: string; reason?: string; resultRef?: string; estimate?: KanbanEstimate; workUnits?: number };
 }
 export type KanbanCommand = import('./task-state').KanbanTaskCommand | import('./workflow').KanbanWorkflowCommand
+    | {type: 'delete-item'; itemId: string}
+    | {type: 'request-record-cancellation'; recordId: string}
+    | {type: 'cancel-record'; recordId: string}
+    | {type: 'delete-record'; recordId: string}
+    | {type:'request-board-stop'; controlId:string; intent:'cancel'|'delete'; mode:'drain'|'cancel'}
+    | {type:'observe-board-stop'; controlId:string; phase:'waiting'|'ready'|'blocked'; code?:string}
     | {type: 'delete-board'}
     | {type: 'set-board-control'; mode?: 'automatic' | 'manual'; paused?: boolean}
     | {type: 'edit-item'; itemId: string; title: string; responsibility: string; acceptance: string}

@@ -7,7 +7,7 @@ export function plan(item: KanbanItem): KanbanPlanning {
     return item.planning ?? {kind: 'task', priority: 2, dependencies: [], references: []};
 }
 export function summary(item: KanbanItem): KanbanItemSummary {
-    return {launch:item.launch, analysis:item.analysis, control:item.control, issues:item.issues, blocked:item.blocked, id: item.id, number: item.number, title: item.title, status: item.status, revision: item.revision, createdAt: item.createdAt,
+    return {deletedAt:item.deletedAt, launch:item.launch, analysis:item.analysis, control:item.control, issues:item.issues, blocked:item.blocked, id: item.id, number: item.number, title: item.title, status: item.status, revision: item.revision, createdAt: item.createdAt,
         updatedAt: item.updatedAt, discoveryFingerprint: item.origin?.fingerprint, pendingAmendments: item.amendments?.filter(proposal => proposal.status === 'pending').length, externalRefs: item.externalRefs, closedAt: item.closedAt, planning: plan(item), sessionIds: item.participants.map(p => p.sessionId)};
 }
 export function terminal(item: Pick<KanbanItem, 'status'>): boolean {return item.status === 'completed' || item.status === 'cancelled';}
@@ -26,7 +26,7 @@ export function validatePlan(state: KanbanState, item: KanbanItem, value: Kanban
     if (value.dueAt !== undefined) requireValue(Number.isFinite(value.dueAt) && value.dueAt >= 0, 'INVALID_DUE_DATE');
     const all = catalog(state), parent = all.find(i => i.id === value.parentId);
     if (value.parentId) {
-        identity(value.parentId); requireValue(parent && !parent.archivedAt && !terminal(parent) && !['claimed','review'].includes(parent.status), 'PARENT_UNAVAILABLE');
+        identity(value.parentId); requireValue(parent && !parent.archivedAt && !parent.deletedAt && !terminal(parent) && parent.control?.action !== 'cancel' && !['claimed','review'].includes(parent.status), 'PARENT_UNAVAILABLE');
         requireValue(parent.id !== item.id && workType(state.board, parent.planning.kind).rank < type.rank, 'INVALID_PARENT_KIND');
     }
     requireValue(value.execution==='children'||!all.some(child=>child.planning.parentId===item.id),'CHILDREN_REQUIRE_AGGREGATION');
@@ -40,8 +40,11 @@ export function validatePlan(state: KanbanState, item: KanbanItem, value: Kanban
     }
 }
 export function assertReady(state: KanbanState, item: KanbanItem): void {
+    requireValue(!state.board.lifecycle,'BOARD_STOPPING');
+    requireValue(!state.board.executionControl?.paused,'BOARD_EXECUTION_PAUSED');
     requireValue(executable(state.board, item), 'PLAN_NOT_EXECUTABLE');
     requireValue(!item.blocked, 'ITEM_BLOCKED');
+    requireValue(!item.control || item.control.action === 'resume' && item.control.state === 'resumed', 'TASK_CONTROL_PENDING');
     const all = catalog(state);
     requireValue(plan(item).dependencies.every(id => all.find(i => i.id === id)?.status === 'completed'), 'DEPENDENCIES_UNFINISHED');
 }

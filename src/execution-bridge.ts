@@ -89,7 +89,11 @@ async function runDispatch(options: KanbanExecutionBridgeOptions, path: string, 
     const previousFailure = failures.has(dispatch.id);
     try {
         let record=await loadRecord(options,path,dispatch);if(!active()) return;
-        if ((!record || record.phase === 'prepared') && (await options.service.read(options.boardId)).executionControl?.paused) return;
+        const current = await options.service.item(options.boardId, dispatch.itemId);
+        if ((current.item.control?.action === 'cancel' || (await options.service.read(options.boardId)).lifecycle) && await track(preventSubmission(options, path, dispatch))) {
+            await settle(options, dispatch, {outcome: 'cancelled', code: 'CANCELLED_BEFORE_START'}); return;
+        }
+        if ((!record || record.phase === 'prepared') && ((await options.service.read(options.boardId)).executionControl?.paused || current.item.control?.action === 'pause')) return;
         if(!record) {
             stage='prepare';await options.authorize(stage,dispatch);if(!active()) return;
             const item=(await options.service.item(options.boardId,dispatch.itemId)).item;if(!active()) return;
@@ -98,6 +102,9 @@ async function runDispatch(options: KanbanExecutionBridgeOptions, path: string, 
         }
         if(!active()) return;
         const submit=record.phase==='prepared'&&await track(claimSubmission(options,path,dispatch));
+        if (!submit && await options.fs.meta.seq!.getEntry(path, 'cancelled:' + dispatch.id)) {
+            await settle(options, dispatch, {outcome: 'cancelled', code: 'CANCELLED_BEFORE_START'}); return;
+        }
         if(!active()) return; stage=submit?'start':'inspect';await options.authorize(stage,dispatch);if(!active()) return;
         result=await (submit?options.executor.start(record.request):options.executor.inspect(record.request));
         failures.delete(dispatch.id);
@@ -149,7 +156,7 @@ async function claimSubmission(options: KanbanExecutionBridgeOptions, path: stri
     return options.fs.meta.seq!.transaction!(async tx=>{
         const raw=await tx.getEntry(path,dispatch.id);if(!raw) throw new KanbanError('EXECUTION_JOURNAL_MISSING');
         const record=decodeRecord(raw,dispatch);
-        if(record.phase!=='prepared') return false;
+        if(record.phase!=='prepared' || await tx.getEntry(path, 'cancelled:' + dispatch.id)) return false;
         await tx.setEntry(path,dispatch.id,JSON.stringify({...record,phase:'submitting'}));return true;
     });
 }
@@ -180,4 +187,12 @@ async function linkSession(options: KanbanExecutionBridgeOptions, dispatch: Kanb
 }
 function safeCode(error: unknown): string {
     const code=(error as {reasonCode?:unknown})?.reasonCode??(error as {code?:unknown})?.code;return typeof code==='string'&&/^[A-Z][A-Z0-9_]{0,79}$/.test(code)?code:'EXECUTION_OBSERVATION_FAILED';
+}
+
+async function preventSubmission(options: KanbanExecutionBridgeOptions, path: string, dispatch: KanbanDispatch): Promise<boolean> {
+    return options.fs.meta.seq!.transaction!(async tx => {
+        const raw = await tx.getEntry(path, dispatch.id);
+        if (raw && decodeRecord(raw, dispatch).phase === 'submitting') return false;
+        await tx.setEntry(path, 'cancelled:' + dispatch.id, dispatch.fence); return true;
+    });
 }

@@ -6,7 +6,7 @@ import {assertReady, limits, catalog, terminal} from './planning';
 import {eligible, principal, principalKey, assigneeKey, candidates} from './identity';
 import {owned, participant, requireValue, text, validateEstimate} from './rules';
 
-type ItemCommand = Exclude<KanbanCommand, import('./contracts').KanbanTaskCommand | import('./contracts').KanbanWorkflowCommand | PlanningCommand | {type: 'set-board-control' | 'delete-board' | 'append-record' | 'review-record' | 'link-record' | 'review-amendment' | 'configure-automation'} | {type: 'create-item' | 'register-session' | 'message' | 'scan' | 'apply-discovery' | 'publish-proposal'}>;
+type ItemCommand = Exclude<KanbanCommand, import('./contracts').KanbanTaskCommand | import('./contracts').KanbanWorkflowCommand | PlanningCommand | {type: 'request-board-stop' | 'observe-board-stop' | 'delete-item' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'set-board-control' | 'delete-board' | 'append-record' | 'review-record' | 'link-record' | 'review-amendment' | 'configure-automation'} | {type: 'create-item' | 'register-session' | 'message' | 'scan' | 'apply-discovery' | 'publish-proposal'}>;
 export function transition(state: KanbanState, item: KanbanItem, command: ItemCommand, actor: KanbanActor, now: number, token: string): void {
     requireValue(item.status !== 'completed' && item.status !== 'cancelled', 'ITEM_COMPLETED');
     if (command.type === 'claim' || command.type === 'accept-transfer') claim(state, item, command, actor, now, token);
@@ -36,6 +36,7 @@ function claim(state: KanbanState, item: KanbanItem, command: Extract<ItemComman
     if (actor.sessionId) participant(item.participants, actor.sessionId, actor.agentId, 'owner', true, now);
 }
 function review(state: KanbanState, item: KanbanItem, accept: boolean, actor: KanbanActor, now: number): void {
+    requireValue(item.control?.action !== 'cancel', 'TASK_CANCELLING');
     requireValue(item.status === 'review', 'NOT_IN_REVIEW');
     const key = principalKey(principal(actor));
     const registered = actor.sessionId && item.participants.some(p => p.sessionId === actor.sessionId && p.roles.includes('reviewer'))

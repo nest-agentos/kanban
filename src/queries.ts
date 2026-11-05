@@ -35,6 +35,7 @@ function order(a: KanbanItemSummary, b: KanbanItemSummary): number {
     return a.planning.priority - b.planning.priority || a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 }
 function matchesQuery(item: KanbanItemSummary, query: Omit<KanbanItemQuery, 'cursor' | 'limit'>, board: KanbanState['board']): boolean {
+    if (item.deletedAt !== undefined && !query.includeDeleted) return false;
     if (query.phase && item.task?.phase !== query.phase) return false;
     if (!matchesView(item, query.view ?? 'ready')) return false;
     for (const field of ['area', 'milestone', 'parentId', 'kind'] as const) if (query[field] !== undefined && item.planning[field] !== query[field]) return false;
@@ -52,6 +53,7 @@ function matchesView(item: KanbanItemSummary, view: KanbanItemQuery['view']): bo
     return item.status === ({ready: 'open', backlog: 'backlog', review: 'review', proposed: 'proposed'} as Record<string, string>)[view!];
 }
 export function overview(state: KanbanState, now: number, items = state.board.items.map(summary)): KanbanOverview {
+    items = items.filter(item => item.deletedAt === undefined);
     const count = (status: string) => items.filter(i => i.status === status).length;
     const age = state.board.policy.backlogReviewMs;
     return {revision: state.board.revision, visible: items.length, active: items.filter(i => !terminal(i)).length, archived: state.archiveIndex?.length ?? 0, ready: count('open'),

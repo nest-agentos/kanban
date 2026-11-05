@@ -16,12 +16,13 @@ export interface KanbanProjectRecord {
     coordination?: {manager: KanbanPrincipal; executor?: KanbanPrincipal};
     number?: number;
     originRunId?: string; id: string; kind: 'log' | 'decision'; title: string; content: string; rationale?: string;
-    status: 'draft' | 'confirmed' | 'rejected' | 'superseded';
+    deletedAt?: number;
+    status: 'draft' | 'confirmed' | 'rejected' | 'superseded' | 'cancelling' | 'cancelled';
     itemIds: string[]; sources: KanbanSourceRef[]; author: KanbanPrincipal; origin: 'manual' | 'flow';
     revision: number; createdAt: number; updatedAt: number; reviewedBy?: KanbanPrincipal;
     supersedes?: string; supersededBy?: string;
 }
 export type KanbanRecordInput = Pick<KanbanProjectRecord, 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs'>;
 export type KanbanRecordSummary = Omit<KanbanProjectRecord, 'content' | 'rationale' | 'sources'> & {sessionIds: string[]};
-export interface KanbanRecordQuery {kind?: KanbanProjectRecord['kind']; itemId?: string; status?: KanbanProjectRecord['status']; limit?: number; cursor?: string}
+export interface KanbanRecordQuery {includeDeleted?: boolean; kind?: KanbanProjectRecord['kind']; itemId?: string; status?: KanbanProjectRecord['status']; limit?: number; cursor?: string}
 export interface KanbanRecordPage {revision: number; total: number; items: KanbanRecordSummary[]; nextCursor?: string}

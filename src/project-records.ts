@@ -4,14 +4,24 @@ import type {KanbanState} from './ports';
 import {identity, requireValue, text} from './rules';
 import {principal, principalKey} from './identity';
 import {requireReviewer, validateSources} from './amendments';
-export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record'}>;
+export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record'}>;
 export function isRecordCommand(command: KanbanCommand): command is RecordCommand {
-    return ['append-record', 'review-record', 'link-record'].includes(command.type);
+    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record'].includes(command.type);
 }
 export function applyRecord(state: KanbanState, command: RecordCommand, actor: KanbanActor, now: number, forceDraft = false): void {
     if (command.type === 'append-record') {append(state, command, actor, now, forceDraft); return;}
     const record = state.records?.find(record => record.id === command.recordId); requireValue(record, 'RECORD_NOT_FOUND');
-    if (command.type === 'link-record') {
+    requireValue(record.deletedAt === undefined, 'RECORD_DELETED');
+    if (command.type === 'request-record-cancellation' || command.type === 'cancel-record' || command.type === 'delete-record') {
+        requireReviewer(state.board, actor);
+        requireValue(principal(actor).kind === 'human', 'FORBIDDEN');
+        requireValue(record.kind === 'decision', 'DECISION_REQUIRED');
+        if (command.type !== 'request-record-cancellation') requireValue(record.itemIds.every(id => {const item = state.board.items.find(i => i.id === id) ?? state.archiveIndex?.find(i => i.id === id); return item && ['completed', 'cancelled'].includes(item.status);}), 'RECORD_EXECUTION_UNSETTLED');
+        if (command.type === 'request-record-cancellation') record.status = record.status === 'cancelled' ? 'cancelled' : 'cancelling';
+        else if (command.type === 'cancel-record') record.status = 'cancelled';
+        else {requireValue(['cancelled', 'rejected', 'superseded'].includes(record.status), 'RECORD_CANCEL_REQUIRED'); record.deletedAt = now;}
+    } else if (command.type === 'link-record') {
+        requireValue(!['cancelling','cancelled'].includes(record.status), 'RECORD_CANCELLING');
         validateItems(state, [command.itemId]);
         if (!record.itemIds.includes(command.itemId)) {requireValue(record.itemIds.length < 100, 'RECORD_LINK_LIMIT'); record.itemIds.push(command.itemId);}
     } else {
@@ -65,7 +75,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
     requireValue(Number.isSafeInteger(limit) && limit > 0 && limit <= 200, 'INVALID_LIMIT');
     if (query.kind) requireValue(['log', 'decision'].includes(query.kind), 'INVALID_RECORD_KIND');
     if (query.itemId !== undefined) identity(query.itemId);
-    if (query.status) requireValue(['draft', 'confirmed', 'rejected', 'superseded'].includes(query.status), 'INVALID_RECORD_STATUS');
+    if (query.status) requireValue(['draft', 'confirmed', 'rejected', 'superseded', 'cancelling', 'cancelled'].includes(query.status), 'INVALID_RECORD_STATUS');
     const digest = sha256HexSync(JSON.stringify(filter)); let offset = 0;
     if (cursor) {
         let decoded; try {decoded = JSON.parse(decodeURIComponent(cursor));} catch {requireValue(false, 'INVALID_CURSOR');}
@@ -74,7 +84,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
         requireValue(decoded.revision === state.board.revision && decoded.filter === digest, 'CURSOR_STALE');
         offset = decoded.offset; requireValue(Number.isSafeInteger(offset) && offset >= 0, 'INVALID_CURSOR');
     }
-    const matched = summaries.filter(record => (!query.kind || query.kind === record.kind)
+    const matched = summaries.filter(record => (query.includeDeleted || record.deletedAt === undefined) && (!query.kind || query.kind === record.kind)
         && (!query.itemId || record.itemIds.includes(query.itemId)) && (!query.status || query.status === record.status))
         .sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id));
     const items = matched.slice(offset, offset + limit);

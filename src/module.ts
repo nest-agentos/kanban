@@ -61,7 +61,7 @@ class KanbanModule implements KanbanService {
     catalog = () => this.guard(this.id(), undefined, 'catalog', async () => {
         const boards: import('./contracts').KanbanBoardSummary[] = [];
         for (const id of await this.options.store.ids()) {
-            try {const view = await this.readView(id); if (view.state.board.deletedAt !== undefined) continue; boards.push({...view.state.board, executionPhase: boardControlPhase({...view.state.board, items: view.items}), items: view.items.map(({id, title, number}) => ({id, title, ...(number === undefined ? {} : {number})}))});}
+            try {const view = await this.readView(id); if (view.state.board.deletedAt !== undefined) continue; boards.push({...view.state.board, executionPhase: boardControlPhase({...view.state.board, items: view.items}), items: view.items.filter(item => item.deletedAt === undefined).map(({id, title, number}) => ({id, title, ...(number === undefined ? {} : {number})}))});}
             catch (error) {if (!(error instanceof KanbanError) || error.code !== 'FORBIDDEN') throw error;}
         }
         return structuredClone(boards);
@@ -80,6 +80,7 @@ class KanbanModule implements KanbanService {
         await this.authorize(state.board, request.command.type, request.command);
         requireValue(state.board.deletedAt === undefined, 'BOARD_DELETED');
         if (request.command.type === 'delete-board') await this.options.verifyDeletion?.(structuredClone(state.board));
+        await this.options.verifyLifecycle?.(structuredClone(state.board), request.command);
         await this.verifyRelease(state.board, request.command);
         const verifyStage = request.command.type === 'observe-execution' && request.command.outcome === 'succeeded' ? 'observe'
             : request.command.type === 'accept-execution' && request.command.accept ? 'accept' : undefined;

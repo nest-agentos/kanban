@@ -1,3 +1,4 @@
+import {stopBoard, protectStoppedBoard} from './board-stop';
 import {setBoardControl} from './board-control';
 import {taskCommand, applyTaskCommand, assertDefinitionEditable, initializeTaskLaunch} from './task-commands';
 import {TASK_START_DELAY_MS} from './contracts/task-projection';
@@ -22,12 +23,22 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     operationId: string, now: number, token: string, workflowInternal = false): KanbanState {
     requireValue(state.board.deletedAt === undefined, 'BOARD_DELETED');
     numberEntities(state);
+    protectStoppedBoard(state,command);
+    if ('itemId' in command && command.itemId) requireValue(state.board.items.find(i => i.id === command.itemId)?.deletedAt === undefined, 'ITEM_DELETED');
     if (!workflowInternal) protectWorkflowItem(state, command);
     const board = state.board;
     if (command.type === 'delete-board') return deleteBoard(state, actor, operationId, now);
     if (command.type === 'scan') { scan(state, actor, operationId, now); refreshReady(state); return state; }
     let recordEvent = command.type !== 'renew';
-    if (command.type === 'set-board-control') setBoardControl(state, command, actor, now, token);
+    if (command.type === 'request-board-stop' || command.type === 'observe-board-stop') stopBoard(state,command,actor,now);
+    else if (command.type === 'set-board-control') setBoardControl(state, command, actor, now, token);
+    else if (command.type === 'delete-item') {
+        const item = itemFor(board, command.itemId);
+        requireValue(principal(actor).kind === 'human', 'FORBIDDEN');
+        requireValue(terminal(item), 'ITEM_DELETE_REQUIRES_CLOSED');
+        delete item.owner; delete item.transfer;
+        item.deletedAt = now; item.updatedAt = now; item.revision++;
+    }
     else if (taskCommand(command)) applyTaskCommand(state, command, actor, now);
     else if (isWorkflowCommand(command)) recordEvent = applyWorkflow(state, command, actor, now, (inner, owner = actor) => {reduce(state,inner,owner,operationId,now,token,true);});
     else if (command.type === 'apply-discovery') applyDiscovery(state, command.batch, actor, now);
@@ -124,7 +135,8 @@ export function escalationReasons(board: KanbanBoard, item: KanbanItem, now: num
 }
 
 function eventData(command: KanbanCommand, state: KanbanState): KanbanEvent['data'] {
-    if (command.type === 'set-board-control') return {code: 'BOARD_' + (state.board.executionControl?.paused ? 'PAUSE_REQUESTED' : state.board.executionControl?.mode?.toUpperCase())};
+    if (command.type === 'request-board-stop' || command.type === 'observe-board-stop') return {code:state.board.lifecycle?.code,reason:state.board.lifecycle?.intent,itemIds:state.board.items.filter(item=>item.control?.action==='cancel').map(item=>item.id)};
+    else if (command.type === 'set-board-control') return {code: 'BOARD_' + (state.board.executionControl?.paused ? 'PAUSE_REQUESTED' : state.board.executionControl?.mode?.toUpperCase())};
     if (command.type === 'apply-discovery') return discoveryEvent(state, command.batch);
     if (command.type === 'report-analysis') return {code:command.status.code, reason:'analysis-'+command.status.state};
     if (command.type === 'control-receipt') return {code:command.code, reason:'control-'+command.state};
@@ -155,8 +167,9 @@ function discoveryEvent(state: KanbanState, batch: import('./contracts').KanbanD
 function deleteBoard(state: KanbanState, actor: KanbanActor, operationId: string, now: number): KanbanState {
     const owner = principal(actor), board = state.board;
     requireValue(owner.kind === 'human' && board.members?.some(member => member.kind === owner.kind && member.id === owner.id && member.roles?.includes('coordinator')), 'COORDINATOR_REQUIRED');
-    requireValue(!board.items.some(item => item.owner || item.transfer || item.status === 'claimed'), 'BOARD_EXECUTION_ACTIVE');
+    requireValue(!board.items.some(item => !terminal(item) && (item.owner || item.transfer || item.status === 'claimed')), 'BOARD_EXECUTION_ACTIVE');
     requireValue(!Object.values(state.workflow?.dispatches ?? {}).some(dispatch => ['prepared', 'running', 'unknown', 'succeeded'].includes(dispatch.outcome)), 'BOARD_EXECUTION_UNSETTLED');
+    requireValue(!board.items.some(item => item.control?.action === 'cancel' && item.control.state !== 'cancelled' && !terminal(item)), 'BOARD_CONTROL_UNSETTLED');
     board.deletedAt = now; board.revision++;
     if (board.automation) board.automation.enabled = false;
     if (state.workflow) state.workflow.ready = [];

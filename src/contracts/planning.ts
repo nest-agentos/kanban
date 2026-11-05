@@ -6,6 +6,7 @@ export interface KanbanPlanning {
     priority: number; dependencies: string[]; references: string[];
 }
 export interface KanbanItemSummary {
+    deletedAt?: number;
     launch?: import('./task-state').KanbanLaunch; analysis?: import('./automation').KanbanAnalysisStatus;
     control?: import('./task-state').KanbanTaskControl; issues?: import('./task-state').KanbanTaskIssue[]; blocked?: KanbanItem['blocked'];
     task?: import('./task-state').KanbanTaskProjection;
@@ -19,6 +20,7 @@ export interface KanbanItemSummary {
 }
 export interface KanbanArchivedItem {item: KanbanItem; archivedAt: number; reason: string}
 export interface KanbanItemQuery {
+    includeDeleted?: boolean;
     phase?: import('./task-state').KanbanTaskPhase;
     view?: 'ready' | 'backlog' | 'in-progress' | 'review' | 'closed' | 'proposed' | 'archive' | 'all';
     area?: string; milestone?: string; parentId?: string; kind?: KanbanPlanning['kind'];
