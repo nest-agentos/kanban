@@ -40,7 +40,8 @@ async function advance(options:Options,snapshot:CoordinationSnapshot,active:()=>
         }
     }
     if(!active()||!admission)return;
-    const fingerprint=sha256HexSync(JSON.stringify(snapshot.children.map(child=>[child.id,child.phase,child.reason])));
+    const attention=new Set(['waiting-input','error','unknown','review','completed','cancelled']);
+    const fingerprint=sha256HexSync(JSON.stringify(snapshot.children.map(child=>[child.id,attention.has(child.phase)?child.phase:'active',attention.has(child.phase)?child.reason:undefined])));
     if(state.fingerprint===fingerprint)return;
     if(!state.fingerprint&&!snapshot.children.some(child=>['waiting-input','error','unknown','review','completed','cancelled'].includes(child.phase))){await journal.update<State>(key,old=>({...old,fingerprint}));return;}
     const id='coordinate-'+sha256HexSync(JSON.stringify([snapshot.boardId,snapshot.parent.id,fingerprint,state.fingerprint])).slice(0,48),jobKey='coordination-operation:'+id;

@@ -22,6 +22,7 @@ async function fixture(){
 }
 it('coalesces unchanged state, survives restart and never resubmits a running coordination operation',async()=>{
     const f=await fixture();await f.tick();expect(f.prepare).not.toHaveBeenCalled();
+    await f.command({type:'report-analysis',itemId:'child',operationId:'normal-progress',status:{itemId:'child',state:'analyzing'}});await f.tick();expect(f.prepare).not.toHaveBeenCalled();
     await f.command({type:'report-analysis',itemId:'child',operationId:'question',status:{itemId:'child',state:'clarification',reason:'Need input'}});
     await f.tick();await f.tick();expect(f.prepare).toHaveBeenCalledOnce();expect(f.start).toHaveBeenCalledOnce();
     f.inspect.mockResolvedValue({state:'succeeded',executionId:'original-session',output:{ready:true}});
