@@ -194,7 +194,7 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
 }
 
 function decisionSignature(record: KanbanProjectRecord): string {
-    return sha256HexSync(JSON.stringify([record.title, record.content, record.rationale, record.externalRefs,record.executionEpoch]));
+    return sha256HexSync(JSON.stringify([record.title, record.content, record.rationale, record.externalRefs,record.completion,record.executionEpoch]));
 }
 function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: KanbanRecordRunRequest, id: string, resourceSystem: string): SavedRun {
     const placement = request.placement ?? 'current-board';
@@ -286,7 +286,8 @@ async function finishDecisionCancellation(options: Options, boardId: string, rec
 async function restartDecision(options:Options,boardId:string,recordId:string,operationId:string):Promise<void> {
     await journalCommand(options.journal,options.service,boardId,'record-restart:'+operationId,{type:'restart-record',recordId,epoch:operationId});
     const record=await options.service.record(boardId,recordId);
-    const run=await prepare(options,boardId,{recordId,operationId:'restart-'+operationId,expectedRevision:record.revision});
+    const existing=(await options.journal.get<SavedRun[]>('record-runs:'+boardId))?.find(run=>run.recordId===recordId&&run.record.executionEpoch===operationId);
+    const run=await prepare(options,boardId,{recordId,operationId:'restart-'+operationId,expectedRevision:existing?.requestRevision??existing?.recordRevision??record.revision});
     await advance(options,run);
 }
 
