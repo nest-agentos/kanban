@@ -30,6 +30,7 @@ export interface KanbanExecutionBridgeOptions {
     subscribe?(wake: () => void): () => void;
     now?:()=>number;
     autoDispatch?: boolean | (() => Promise<boolean>); shutdownTimeoutMs?: number;
+    ready?(item:KanbanItem):Promise<boolean>;
     estimate?(item: KanbanItem, principal: KanbanPrincipal): Promise<KanbanEstimate | undefined>;
 }
 interface ExecutionRecord {schema: 1; fence: string; request: unknown; digest: string; phase: 'prepared' | 'submitting'}
@@ -73,7 +74,7 @@ async function runBridge(options: KanbanExecutionBridgeOptions, path: string, ac
         if(!active()) return;
         const {item}=await options.service.item(options.boardId,id), owner=item.eligiblePrincipals?.[0]; if(!owner || !taskDue(item, (options.now??Date.now)())) continue;
         const worker=await options.worker(owner), board=await worker.read(options.boardId);if(!active()) return;
-        if (!boardAllowsStart(board, item)) continue;
+        if(!boardAllowsStart(board,item)||options.ready&&!await options.ready(item))continue;
         try {
             const dispatchId=randomUUID();
             const estimate=await options.estimate?.(item,owner);if(!active()) return;

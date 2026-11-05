@@ -18,6 +18,7 @@ export interface KanbanAutomationOptions {
     serviceFor(actor:KanbanActor):KanbanService;
     catalog():Promise<KanbanAutomationCatalog>;
     executor(context:KanbanExecutorContext):Promise<KanbanExecutionPort>;
+    deliveryReady?(boardId:string,item:KanbanItem):Promise<boolean>;
     coordinate?(board:KanbanBoard,active:()=>boolean):Promise<void>;
     analyze?(board:KanbanBoard,item:KanbanItem,service:KanbanService,active:()=>boolean):Promise<void>;
     controls?(board:KanbanBoard,service:KanbanService):Promise<void>;
@@ -53,7 +54,7 @@ async function scanBoards(options:KanbanAutomationOptions,bridges:Map<string,Bri
             await options.drain?.(await service.read(board.id),service);
             await planNext(options,await service.read(board.id),active);
             if(active())await bridge.scan();
-            if(active())await completeCompositePlans(options.service,options.journal,board.id,options.serviceFor);
+            if(active())await completeCompositePlans(options.service,options.journal,board.id,options.serviceFor,options.deliveryReady);
             if(active())await options.coordinate?.(await service.read(board.id),active);
             options.log({operationId:board.id,boardId:board.id,stage:'automation.scan',result:'success',durationMs:Date.now()-started});
         }catch(error){errors.push(error);options.log({operationId:entry.id,boardId:entry.id,stage:'automation.scan',result:'failure',code:safeCode(error,'AUTOMATION_SCAN_FAILED'),durationMs:Date.now()-started});}
@@ -93,6 +94,7 @@ async function createBridge(options:KanbanAutomationOptions,boardId:string):Prom
     return createKanbanExecutionBridge({fs:options.fs,directory:options.directory+'/'+encodeURIComponent(boardId),boardId,service,
         worker:async actor=>options.serviceFor(actor),executor,executionReference:options.executionReference,
         autoDispatch:async()=>(await options.service.read(boardId)).automation?.enabled===true,
+        ready:options.deliveryReady?async item=>{for(const id of item.planning?.dependencies??[])if(!await options.deliveryReady!(boardId,(await service.item(boardId,id)).item))return false;return true;}:undefined,
         estimate:item=>estimateFor(options.journal,boardId,item),
         authorize:async stage=>{const latest=await options.service.read(boardId);if(stage!=='inspect'){requireValue(latest.automation?.enabled,'AUTOMATION_PAUSED');requireValue(!latest.executionControl?.paused,'BOARD_EXECUTION_PAUSED');}},
         log:event=>options.log({...event,boardId})});

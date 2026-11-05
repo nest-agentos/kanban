@@ -225,3 +225,8 @@ it('revises a stopped decision in place and refuses to replace the content of a 
     const after=await reviewer.record('b','decision');expect(after).toMatchObject({id:before.id,number:before.number,status:'cancelled',content:'Confirmed scope',revision:before.revision+1});
     expect(before.content).toBe('Original');
 });
+it('freezes explicit automatic completion with the approved decision',async()=>{
+ const f=await fixture();await f.run(f.managerApi,{type:'append-record',record:{id:'auto-decision',kind:'decision',title:'Automatic',content:'Scope',rationale:'Verify all',itemIds:[],sources:[],completion:'automatic'}});
+ expect((await f.managerApi.record('b','auto-decision')).completion).toBe('automatic');
+ await expect(f.run(f.managerApi,{type:'append-record',record:{id:'bad-auto',kind:'log',title:'Invalid',content:'Scope',itemIds:[],sources:[],completion:'automatic'}})).rejects.toMatchObject({code:'INVALID_COMPLETION_POLICY'});
+});

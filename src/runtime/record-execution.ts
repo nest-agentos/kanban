@@ -15,6 +15,7 @@ interface SavedRun extends KanbanRecordExecution {
     sourceBoardId: string; record: KanbanProjectRecord; automation: NonNullable<KanbanBoard['automation']>}
 type RunReceipt = Pick<SavedRun, 'id' | 'sourceBoardId' | 'recordId' | 'recordRevision' | 'requestRevision' | 'placement'> & {schema?: 2};
 interface Options {
+    deliveryReady?(boardId:string,item:KanbanItem):Promise<boolean>;
     archiveItemResources?(boardId:string,itemId:string,operationId:string):Promise<void>;
     archiveSession?(sessionId:string,operationId:string):Promise<void>;
     planningSession?: KanbanClient['planningSession'];
@@ -171,10 +172,13 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
         const board = await options.service.read(run.boardId);
         const items = run.itemIds ? await Promise.all(run.itemIds.map(async id => board.items.find(item => item.id === id) ?? (await options.service.item(run.boardId, id)).item)) : board.items;
         if(run.rootItemId&&!run.itemIds?.includes(run.rootItemId)&&items.every(item=>item.purpose!=='planning')&&board.items.find(item=>item.id===run.rootItemId)?.purpose==='planning')await once(options,run,'finish-planning',{type:'finish-planning',itemId:run.rootItemId});
-        const stage=items.some(item=>item.purpose==='planning')?'planning' as const:'execution' as const,state=runState(items);
+        const stage=items.some(item=>item.purpose==='planning')?'planning' as const:'execution' as const;
+        let state=runState(items);
+        if(state==='completed'&&options.deliveryReady&&!(await Promise.all(items.map(item=>options.deliveryReady!(run.boardId,item)))).every(Boolean))state='review';
         if (state === 'completed' && run.rootItemId && !run.itemIds?.includes(run.rootItemId) && board.items.find(item => item.id === run.rootItemId)?.status !== 'completed') {
             await once(options, run, 'close-root', {type: 'close-plan', itemId: run.rootItemId, resultRef: 'kanban-run:' + run.id});
         }
+        if(state==='completed'&&run.rootItemId&&!run.itemIds?.includes(run.rootItemId)&&options.deliveryReady&&!await options.deliveryReady(run.boardId,(await options.service.item(run.boardId,run.rootItemId)).item))state='review';
         const code = state === 'failed' ? 'DECISION_TASK_CANCELLED' : state === 'blocked' && items.some(item=>projectKanbanTask(item).phase==='waiting-input') ? 'DECISION_INPUT_REQUIRED' : undefined;
         if (run.state===state&&run.code===code&&run.stage===stage) return view(run);
         const updated = await save(options, {...run,state,code,stage,updatedAt: Date.now()});

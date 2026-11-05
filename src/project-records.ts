@@ -18,6 +18,8 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
         requireValue(record.kind==='decision'&&['draft','cancelled'].includes(record.status),'RECORD_CANCEL_REQUIRED');
         requireValue(record.itemIds.every(id=>{const item=state.board.items.find(row=>row.id===id)??state.archiveIndex?.find(row=>row.id===id);return item&&['completed','cancelled'].includes(item.status);}),'RECORD_EXECUTION_UNSETTLED');
         text(command.title);text(command.content);text(command.rationale);
+        requireValue(command.completion===undefined||['manual','automatic'].includes(command.completion),'INVALID_COMPLETION_POLICY');
+        if(command.completion!==undefined)record.completion=command.completion;
         record.title=command.title;record.content=command.content;record.rationale=command.rationale;record.updatedAt=now;record.revision++;return;
     }
     if (command.type === 'request-record-cancellation'  || command.type === 'cancel-record' || command.type === 'delete-record' || command.type==='archive-record' || command.type==='restart-record') {
@@ -47,8 +49,10 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
 }
 function append(state: KanbanState, command: Extract<RecordCommand, {type: 'append-record'}>, actor: KanbanActor, now: number, forceDraft: boolean): void {
     validateSources(command.record.sources);
-    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs} = command.record;
-    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {})}); identity(input.id); text(input.title); text(input.content);
+    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,completion} = command.record;
+    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{})}); identity(input.id); text(input.title); text(input.content);
+    requireValue(completion===undefined||kind==='decision'&&['manual','automatic'].includes(completion),'INVALID_COMPLETION_POLICY');
+    if(completion)input.completion=completion;
     validateRecordReferences(externalRefs);
     requireValue(input.kind === 'log' || input.kind === 'decision', 'INVALID_RECORD_KIND');
     requireValue(!state.records?.some(record => record.id === input.id), 'RECORD_EXISTS');

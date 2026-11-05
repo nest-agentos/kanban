@@ -1,6 +1,6 @@
 import type {KanbanAutomationJournal} from './automation-journal';
 import type {TaskControlPorts} from './task-controls';
-interface ReviewJob {id:string;boardId:string;itemId:string;phase:string;action:string;state:string;code?:string;sessionId?:string;input?:unknown;request?:unknown}
+interface ReviewJob {id:string;boardId:string;itemId:string;phase:string;managed?:unknown;action:string;state:string;code?:string;sessionId?:string;input?:unknown;request?:unknown}
 import {controlExecution as controlCall} from './control';
 import {requireValue} from '../rules';
 import {sha256HexSync} from '../utils';
@@ -11,6 +11,7 @@ export async function cancelTaskMaintenance(options: TaskControlPorts, journal: 
     for (const row of jobs) {
         const saved = await journal.update<ReviewJob>(row.key, old => old!.phase === 'prepared' ? {...old!,phase:'settled',state:'failed',code:'USER_CANCELLED'} : old!);
         if (saved.phase === 'settled') continue;
+        if(saved.managed)return 'accepted';
         if (saved.action === 'accept') return 'accepted';
         requireValue(saved.request ?? saved.input, 'TASK_CONTROL_ROUTE_MISSING');
         const id = sha256HexSync(JSON.stringify([controlId,saved.id]));

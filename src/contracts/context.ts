@@ -13,6 +13,7 @@ export interface KanbanProjectRecord {
     /** Immutable, host-projected activity; decisions remain in the coordination store. */
     activity?: KanbanRecordActivity;
     externalRefs?: import('./configuration').KanbanExternalReference[];
+    completion?:'manual'|'automatic';
     coordination?: {manager: KanbanPrincipal; executor?: KanbanPrincipal};
     number?: number;
     originRunId?: string; id: string; kind: 'log' | 'decision'; title: string; content: string; rationale?: string;
@@ -22,7 +23,7 @@ export interface KanbanProjectRecord {
     revision: number; createdAt: number; updatedAt: number; reviewedBy?: KanbanPrincipal;
     supersedes?: string; supersededBy?: string;
 }
-export type KanbanRecordInput = Pick<KanbanProjectRecord, 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs'>;
+export type KanbanRecordInput = Pick<KanbanProjectRecord, 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs' | 'completion'>;
 export type KanbanRecordSummary = Omit<KanbanProjectRecord, 'content' | 'rationale' | 'sources'> & {sessionIds:string[];attention?:'waiting-input'|'error'|'review'};
 export interface KanbanRecordQuery {includeDeleted?: boolean; includeArchived?:boolean; kind?: KanbanProjectRecord['kind']; itemId?: string; status?: KanbanProjectRecord['status']; limit?: number; cursor?: string}
 export interface KanbanRecordPage {revision: number; total: number; items: KanbanRecordSummary[]; nextCursor?: string}
