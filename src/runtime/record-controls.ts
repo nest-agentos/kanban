@@ -20,8 +20,12 @@ export async function advanceRecordControl(service: KanbanClient, journal: Kanba
         for (const child of children) ids.add(child.id);
     }
     items = board.items.filter(item => ids.has(item.id));
-    for (const item of items.filter(item => !['completed','cancelled'].includes(item.status))) await requestItemControl(service, journal, run, control, item);
-    const latest = await service.read(run.boardId), active = latest.items.filter(item => ids.has(item.id) && !['completed','cancelled'].includes(item.status));
+    const operations=control.action==='cancel'?(await Promise.all(['review-operation:','coordination-operation:','fix:'].map(prefix=>journal.findForBoard<{itemId:string;phase:string;state?:string;accepted?:boolean}>(prefix,run.boardId,job=>job.phase!=='settled'&&!job.accepted&&job.state!=='cancelled')))).flat():[];
+    const pending=new Set(operations.map(row=>row.value.itemId));
+    for(const item of items) {
+        if(!['completed','cancelled'].includes(item.status)||pending.has(item.id))await requestItemControl(service,journal,run,control,item);
+    }
+    const latest = await service.read(run.boardId), active = latest.items.filter(item => ids.has(item.id) && (!['completed','cancelled'].includes(item.status)||item.control?.action==='cancel'&&item.control.state!=='cancelled'));
     if (control.action === 'cancel') return active.length ? 'cancelling' : 'cancelled';
     const managed = active.filter(item => control.controls[item.id]);
     if (managed.some(item => item.control?.state === 'unknown')) return 'unknown';

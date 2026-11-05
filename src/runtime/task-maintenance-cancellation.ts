@@ -7,7 +7,7 @@ import {sha256HexSync} from '../utils';
 
 /** Submission claims and definite no-start cancellation compete in the original journal transaction. */
 export async function cancelTaskMaintenance(options: TaskControlPorts, journal: KanbanAutomationJournal, board: string, item: string, controlId: string): Promise<'cancelled' | 'accepted' | 'unknown'> {
-    const jobs = await journal.findForBoard<ReviewJob>('review-operation:', board, job => job.itemId === item && job.phase !== 'settled');
+    const jobs=(await Promise.all(['review-operation:','coordination-operation:'].map(prefix=>journal.findForBoard<ReviewJob>(prefix,board,job=>job.itemId===item&&job.phase!=='settled')))).flat();
     for (const row of jobs) {
         const saved = await journal.update<ReviewJob>(row.key, old => old!.phase === 'prepared' ? {...old!,phase:'settled',state:'failed',code:'USER_CANCELLED'} : old!);
         if (saved.phase === 'settled') continue;

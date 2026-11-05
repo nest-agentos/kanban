@@ -20,10 +20,18 @@ export function publishPlan(state: KanbanState, plan: KanbanWorkPlan, actor: Kan
         requireValue(decision, 'DECISION_NOT_CONFIRMED');
         if(decision.coordination) requireValue(principalKey(decision.coordination.manager)===principalKey(principal(actor)), 'DECISION_MANAGER_REQUIRED');
     }
+    requireValue(plan.mode===undefined||plan.mode==='append'&&!!plan.rootItemId,'INVALID_WORK_PLAN');
+    requireValue(plan.coordination===undefined||typeof plan.coordination==='boolean','INVALID_WORK_PLAN');
     if(plan.rootItemId) {
         const root=state.board.items.find(item=>item.id===plan.rootItemId);
-        requireValue(root&&!root.owner&&['backlog','open'].includes(root.status),'PLAN_ROOT_UNAVAILABLE');
+        requireValue(root&&!root.owner&&!root.deletedAt&&root.control?.action!=='cancel','PLAN_ROOT_UNAVAILABLE');
+        if(plan.mode==='append') {
+            requireValue(!previous&&root.planning?.execution==='children'&&['backlog','open','completed'].includes(root.status),'PLAN_ROOT_UNAVAILABLE');
+            requireValue(plan.items.every(item=>!state.board.items.some(existing=>existing.id===item.id)&&!state.archiveIndex?.some(existing=>existing.id===item.id)),'APPEND_REQUIRES_NEW_ITEMS');
+            if(root.status==='completed'){root.status='backlog';delete root.closedAt;delete root.resultRef;root.revision++;}
+        }else requireValue(['backlog','open'].includes(root.status),'PLAN_ROOT_UNAVAILABLE');
         delete root.purpose;
+        if(plan.coordination===true)root.planning={...planning(root),coordination:true};
         if(root.planning?.execution!=='children')apply({type:'plan-item',itemId:root.id,planning:{...planning(root),execution:'children'}});
     }
     const ordered = orderWork(plan.items, state), definitions: KanbanPublishedPlan['definitions'] = {};

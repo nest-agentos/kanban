@@ -7,7 +7,7 @@ export interface KanbanWorkDefinition {
     dependsOn: string[]; inputs?: Record<string, {fromItemId: string; output: string}>; outputs?: string[];
 }
 export interface KanbanWorkPlan {
-    schema: 'kanban.plan/1'; id: string; revision: number; decisionId?: string; rootItemId?: string;
+    schema: 'kanban.plan/1'; mode?:'append'; coordination?:boolean; id: string; revision: number; decisionId?: string; rootItemId?: string;
     sealed: boolean; items: KanbanWorkDefinition[];
 }
 export interface KanbanPublishedPlan extends Omit<KanbanWorkPlan, 'items'> {itemIds: string[]; definitions: Record<string, {digest: string; inputs: KanbanWorkDefinition['inputs']; outputs: string[]}>}

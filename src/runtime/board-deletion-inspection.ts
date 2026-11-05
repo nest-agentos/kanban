@@ -15,7 +15,7 @@ export async function boardDeletionBlockers({service, journal}: Options, boardId
     for (const item of board.items) if (!['completed','cancelled'].includes(item.status) && (item.owner || item.transfer || item.status === 'claimed')) rows.push({code: 'BOARD_EXECUTION_ACTIVE', itemId: item.id});
     for (const item of board.items) if (item.control?.action === 'cancel' && item.control.state !== 'cancelled' && !['completed','cancelled'].includes(item.status)) rows.push({code:'BOARD_CONTROL_UNSETTLED',itemId:item.id});
     for (const dispatch of Object.values(workflow.dispatches)) if (['prepared', 'running', 'unknown', 'succeeded'].includes(dispatch.outcome)) rows.push({code: 'BOARD_EXECUTION_UNSETTLED', itemId: dispatch.itemId});
-    const reviews = await journal.findForBoard<{boardId: string; itemId: string; phase: string}>('review-operation:', boardId, job => job.boardId === boardId && job.phase !== 'settled');
+    const reviews=(await Promise.all(['review-operation:','coordination-operation:'].map(prefix=>journal.findForBoard<{boardId:string;itemId:string;phase:string}>(prefix,boardId,job=>job.boardId===boardId&&job.phase!=='settled')))).flat();
     rows.push(...reviews.map(({value}) => ({code: 'BOARD_MAINTENANCE_ACTIVE', itemId: value.itemId})));
     const runs = await journal.findForBoard<Array<{sourceBoardId: string; boardId: string; state: string}>>('record-runs:', boardId, runs => runs.some(run => (run.sourceBoardId === boardId || run.boardId === boardId) && !['completed', 'failed', 'cancelled'].includes(run.state)));
     if (runs.length) rows.push({code: 'BOARD_DECISION_UNSETTLED'});

@@ -37,6 +37,7 @@ export async function scanTaskControls(options: TaskControlPorts, journal: Kanba
 async function observe(options: TaskControlPorts, journal: KanbanAutomationJournal, board: KanbanBoard, item: KanbanItem, service: KanbanService): Promise<KanbanTaskControl['state']> {
     const control = item.control!;
     if (control.action === 'cancel') {
+        const collaboration=await options.beforeCancel?.(board.id,item.id,control.id);if(collaboration&&collaboration!=='cancelled')return collaboration;
         const state = await cancelTaskReplies(options, journal, board.id, item.id, control.id);
         if (state !== 'cancelled') return state;
         const maintenance = await cancelTaskMaintenance(options,journal,board.id,item.id,control.id);

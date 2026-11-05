@@ -5,15 +5,16 @@ import {journalCommand} from './journal-command';
 import {analysisHistory,type AnalysisJournalEntry} from './analysis-history';
 import {randomUUID,sha256HexSync} from '../utils';
 import {requireValue} from '../rules';
-export interface KanbanFixPreparation {resourceId:string;context:unknown}
+export interface KanbanFixPreparation {resourceId:string;context:unknown;origin?:{id:string;input:unknown}}
 export class KanbanCollaboration {
     constructor(private readonly service:KanbanClient,private readonly journal:KanbanAutomationJournal) {}
     async prepareFix(boardId:string,request:{itemId:string;operationId:string},prepare:(input:{id:string;board:KanbanBoard;item:KanbanItem})=>Promise<KanbanFixPreparation>):Promise<SavedFix> {
         requireValue(/^[\w-]{1,128}$/.test(request.operationId),'INVALID_OPERATION_ID');
         const board=await this.service.read(boardId),item=(await this.service.item(boardId,request.itemId)).item;
         requireValue(!board.lifecycle,'BOARD_STOPPING');requireValue(item.deletedAt===undefined,'ITEM_DELETED');
-        requireValue(item.launch?.admittedAt!==undefined||['claimed','review','completed'].includes(item.status),'FIX_REQUIRES_STARTED_TASK');
-        const id=await this.journal.update<string>('fix-operation:'+boardId+':'+request.operationId,old=>old??randomUUID());
+        requireValue(item.planning?.execution==='children'||item.launch?.admittedAt!==undefined||['claimed','review','completed'].includes(item.status),'FIX_REQUIRES_STARTED_TASK');
+        const active=(await this.journal.findForBoard<SavedFix>('fix:',boardId,fix=>fix.itemId===item.id&&!fix.accepted&&fix.state!=='cancelled'))[0]?.value;
+        const id=await this.journal.update<string>('fix-operation:'+boardId+':'+request.operationId,old=>old??active?.id??randomUUID());
         let fix=await this.journal.get<SavedFix>('fix:'+id);
         requireValue(!fix||fix.boardId===boardId&&fix.itemId===item.id,'IDEMPOTENCY_CONFLICT');
         if(!fix) {
@@ -22,7 +23,7 @@ export class KanbanCollaboration {
             const dispatch:KanbanDispatch={id,itemId:item.id,itemRevision:item.revision,planId:id,planRevision:1,principal:board.automation.worker,
                 definitionDigest:sha256HexSync(JSON.stringify(prepared.context)),attempt:1,fence:id,preparedAt:Date.now(),outcome:'prepared',inputs:{}};
             fix=await this.journal.update<SavedFix>('fix:'+id,old=>old??{id,boardId,itemId:item.id,sessionId:id,state:'clarifying',phase:'prepared',dispatch,item:structuredClone(item),
-                resourceId:prepared.resourceId,context:prepared.context,request:null});
+                resourceId:prepared.resourceId,context:prepared.context,origin:prepared.origin,request:null});
         }
         await this.journal.update<string[]>('fix-index',old=>old?.includes(id)?old:[...old??[],id]);return fix;
     }
@@ -42,14 +43,16 @@ export class KanbanCollaboration {
         const fix=await this.fix(id),snapshot=fix.snapshot;requireValue(snapshot,'FIX_PROPOSAL_REQUIRED');
         requireValue(!['cancelling','cancelled'].includes(fix.state),'FIX_INPUT_CLOSED');
         const board=await this.service.read(fix.boardId);
-        requireValue(!board.workTypes?.length||board.workTypes.some(type=>type.id===policy.kind&&type.executable),'FIX_WORK_TYPE_REQUIRED');
+        requireValue(!!snapshot.definition.children||!board.workTypes?.length||board.workTypes.some(type=>type.id===policy.kind&&type.executable),'FIX_WORK_TYPE_REQUIRED');
         await this.publishFix(fix);
-        await journalCommand(this.journal,this.service,fix.boardId,'fix-create:'+fix.id,{type:'create-item',item:{id:snapshot.operationId,
+        if(snapshot.definition.children)await journalCommand(this.journal,this.service,fix.boardId,'fix-create:'+fix.id,{type:'publish-plan',plan:{
+            schema:'kanban.plan/1',id:snapshot.operationId,revision:1,sealed:true,mode:'append',rootItemId:fix.itemId,items:snapshot.definition.children}});
+        else await journalCommand(this.journal,this.service,fix.boardId,'fix-create:'+fix.id,{type:'create-item',item:{id:snapshot.operationId,
             title:snapshot.definition.title,responsibility:snapshot.definition.responsibility,acceptance:snapshot.definition.acceptance,
             externalRefs:fix.item.externalRefs?.filter(ref=>policy.inheritSystems.includes(ref.system))},
             planning:{kind:policy.kind,priority:fix.item.planning?.priority??2,dependencies:snapshot.definition.dependencies,references:[]}});
         await deliver(fix);
-        await this.journal.update<SavedFix>('fix:'+id,old=>({...old!,accepted:true,state:'accepted',createdItemId:snapshot.operationId}));
+        await this.journal.update<SavedFix>('fix:'+id,old=>({...old!,accepted:true,state:'accepted',createdItemId:snapshot.definition.children?fix.itemId:snapshot.operationId}));
     }
     private async publishFix(fix:SavedFix):Promise<void> {
         const snapshot=fix.snapshot!,envelope={schema:'kanban.fix/1',version:1,operationId:snapshot.operationId,sourceSessionId:fix.sessionId,

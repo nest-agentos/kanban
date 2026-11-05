@@ -30,3 +30,5 @@ export type {KanbanRuntimeOptions,KanbanRuntimeContext,KanbanRuntimeExtension} f
 export {coordinateOperation} from './operation-runner';
 export type {KanbanOperationRecord,KanbanOperationObservation,KanbanOperationFailure,KanbanOperationPort} from './operation-contracts';
 export {KanbanCollaboration,collaborationRelations,type KanbanFixPreparation} from './collaboration';
+
+export {createTaskCoordinator,currentCoordination,type CoordinationSnapshot,type CoordinationOperation} from './task-coordinator';

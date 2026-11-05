@@ -194,3 +194,34 @@ it('rolls back invalid subtask plans without converting the parent or creating p
     await expect(f.run(f.managerApi,{type:'publish-plan',plan:{...f.plan,rootItemId:'parent'}})).rejects.toMatchObject({code:'INVALID_PARENT_KIND'});
     expect(await f.store.read('b')).toEqual(before);
 });
+it('appends new children atomically to a completed coordinator without replacing existing tasks or plans',async()=>{
+    const f=await fixture();
+    await f.run(f.managerApi,{type:'create-item',item:{id:'group',title:'Coordinator',responsibility:'Coordinate',acceptance:'Accepted children'},planning:{kind:'task',priority:2,dependencies:[],references:[]}});
+    const child={id:'first',title:'First',responsibility:'Build',acceptance:'Verified',workType:'subtask',assignee:{kind:'service' as const,id:'worker'},dependsOn:[]};
+    await f.run(f.managerApi,{type:'publish-plan',plan:{schema:'kanban.plan/1',id:'initial',revision:1,sealed:true,rootItemId:'group',coordination:true,items:[child]}});
+    await f.run(f.worker,{type:'prepare-dispatch',itemId:'first',dispatchId:'initial-execution'});
+    const fence=(await f.managerApi.workflow('b')).dispatches['initial-execution'].fence;
+    await f.run(f.managerApi,{type:'observe-execution',dispatchId:'initial-execution',fence,outcome:'succeeded',outputs:[]});
+    await f.run(f.managerApi,{type:'accept-execution',dispatchId:'initial-execution',accept:true});
+    await f.run(f.managerApi,{type:'close-plan',itemId:'group',resultRef:'initial'});
+    const first=await f.managerApi.item('b','first');
+    const addition={schema:'kanban.plan/1' as const,id:'addition',revision:1,sealed:true,mode:'append' as const,rootItemId:'group',items:[{...child,id:'second',dependsOn:['first']}]};
+    await f.run(f.managerApi,{type:'publish-plan',plan:addition});
+    expect(await f.managerApi.item('b','first')).toEqual(first);
+    expect((await f.managerApi.item('b','group')).item).toMatchObject({status:'backlog',planning:{execution:'children',coordination:true}});
+    expect((await f.managerApi.item('b','second')).item.planning).toMatchObject({parentId:'group',dependencies:['first']});
+    const before=await f.store.read('b');
+    await expect(f.run(f.managerApi,{type:'publish-plan',plan:{...addition,id:'invalid',items:[{...child,id:'first'}]}})).rejects.toMatchObject({code:'APPEND_REQUIRES_NEW_ITEMS'});
+    expect(await f.store.read('b')).toEqual(before);
+});
+it('revises a stopped decision in place and refuses to replace the content of a confirmed execution',async()=>{
+    const f=await fixture(),reviewer=createKanbanModule({store:f.store,actor:{kind:'human',id:'reviewer'},authorize:async()=>{},log(){}});
+    await f.run(f.managerApi,{type:'append-record',record:{id:'decision',kind:'decision',title:'Goal',content:'Original',rationale:'Verify',itemIds:[],sources:[]}});
+    await f.run(reviewer,{type:'review-record',recordId:'decision',accept:true});
+    await expect(f.run(reviewer,{type:'revise-record',recordId:'decision',title:'Goal',content:'Confirmed scope',rationale:'User clarification'})).rejects.toMatchObject({code:'RECORD_CANCEL_REQUIRED'});
+    await f.run(reviewer,{type:'cancel-record',recordId:'decision'});
+    const before=await reviewer.record('b','decision');
+    await f.run(reviewer,{type:'revise-record',recordId:'decision',title:'Goal',content:'Confirmed scope',rationale:'User clarification'});
+    const after=await reviewer.record('b','decision');expect(after).toMatchObject({id:before.id,number:before.number,status:'cancelled',content:'Confirmed scope',revision:before.revision+1});
+    expect(before.content).toBe('Original');
+});

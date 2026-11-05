@@ -6,7 +6,7 @@ export interface KanbanExecutionSession {
     createdAt?: number;
     lastActivityAt?: number; observedAt?: number; stale: boolean; recent: boolean; code?: string;
 }
-export interface KanbanPlanningSession extends KanbanExecutionSession {itemId: string; analysisId: string}
+export interface KanbanPlanningSession extends KanbanExecutionSession {itemId: string; analysisId: string; coordination?:{id:string;state:string;code?:string;summary?:string;suggestions?:Array<{itemId:string;action:string;reason:string}>}}
 export interface KanbanSessionActivityQuery extends KanbanItemQuery {execution?: 'all' | 'running' | 'recent' | 'active'}
 export interface KanbanSessionItemSummary extends KanbanItemSummary {execution?: KanbanExecutionSession}
 export interface KanbanSessionItemPage extends Omit<KanbanItemPage,'items'|'attentionItems'> {attentionItems?:KanbanSessionItemSummary[];items: KanbanSessionItemSummary[]}

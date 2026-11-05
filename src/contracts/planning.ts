@@ -2,7 +2,7 @@ import type {KanbanExternalReference} from './configuration';
 import type {KanbanItem} from './contracts';
 
 export interface KanbanPlanning {
-    kind: string; execution?: 'direct' | 'children'; dueAt?: number; parentId?: string; area?: string; milestone?: string;
+    kind: string; coordination?:boolean; execution?: 'direct' | 'children'; dueAt?: number; parentId?: string; area?: string; milestone?: string;
     priority: number; dependencies: string[]; references: string[];
 }
 export interface KanbanItemSummary {

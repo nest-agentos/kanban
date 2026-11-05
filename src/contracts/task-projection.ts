@@ -20,7 +20,7 @@ export function projectKanbanTask(item:Item,workflow?:KanbanWorkflowState,now=Da
         if (item.status !== 'review' && !fact.actions?.includes('pause') && !fact.actions?.includes('resume') && (dispatch?.controlCapabilities?.pause === 'boundary' || !dispatch)) extra.push('pause');
     }
     return {...fact,startAt:taskStartAt(item),dispatchId:dispatch?.id,sessionId:dispatch?.executionSessionId,
-        actions:item.deletedAt === undefined ? [...fact.actions??[],...extra,...(dispatch||item.launch?.admittedAt!==undefined||['claimed','review','completed'].includes(item.status)?['fix' as const]:[]),...(dispatch?.executionSessionId?['open-session' as const]:[])].filter(action=>item.planning?.execution!=='children'||['cancel','delete'].includes(action)) : []};
+        actions:item.deletedAt === undefined ? [...fact.actions??[],...extra,...(item.planning?.execution==='children'||dispatch||item.launch?.admittedAt!==undefined||['claimed','review','completed'].includes(item.status)?['fix' as const]:[]),...(dispatch?.executionSessionId?['open-session' as const]:[])].filter(action=>item.planning?.execution!=='children'||['cancel','delete','fix',...(item.planning?.coordination?['pause','resume']:[])].includes(action)) : []};
 }
 function terminalFact(item:Item):Fact|undefined {
     if(item.status==='completed'||item.status==='cancelled')return {phase:item.status,actions:['delete']};

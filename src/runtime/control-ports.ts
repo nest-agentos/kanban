@@ -8,4 +8,4 @@ export interface KanbanExecutionControlPort {
     control(request:KanbanControlRequest):Promise<KanbanControlState>;
     inspect?(executionId:string,attemptId?:string):Promise<{settled:boolean;outcome?:'succeeded'|'failed'|'cancelled'}|undefined>;
 }
-export interface KanbanTaskControlOptions {control:KanbanExecutionControlPort;references?:KanbanReferencePolicy;finalizerPrefix?:string}
+export interface KanbanTaskControlOptions {beforeCancel?(boardId:string,itemId:string,operationId:string):Promise<KanbanControlState>;control:KanbanExecutionControlPort;references?:KanbanReferencePolicy;finalizerPrefix?:string}

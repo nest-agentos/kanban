@@ -42,7 +42,7 @@ class TaskFix<Instruction> {
         const claimed=await options.journal.claim('fix:'+fix.id);
         const observation=await (claimed?this.executor.start(fix.request):this.executor.inspect(fix.request));
         const sessionId=observation.executionSessionId??fix.sessionId;
-        if(sessionId!==fix.id)await options.journal.update('fix-session:'+sessionId,old=>old??fix.id);
+        if(sessionId!==fix.id)await options.journal.update('fix-session:'+sessionId,()=>fix.id);
         const saved=await options.journal.update<SavedFix>('fix:'+fix.id,old=>({...old!,sessionId,code:observation.code}));
         await options.observe(saved);return view(saved);
     }
@@ -95,7 +95,8 @@ class TaskFix<Instruction> {
         const id=await this.options.journal.get<string>('fix-session:'+sessionId);if(!id)return false;
         return this.serial(id, async () => {
             const current = (await this.options.journal.get<SavedFix>('fix:' + id))!;
-            requireValue(!['cancelling','cancelled'].includes(current.state), 'FIX_INPUT_CLOSED');
+            if(current.accepted||current.state==='cancelled')return current.snapshot?.messageId===(input as {id?:string}).id;
+            requireValue(current.state!=='cancelling','FIX_INPUT_CLOSED');
             return this.options.confirm(current,input);
         });
     };

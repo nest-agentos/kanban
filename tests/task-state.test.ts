@@ -235,7 +235,7 @@ it('projects task groups from child states and never offers an independent execu
     expect(project({...child,status:'claimed'})).toMatchObject({phase:'running',reason:'GROUP_CHILD_RUNNING'});
     expect(project({...child,status:'completed'})).toMatchObject({phase:'waiting-dependency',reason:'GROUP_SETTLEMENT_PENDING'});
     expect(project({...child,status:'cancelled'})).toMatchObject({phase:'error',reason:'GROUP_CHILD_CANCELLED'});
-    expect(project(child).actions).toEqual(['cancel']);
+    expect(project(child).actions).toEqual(['cancel','fix']);
     expect(project(child).sessionId).toBeUndefined();
 });
 it('returns current parent state and complete child totals with a child page',async()=>{

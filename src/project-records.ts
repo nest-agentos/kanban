@@ -5,15 +5,22 @@ import type {KanbanState} from './ports';
 import {identity, requireValue, text} from './rules';
 import {principal, principalKey} from './identity';
 import {requireReviewer, validateSources} from './amendments';
-export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record'}>;
+export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record'}>;
 export function isRecordCommand(command: KanbanCommand): command is RecordCommand {
-    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record'].includes(command.type);
+    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record'].includes(command.type);
 }
 export function applyRecord(state: KanbanState, command: RecordCommand, actor: KanbanActor, now: number, forceDraft = false): void {
     if (command.type === 'append-record') {append(state, command, actor, now, forceDraft); return;}
     const record = state.records?.find(record => record.id === command.recordId); requireValue(record, 'RECORD_NOT_FOUND');
     requireValue(record.deletedAt === undefined, 'RECORD_DELETED');
-    if (command.type === 'request-record-cancellation' || command.type === 'cancel-record' || command.type === 'delete-record' || command.type==='archive-record' || command.type==='restart-record') {
+    if(command.type==='revise-record') {
+        requireReviewer(state.board,actor);requireValue(principal(actor).kind==='human','FORBIDDEN');
+        requireValue(record.kind==='decision'&&['draft','cancelled'].includes(record.status),'RECORD_CANCEL_REQUIRED');
+        requireValue(record.itemIds.every(id=>{const item=state.board.items.find(row=>row.id===id)??state.archiveIndex?.find(row=>row.id===id);return item&&['completed','cancelled'].includes(item.status);}),'RECORD_EXECUTION_UNSETTLED');
+        text(command.title);text(command.content);text(command.rationale);
+        record.title=command.title;record.content=command.content;record.rationale=command.rationale;record.updatedAt=now;record.revision++;return;
+    }
+    if (command.type === 'request-record-cancellation'  || command.type === 'cancel-record' || command.type === 'delete-record' || command.type==='archive-record' || command.type==='restart-record') {
         requireReviewer(state.board, actor);
         requireValue(principal(actor).kind === 'human', 'FORBIDDEN');
         requireValue(record.kind === 'decision', 'DECISION_REQUIRED');

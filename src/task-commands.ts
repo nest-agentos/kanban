@@ -69,9 +69,9 @@ function edit(state: KanbanState, item: KanbanItem, command: KanbanTaskCommand, 
     delete item.launch!.editing;
 }
 function requestControl(state: KanbanState, item: KanbanItem, command: Extract<KanbanTaskCommand, {type: 'request-control'}>): void {
-    requireValue(!['completed', 'cancelled'].includes(item.status), 'ITEM_COMPLETED'); identity(command.controlId);
+    requireValue(!['completed','cancelled'].includes(item.status)||command.action==='cancel','ITEM_COMPLETED'); identity(command.controlId);
     requireValue(['pause', 'resume', 'cancel'].includes(command.action), 'INVALID_CONTROL_ACTION');
-    requireValue(item.planning?.execution!=='children'||command.action==='cancel','TASK_GROUP_CONTROL_UNSUPPORTED');
+    requireValue(item.planning?.execution!=='children'||item.planning.coordination||command.action==='cancel','TASK_GROUP_CONTROL_UNSUPPORTED');
     if (item.control?.id === command.controlId) {requireValue(item.control.action === command.action, 'IDEMPOTENCY_CONFLICT'); return;}
     if (command.action === 'cancel' && item.control?.action === 'cancel' && item.control.state !== 'failed') return;
     requireValue(command.action === 'cancel' || !item.control || !['requested', 'unknown'].includes(item.control.state), 'CONTROL_UNSETTLED');
@@ -131,7 +131,7 @@ function applyControlReceipt(state: KanbanState, item: KanbanItem, command: Extr
             dispatch.outcome = 'cancelled'; dispatch.code = 'USER_CANCELLED';
         }
         requireValue(!catalog(state).some(i => i.planning.parentId === item.id && !['completed','cancelled'].includes(i.status)), 'CHILDREN_UNFINISHED');
-        item.status = 'cancelled'; item.closedAt = now; item.closureReason = 'USER_CANCELLED';
+        if(item.status!=='completed'){item.status='cancelled';item.closedAt=now;item.closureReason='USER_CANCELLED';}
         delete item.owner; delete item.transfer; delete item.blocked; delete item.launch!.editing;
     }
     requireValue(item.control!.state !== 'cancelled' || command.state === 'cancelled', 'STALE_CONTROL_RECEIPT');

@@ -36,5 +36,5 @@ export async function adoptDecomposition(journal:KanbanAutomationJournal, board:
         await journal.update('decomposition-status:'+JSON.stringify([board.id,definition.id]),old=>old??{itemId:definition.id,state:'ready',reason:input.reason,dependencies:definition.dependsOn});
     }
     await service.execute(board.id,{operationId:'analysis-plan:'+input.id,expectedRevision:board.revision,command:{type:'publish-plan',plan:{
-        schema:'kanban.plan/1',id:input.id,revision:1,sealed:true,rootItemId:parent.id,items:definitions}}});
+        schema:'kanban.plan/1',id:input.id,revision:1,sealed:true,coordination:true,rootItemId:parent.id,items:definitions}}});
 }

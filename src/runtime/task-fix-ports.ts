@@ -3,10 +3,10 @@ import type {KanbanExecutionPort} from '../execution';
 import type {KanbanAutomationJournal} from './automation-journal';
 import type {KanbanExecutionControlPort} from './control-ports';
 import type {KanbanRuntimeDiagnostic} from './ports';
-export interface Definition {title:string; responsibility:string; acceptance:string; type:string; dependencies:string[]}
+export interface Definition {title:string; responsibility:string; acceptance:string; type:string; dependencies:string[]; children?:Array<import('../contracts').KanbanWorkDefinition&{estimate?:import('../contracts').KanbanEstimate}>}
 export interface Snapshot {proposalId:string; messageId:string; content:string; definition:Definition; digest:string; operationId:string}
 export interface SavedFix extends KanbanFixSession {
-    phase:'prepared'|'submitting'|'settled'; cancelOperationId?: string; dispatch:KanbanDispatch; item:KanbanItem; resourceId:string; context:unknown; request:unknown;
+    origin?:{id:string;input:unknown}; phase:'prepared'|'submitting'|'settled'; cancelOperationId?: string; dispatch:KanbanDispatch; item:KanbanItem; resourceId:string; context:unknown; request:unknown;
     snapshot?:Snapshot; code?:string; accepted?:boolean;
 }
 export interface KanbanFixOptions<Instruction = unknown> {

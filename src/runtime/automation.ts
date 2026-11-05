@@ -18,6 +18,7 @@ export interface KanbanAutomationOptions {
     serviceFor(actor:KanbanActor):KanbanService;
     catalog():Promise<KanbanAutomationCatalog>;
     executor(context:KanbanExecutorContext):Promise<KanbanExecutionPort>;
+    coordinate?(board:KanbanBoard,active:()=>boolean):Promise<void>;
     analyze?(board:KanbanBoard,item:KanbanItem,service:KanbanService,active:()=>boolean):Promise<void>;
     controls?(board:KanbanBoard,service:KanbanService):Promise<void>;
     drain?(board:KanbanBoard,service:KanbanService):Promise<void>;
@@ -53,6 +54,7 @@ async function scanBoards(options:KanbanAutomationOptions,bridges:Map<string,Bri
             await planNext(options,await service.read(board.id),active);
             if(active())await bridge.scan();
             if(active())await completeCompositePlans(options.service,options.journal,board.id,options.serviceFor);
+            if(active())await options.coordinate?.(await service.read(board.id),active);
             options.log({operationId:board.id,boardId:board.id,stage:'automation.scan',result:'success',durationMs:Date.now()-started});
         }catch(error){errors.push(error);options.log({operationId:entry.id,boardId:entry.id,stage:'automation.scan',result:'failure',code:safeCode(error,'AUTOMATION_SCAN_FAILED'),durationMs:Date.now()-started});}
     }
