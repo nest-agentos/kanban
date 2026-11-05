@@ -1,5 +1,5 @@
 import {advanceRecordControl, requestRecordControl, recordControlKey, type RecordControl} from './record-controls';
-import {DEFAULT_KANBAN_WORK_TYPES} from '../contracts';
+import {DEFAULT_KANBAN_WORK_TYPES,projectKanbanTask} from '../contracts';
 import {journalCommand} from './journal-command';
 import {sha256HexSync} from '../utils';
 import type {KanbanResourceCatalog} from './ports';
@@ -159,7 +159,7 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
         if (state === 'completed' && run.rootItemId && !run.itemIds?.includes(run.rootItemId) && board.items.find(item => item.id === run.rootItemId)?.status !== 'completed') {
             await once(options, run, 'close-root', {type: 'close-plan', itemId: run.rootItemId, resultRef: 'kanban-run:' + run.id});
         }
-        const code = state === 'failed' ? 'DECISION_TASK_CANCELLED' : undefined;
+        const code = state === 'failed' ? 'DECISION_TASK_CANCELLED' : state === 'blocked' && items.some(item=>projectKanbanTask(item).phase==='waiting-input') ? 'DECISION_INPUT_REQUIRED' : undefined;
         if (run.state === state && run.code === code) return view(run);
         const updated = await save(options, {...run, state, code, updatedAt: Date.now()});
         options.log({operationId: run.id, boardId: run.sourceBoardId, stage: 'record.run', result: state === 'failed' ? 'failure' : 'success', code: updated.code, durationMs: Date.now() - started});
@@ -194,7 +194,7 @@ function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: Kanban
 function runState(items: KanbanItem[]): KanbanRecordExecution['state'] {
     if (items.some(item => item.status === 'cancelled')) return 'failed';
     if (items.length && items.every(item => item.status === 'completed')) return 'completed';
-    if (items.some(item => item.blocked)) return 'blocked';
+    if (items.some(item => item.blocked || projectKanbanTask(item).phase === 'waiting-input')) return 'blocked';
     return items.length && items.every(item => ['completed', 'review'].includes(item.status)) ? 'review' : 'running';
 }
 async function materialize(options: Options, run: SavedRun): Promise<void> {
