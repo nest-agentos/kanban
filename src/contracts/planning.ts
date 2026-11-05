@@ -11,6 +11,7 @@ export interface KanbanItemSummary {
     launch?: import('./task-state').KanbanLaunch; analysis?: import('./automation').KanbanAnalysisStatus;
     control?: import('./task-state').KanbanTaskControl; issues?: import('./task-state').KanbanTaskIssue[]; blocked?: KanbanItem['blocked'];
     task?: import('./task-state').KanbanTaskProjection;
+    assignee?: {kind?: string; id: string};
     number?: number;
     discoveryFingerprint?: string; pendingAmendments?: number;
     id: string; title: string; status: KanbanItem['status']; revision: number; createdAt: number; updatedAt: number;

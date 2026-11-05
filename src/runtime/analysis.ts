@@ -48,7 +48,7 @@ export async function analyzeItem<Target, Input>(options: KanbanAnalysisOptions<
     if (status) {
         const currentBoard = await service.read(board.id), currentItem = currentBoard.items.find(i => i.id === item.id)!;
         if (currentItem.control?.action === 'cancel' || ['completed','cancelled'].includes(currentItem.status)) return;
-        if (JSON.stringify(currentItem.analysis) !== JSON.stringify(status)) {changed=true;await service.execute(board.id, {operationId:'analysis-status:'+job.id+':'+sha256HexSync(JSON.stringify(status)), expectedRevision:currentBoard.revision, command:{type:'report-analysis',itemId:item.id,operationId:job.id,status}});}
+        if (JSON.stringify(currentItem.analysis) !== JSON.stringify(status)) {changed=true;await service.execute(board.id, {operationId:'analysis-status:'+job.id+':'+currentBoard.revision+':'+sha256HexSync(JSON.stringify(status)), expectedRevision:currentBoard.revision, command:{type:'report-analysis',itemId:item.id,operationId:job.id,status}});}
     }
     if(changed)options.log({operationId: job.id, stage: 'automation.analysis', result: status?.state === 'failed' || status?.state === 'unknown' ? 'failure' : 'success', code: status?.code, durationMs: Date.now() - started});
 }

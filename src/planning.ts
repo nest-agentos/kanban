@@ -7,7 +7,7 @@ export function plan(item: KanbanItem): KanbanPlanning {
     return item.planning ?? {kind: 'task', priority: 2, dependencies: [], references: []};
 }
 export function summary(item: KanbanItem): KanbanItemSummary {
-    return {restartedFrom:item.restartedFrom,deletedAt:item.deletedAt, launch:item.launch, analysis:item.analysis, control:item.control, issues:item.issues, blocked:item.blocked, id: item.id, number: item.number, title: item.title, status: item.status, revision: item.revision, createdAt: item.createdAt,
+    return {assignee:item.owner?{kind:item.owner.kind,id:item.owner.id??item.owner.agentId??''}:undefined,restartedFrom:item.restartedFrom,deletedAt:item.deletedAt, launch:item.launch, analysis:item.analysis, control:item.control, issues:item.issues, blocked:item.blocked, id: item.id, number: item.number, title: item.title, status: item.status, revision: item.revision, createdAt: item.createdAt,
         updatedAt: item.updatedAt, discoveryFingerprint: item.origin?.fingerprint, pendingAmendments: item.amendments?.filter(proposal => proposal.status === 'pending').length, externalRefs: item.externalRefs, closedAt: item.closedAt, planning: plan(item), sessionIds: item.participants.map(p => p.sessionId)};
 }
 export function terminal(item: Pick<KanbanItem, 'status'>): boolean {return item.status === 'completed' || item.status === 'cancelled';}

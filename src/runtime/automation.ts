@@ -62,7 +62,7 @@ async function planNext(options:KanbanAutomationOptions,board:KanbanBoard,active
     if(!options.analyze)return;
     const workflow=await options.service.workflow(board.id),planned=new Set(Object.values(workflow.plans).flatMap(plan=>plan.itemIds));
     const candidates=board.items.filter(item=>!planned.has(item.id)&&['backlog','open'].includes(item.status)&&!item.owner&&!item.blocked
-        &&boardAllowsStart(board,item)&&item.analysis?.state!=='failed'&&executableWorkItem(board,item)
+        &&boardAllowsStart(board,item)&&(item.analysis?.state!=='failed'||item.analysis.code==='IDEMPOTENCY_CONFLICT')&&executableWorkItem(board,item)
         &&(!item.control||item.control.action==='resume'&&item.control.state==='resumed')&&(item.launch?.admittedAt!==undefined||taskDue(item,Date.now())));
     for(const item of candidates) {
         if(!active())return;if(!await dependenciesComplete(options.service,board,item))continue;
@@ -70,7 +70,9 @@ async function planNext(options:KanbanAutomationOptions,board:KanbanBoard,active
         if(item.launch?.admittedAt===undefined){if(!await admit(options,board,item,service))return;board=await service.read(board.id);Object.assign(item,board.items.find(row=>row.id===item.id));}
         try{await options.analyze(board,item,service,active);}
         catch(error){
-            const latest=await service.read(board.id),code=safeCode(error,'AUTOMATION_ANALYSIS_PREPARATION_FAILED');
+            const code=safeCode(error,'AUTOMATION_ANALYSIS_PREPARATION_FAILED');
+            if(['REVISION_CONFLICT','IDEMPOTENCY_CONFLICT'].includes(code)){options.log({operationId:item.id,boardId:board.id,stage:'automation.analysis.sync',result:'failure',code,durationMs:0});continue;}
+            const latest=await service.read(board.id);
             await service.execute(board.id,{operationId:'analysis-prepare-failed:'+item.id+':'+item.revision,expectedRevision:latest.revision,command:{type:'report-analysis',itemId:item.id,operationId:item.id,status:{itemId:item.id,state:'failed',code}}});
             options.log({operationId:item.id,boardId:board.id,stage:'automation.analysis.prepare',result:'failure',code,durationMs:0});
         }
