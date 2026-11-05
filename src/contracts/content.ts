@@ -2,7 +2,7 @@ import type {KanbanActor, KanbanBoardInput, KanbanCommand} from './contracts';
 import type {KanbanRecordInput, KanbanText} from './context';
 export interface KanbanContentItem {
     introduced?: number;
-    command: Extract<KanbanCommand, {type: 'create-item'}>;
+    command: Extract<KanbanCommand, {type: 'create-item'}> & {item:{id:string}};
     blocked?: string;
     completion?: {resultRef: string; archiveReason?: string};
 }

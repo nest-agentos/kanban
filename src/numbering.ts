@@ -41,3 +41,15 @@ export function allocateBoardNumber(raw: string | null, high: number): number {
     const known = storedBoardNumber(raw); if (known !== undefined) return known;
     requireValue(high < Number.MAX_SAFE_INTEGER, 'NUMBER_COUNTER_EXHAUSTED'); return high + 1;
 }
+
+/** Allocate within the board transaction, including retained and archived identities. */
+export function allocateTaskId(state: KanbanState): string {
+    const taken = new Set([...state.board.items, ...state.archiveIndex ?? []].map(item => item.id));
+    let number = state.numbering!.item, id: string;
+    do {
+        requireValue(number < Number.MAX_SAFE_INTEGER, 'NUMBER_COUNTER_EXHAUSTED');
+        id = 'task-' + String(++number).padStart(3, '0');
+    } while (taken.has(id));
+    state.numbering!.item = number - 1;
+    return id;
+}

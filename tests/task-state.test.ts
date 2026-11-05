@@ -188,3 +188,15 @@ it('restarts cancelled planned work as a fresh linked task without reusing its s
     expect(Object.values((await f.human.workflow('board')).plans).every(plan=>!plan.itemIds.includes('fresh'))).toBe(true);
     await expect(f.run({type:'restart-item',itemId:'task',replacementId:'fresh'},f.human)).rejects.toMatchObject({code:'ITEM_EXISTS'});
 });
+
+it('allocates readable task IDs transactionally while numbering custom IDs independently', async () => {
+    const f = await fixture();
+    const request = {operationId:'auto-create',expectedRevision:(await f.human.read('board')).revision,
+        command:{type:'create-item' as const,item:{title:'Auto task',responsibility:'Build',acceptance:'Verify'}}};
+    const first = await f.human.execute('board',request), item = first.items.find(item=>item.title==='Auto task')!;
+    expect(item.id).toBe('task-002'); expect(item.number).toBe(2);
+    expect(await f.human.execute('board',request)).toEqual(first);
+    await f.run({type:'create-item',item:{id:'meaningful-name',title:'Named task',responsibility:'Build',acceptance:'Verify'}},f.human);
+    expect((await f.human.item('board','meaningful-name')).item.number).toBe(3);
+    await expect(f.run({type:'create-item',item:{id:'meaningful-name',title:'Duplicate',responsibility:'Build',acceptance:'Verify'}},f.human)).rejects.toMatchObject({code:'ITEM_EXISTS'});
+});

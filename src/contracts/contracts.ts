@@ -68,7 +68,7 @@ export type KanbanCommand = import('./task-state').KanbanTaskCommand | import('.
     | {type: 'append-record'; record: KanbanRecordInput}
     | {type: 'review-record'; recordId: string; accept: boolean}
     | {type: 'link-record'; recordId: string; itemId: string}
-    | { type: 'create-item'; item: Pick<KanbanItem, 'id' | 'title' | 'responsibility' | 'acceptance' | 'eligibleAgentIds' | 'eligiblePrincipals' | 'externalRefs'>; planning?: KanbanPlanning; stage?: 'backlog' | 'open'; launch?: {mode?: 'automatic' | 'manual'; paused?: boolean} }
+    | { type: 'create-item'; item: Pick<KanbanItem, 'title' | 'responsibility' | 'acceptance' | 'eligibleAgentIds' | 'eligiblePrincipals' | 'externalRefs'> & {id?: string}; planning?: KanbanPlanning; stage?: 'backlog' | 'open'; launch?: {mode?: 'automatic' | 'manual'; paused?: boolean} }
     | { type: 'register-session'; itemId?: string; sessionId: string; agentId?: string; role: KanbanParticipant['roles'][number]; subscribed: boolean }
     | { type: 'claim'; itemId: string; estimate?: KanbanEstimate }
     | { type: 'renew'; itemId: string; token: string }

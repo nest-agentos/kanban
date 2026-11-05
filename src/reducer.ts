@@ -6,7 +6,7 @@ import {TASK_START_DELAY_MS} from './contracts/task-projection';
 import {applyDiscovery} from './scan-commit';
 import {configureAutomation} from './automation';
 import {applyWorkflow, isWorkflowCommand, refreshReady, protectWorkflowItem} from './workflow';
-import {numberEntities} from './numbering';
+import {allocateTaskId,numberEntities} from './numbering';
 import {isRecordCommand, applyRecord} from './project-records';
 import {reviewAmendment} from './amendments';
 import {principal} from './identity';
@@ -64,14 +64,15 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     } else transition(state, itemFor(board, command.itemId), command, actor, now, token);
     numberEntities(state); refreshReady(state);
     board.revision++;
-    if (recordEvent) append(state, actor, operationId, now, command.type, command.type === 'restart-item' ? command.replacementId : 'itemId' in command ? command.itemId : command.type === 'create-item' ? command.item.id : 'dispatchId' in command ? state.workflow?.dispatches[command.dispatchId]?.itemId : undefined,
+    if (recordEvent) append(state, actor, operationId, now, command.type, command.type === 'restart-item' ? command.replacementId : 'itemId' in command ? command.itemId : command.type === 'create-item' ? command.item.id ?? state.board.items.at(-1)?.id : 'dispatchId' in command ? state.workflow?.dispatches[command.dispatchId]?.itemId : undefined,
         eventData(command, state),
         command.type === 'message' ? command.recipientSessionIds : undefined);
     scan(state, actor, operationId, now);
     return state;
 }
 function createItem(state: KanbanState, command: Extract<KanbanCommand, { type: 'create-item' }>, actor: KanbanActor, now: number, token: string): void {
-    const {id, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs} = command.item;
+    const {id: requestedId, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs} = command.item;
+    const id = requestedId ?? allocateTaskId(state);
     const input = {id, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs}, board = state.board;
     identity(input.id); text(input.title); text(input.responsibility); text(input.acceptance);
     requireValue(!board.items.some(i => i.id === input.id) && !state.archiveIndex?.some(i => i.id === input.id), 'ITEM_EXISTS');
