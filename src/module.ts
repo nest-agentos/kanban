@@ -95,7 +95,7 @@ class KanbanModule implements KanbanService {
             requireValue(current && current.board.revision === state.board.revision, 'REVISION_CONFLICT');
             requireValue(current.board.revision === request.expectedRevision, 'REVISION_CONFLICT');
             if (restore) current.restore = restore;
-            return reduce(current, request.command, this.actor, request.operationId, this.now(), this.id());
+            return reduce(current, request.command, this.actor, request.operationId, this.now(), this.id(), false, this.options.restartReferences);
         });
         await this.publishNotifications(boardId, request.operationId);
         return structuredClone(result.board);

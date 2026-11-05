@@ -1,3 +1,4 @@
+import {restartItemInput} from './task-restart';
 import {stopBoard, protectStoppedBoard} from './board-stop';
 import {setBoardControl} from './board-control';
 import {taskCommand, applyTaskCommand, assertDefinitionEditable, initializeTaskLaunch} from './task-commands';
@@ -20,7 +21,7 @@ import {validateCandidates} from './identity';
 import {archiveExpired} from './archives';
 
 export function reduce(state: KanbanState, command: KanbanCommand, actor: KanbanActor,
-    operationId: string, now: number, token: string, workflowInternal = false): KanbanState {
+    operationId: string, now: number, token: string, workflowInternal = false, restartReferences?: import('./ports').KanbanModuleOptions['restartReferences']): KanbanState {
     requireValue(state.board.deletedAt === undefined, 'BOARD_DELETED');
     numberEntities(state);
     protectStoppedBoard(state,command);
@@ -39,8 +40,12 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
         delete item.owner; delete item.transfer;
         item.deletedAt = now; item.updatedAt = now; item.revision++;
     }
+    else if (command.type === 'restart-item') {
+        createItem(state, restartItemInput(state, command, actor, restartReferences), actor, now, token);
+        state.board.items.find(item => item.id === command.replacementId)!.restartedFrom = command.itemId;
+    }
     else if (taskCommand(command)) applyTaskCommand(state, command, actor, now);
-    else if (isWorkflowCommand(command)) recordEvent = applyWorkflow(state, command, actor, now, (inner, owner = actor) => {reduce(state,inner,owner,operationId,now,token,true);});
+    else if (isWorkflowCommand(command)) recordEvent = applyWorkflow(state, command, actor, now, (inner, owner = actor) => {reduce(state,inner,owner,operationId,now,token,true,restartReferences);});
     else if (command.type === 'apply-discovery') applyDiscovery(state, command.batch, actor, now);
     else if (isRecordCommand(command)) applyRecord(state, command, actor, now);
     else if (command.type === 'review-amendment') {if(command.accept)assertDefinitionEditable(itemFor(board,command.itemId),now);reviewAmendment(board, command, actor, now);}
@@ -59,7 +64,7 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     } else transition(state, itemFor(board, command.itemId), command, actor, now, token);
     numberEntities(state); refreshReady(state);
     board.revision++;
-    if (recordEvent) append(state, actor, operationId, now, command.type, 'itemId' in command ? command.itemId : command.type === 'create-item' ? command.item.id : 'dispatchId' in command ? state.workflow?.dispatches[command.dispatchId]?.itemId : undefined,
+    if (recordEvent) append(state, actor, operationId, now, command.type, command.type === 'restart-item' ? command.replacementId : 'itemId' in command ? command.itemId : command.type === 'create-item' ? command.item.id : 'dispatchId' in command ? state.workflow?.dispatches[command.dispatchId]?.itemId : undefined,
         eventData(command, state),
         command.type === 'message' ? command.recipientSessionIds : undefined);
     scan(state, actor, operationId, now);
@@ -141,6 +146,7 @@ function eventData(command: KanbanCommand, state: KanbanState): KanbanEvent['dat
     if (command.type === 'report-analysis') return {code:command.status.code, reason:'analysis-'+command.status.state};
     if (command.type === 'control-receipt') return {code:command.code, reason:'control-'+command.state};
     if (isWorkflowCommand(command)) return {readyItemIds:state.workflow?.ready, ...('dispatchId' in command ? {dispatchId:command.dispatchId} : {planId:command.plan.id}), ...('outcome' in command ? {reason:`execution-${command.outcome}`, code: command.code, status: state.board.items.find(item => item.id === state.workflow?.dispatches[command.dispatchId]?.itemId)?.status} : command.type === 'accept-execution' ? {reason: command.accept ? 'accepted' : 'rejected'} : {})};
+    if (command.type === 'restart-item') return {itemIds:[command.itemId,command.replacementId],itemTitle:state.board.items.find(item=>item.id===command.replacementId)?.title};
     if (command.type === 'create-item') return {itemTitle: command.item.title};
     if (command.type === 'link-reference') return {reference: command.reference};
     if (command.type === 'block-item') return {reason: command.reason};

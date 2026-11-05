@@ -28,6 +28,8 @@ export interface KanbanStore {
         change: (state: KanbanState | null) => KanbanState): Promise<KanbanState>;
 }
 export interface KanbanModuleOptions {
+    /** Select definition references for a fresh successor; never retain execution resources by default. */
+    restartReferences?(references: readonly import('./contracts').KanbanExternalReference[]): import('./contracts').KanbanExternalReference[];
     /** Host supplies metadata within the authorized user's/project's session scope. */
     suggestions?(board: KanbanBoard, kind: import('./contracts').KanbanSuggestionKind, search: string, limit: number): Promise<import('./contracts').KanbanSuggestion[] | undefined>;
     verifyOutputs?(input: {stage?: 'observe' | 'accept'; board: KanbanBoard; itemId: string; dispatchId?: string; outputs: import('./contracts').KanbanArtifactRef[]}): Promise<boolean>;

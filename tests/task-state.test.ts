@@ -17,7 +17,7 @@ async function fixture() {
     await run({type:'publish-plan',plan:{schema:'kanban.plan/1',id:'plan',revision:1,sealed:true,items:[{id:'task',title:'Task',responsibility:'Build',acceptance:'Verify',assignee:{kind:'service',id:'worker'},dependsOn:[]}]}});
     const executor={prepare:vi.fn(async()=>({id:'original'})),start:vi.fn(async()=>({outcome:'running' as const,executionSessionId:'original-session'})),inspect:vi.fn(async()=>({outcome:'running' as const,executionSessionId:'original-session'}))};
     const bridge=async()=>{const b=await createKanbanExecutionBridge({fs,directory:'/executions',boardId:'board',service,worker:async()=>worker,autoDispatch:true,executor,authorize:async()=>{},log(){}});closes.push(()=>b.quiesce());return b;};
-    const human=createKanbanModule({store,actor:{kind:"human",id:"admin"},authorize:async()=>{},now:()=>now,log(){}});
+    const human=createKanbanModule({store,actor:{kind:"human",id:"admin"},restartReferences:refs=>refs.filter(ref=>ref.system==='project'),authorize:async()=>{},now:()=>now,log(){}});
     return {store,service,api,human,run,bridge,executor,clock:(elapsed:number)=>{now=1000000+elapsed;},item:async()=>(await service.item('board','task')).item};
 }
 it('persists the five-minute deadline and admits exactly once at 300000ms across competing/restarted bridges',async()=>{
@@ -168,4 +168,23 @@ it('refuses reopening a cancelled task which already belongs to an execution pla
     await f.run({type: 'control-receipt', itemId: 'task', controlId: 'cancel-planned', state: 'cancelled'});
     await expect(f.run({type: 'reopen-item', itemId: 'task', reopenId: 'unsafe'}, f.human)).rejects.toThrow();
     expect((await f.item()).status).toBe('cancelled'); expect(f.executor.start).not.toHaveBeenCalled();
+});
+
+it('restarts cancelled planned work as a fresh linked task without reusing its sealed plan', async () => {
+    const f = await fixture();
+    await expect(f.run({type:'restart-item',itemId:'task',replacementId:'fresh'},f.human)).rejects.toMatchObject({code:'TASK_NOT_CANCELLED'});
+    await f.run({type:'link-reference',itemId:'task',reference:{system:'project',id:'remote'}});
+    await f.run({type:'link-reference',itemId:'task',reference:{system:'worktree',id:'old-tree'}});
+    await f.run({type:'request-control',itemId:'task',controlId:'stop',action:'cancel'});
+    await f.run({type:'control-receipt',itemId:'task',controlId:'stop',state:'cancelled'});
+    await expect(f.run({type:'restart-item',itemId:'task',replacementId:'fresh'},f.service)).rejects.toMatchObject({code:'FORBIDDEN'});
+    await f.run({type:'restart-item',itemId:'task',replacementId:'fresh'},f.human);
+    const original = (await f.human.item('board','task')).item, next = (await f.human.item('board','fresh')).item;
+    expect(original.status).toBe('cancelled');
+    expect(original.externalRefs).toHaveLength(2);
+    expect(next.externalRefs).toEqual([{system:'project',id:'remote'}]);
+    expect(next).toMatchObject({id:'fresh',title:original.title,responsibility:original.responsibility,acceptance:original.acceptance,restartedFrom:'task',status:'backlog',launch:{mode:'manual'}});
+    expect(next.owner).toBeUndefined(); expect(next.analysis).toBeUndefined(); expect(next.control).toBeUndefined(); expect(next.participants).toEqual([]);
+    expect(Object.values((await f.human.workflow('board')).plans).every(plan=>!plan.itemIds.includes('fresh'))).toBe(true);
+    await expect(f.run({type:'restart-item',itemId:'task',replacementId:'fresh'},f.human)).rejects.toMatchObject({code:'ITEM_EXISTS'});
 });

@@ -164,3 +164,5 @@ const executionAdapter = {
 `KanbanCollaboration` 提供修复准备、冻结确认、接纳与决策快照，`collaborationRelations` 提供关联执行投影；适配器无需读取 fix、record-runs 或 task-reply 的内部持久键。宿主仍负责确认文案、通道交互和系统事件投影。
 
 `KanbanOperationRecord` 与 `coordinateOperation` 提供自定义业务操作的统一持久协调；执行请求和结果保持不透明，业务插件负责结果约束。只有正式“未启动”回执允许重试提交，连接中断只核对原身份。
+
+A human may issue `restart-item` with a cancelled `itemId` and a distinct `replacementId` after control and execution settlement. It creates fresh manual work linked through `restartedFrom`, retaining the original task, sealed plans and execution history. Workspace cleanup and starting the successor are separate host operations.

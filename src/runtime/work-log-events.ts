@@ -9,6 +9,7 @@ function eventActivity(event: KanbanEvent): KanbanRecordActivity | undefined {
     const base = {actor: {kind: event.actor.kind ?? 'agent' as const, id: event.actor.id ?? event.actor.agentId ?? 'unknown'}, result: 'success' as const, ...(event.data.dispatchId ? {dispatchId: event.data.dispatchId} : {})};
     if (event.kind === 'report-analysis') return {...base, stage:'analysis.'+(event.data.reason?.slice('analysis-'.length) ?? 'unknown'), result:event.data.code?'failure':'success', code:event.data.code};
     if (event.kind === 'control-receipt') return {...base, stage:'execution.'+(event.data.reason ?? 'control-unknown'), result:event.data.code?'failure':'success', code:event.data.code};
+    if (event.kind === 'restart-item') return {...base, stage:'task.restarted'};
     if (event.kind === 'create-item') return {...base, stage: 'task.created'};
     if (event.kind === 'prepare-dispatch') return {...base, stage: 'execution.prepared'};
     if (event.kind === 'continue-execution') return {...base, stage: 'execution.continued'};
