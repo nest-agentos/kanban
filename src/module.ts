@@ -123,10 +123,14 @@ class KanbanModule implements KanbanService {
     });
     scan = (): Promise<void> => this.guard(this.id(), undefined, 'scan', async () => {
         const errors: unknown[] = [];
-        for (const board of await this.list()) {
-            try { await this.execute(board.id, { operationId: this.id(), expectedRevision: board.revision, command: { type: 'scan' } }); }
+        for (const id of await this.options.store.ids()) {
+            try {
+                const board = (await this.readState(id)).board;
+                if (board.deletedAt !== undefined) {await this.publishNotifications(id,this.id()); continue;}
+                await this.execute(board.id, { operationId: this.id(), expectedRevision: board.revision, command: { type: 'scan' } });
+            }
             catch (error) {
-                if (!(error instanceof KanbanError) || error.code !== 'REVISION_CONFLICT') errors.push(error);
+                if (!(error instanceof KanbanError) || !['REVISION_CONFLICT','FORBIDDEN'].includes(error.code)) errors.push(error);
             }
         }
         if (errors.length) throw new AggregateError(errors, 'KANBAN_SCAN_FAILED');

@@ -28,4 +28,6 @@ observe-execution 状态/错误/产物不变时只续租，不追加事件或推
 
 delete-board 仅允许人工协调者，拒绝负责人/移交与未结算派发，宿主 verifyDeletion 核对实际执行。逻辑删除保留原状态、资源关联及事件，隐藏 catalog/list，拒绝后续命令；示例安装不得复活墓碑。Session 和资源生命周期不进入 reducer。
 
+scan 对获授权的删除墓碑只重试 onCommitted，便于宿主补投删除事件，不执行协调命令。UI 的 setResourceUnavailable 由宿主在权威目录核对后调用，保留草稿并阻止新提交；窗口关闭及路由由宿主负责，不把短暂读取失败解释为删除。
+
 Deletion preview may include itemTitles for the item IDs referenced by blockers and resources. The host resolves these labels in its existing catalog read; UI callers must not issue per-item lookup requests merely to format confirmation text.

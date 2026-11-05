@@ -48,6 +48,7 @@ export class KanbanWorkbench {
     private visible = true;
     private invalid = false;
     private pending?: {boardId: string; fingerprint: string; request: KanbanRequest};
+    private unavailable = false;
     private readonly ui;
     private releaseNavigation?: () => void;
     private readonly windowMounts = new Map<HTMLElement, () => void>();
@@ -136,7 +137,20 @@ export class KanbanWorkbench {
     getActiveResourceId(): string {return this.boardId ? `/board/${encodeURIComponent(this.boardId)}${this.recordId ? '/@record/' + encodeURIComponent(this.recordId) : this.itemId ? '/' + encodeURIComponent(this.itemId) : this.recordKind ? '/@' + this.recordKind : ''}` : '/';}
     getViewState() {
         return {title: this.drawer?.open ? this.panel().querySelector('h3')?.textContent ?? this.board?.title : this.board?.title ?? this.ui.label('title'),
-            context: this.board?.title, dirty: this.dirty, busy: this.busy};
+            context: this.board?.title, dirty: this.dirty, busy: this.busy, unavailable: this.unavailable};
+    }
+    /** An authoritative host catalog can revoke a resource without discarding its draft. */
+    setResourceUnavailable(): void {
+        if (this.unavailable || this.abort.signal.aborted) return;
+        this.unavailable = true; this.invalid = false; this.generation++;
+        this.suggestions.destroy();
+        const notice = document.createElement('section'); notice.setAttribute('role','status'); notice.dataset.resourceUnavailable = '';
+        const message = document.createElement('p'); message.textContent = this.ui.label('resourceUnavailable');
+        const back = document.createElement('button'); back.type = 'button'; back.dataset.action = 'unavailable-return'; back.textContent = this.ui.label('returnToBoards');
+        notice.append(message,back); (this.drawer.open ? this.panel() : this.content()).prepend(notice);
+        this.options.editor.querySelectorAll<HTMLButtonElement>('form button:not([type]),form button[type=submit],form input[type=submit]')
+            .forEach(button => {button.disabled = true;});
+        this.error(''); this.options.changed?.();
     }
     captureRecovery(): unknown {if (this.busy || this.dirty) throw new Error(this.ui.label('unsaved')); return null;}
     restoreRecovery(): void {}
@@ -150,10 +164,11 @@ export class KanbanWorkbench {
     invalidateFromEvents(): void {
         this.invalid = true; this.eventGeneration++;
         this.refreshInBackground();
+        if (this.unavailable) return;
     }
     setVisible(visible: boolean): void {this.visible = visible; if (visible && this.invalid) this.invalidateFromEvents();}
     private refreshInBackground(activityOnly = false): void {
-        if (this.background || this.busy || this.dirty || !this.visible || this.abort.signal.aborted) return;
+        if (this.unavailable || this.background || this.busy || this.dirty || !this.visible || this.abort.signal.aborted) return;
         if (document.activeElement?.closest('form') && this.options.editor.contains(document.activeElement)) return;
         const started = Date.now(), operationId = randomUUID();
         const reading = activityOnly ? this.refreshActivity(this.generation) : this.refresh(), generation = this.generation;
@@ -174,6 +189,7 @@ export class KanbanWorkbench {
     private async refreshActivity(generation: number): Promise<void> {
         if (this.item && this.itemId) {await Promise.all([this.loadExecutionSections(generation, this.item, this.itemArchived), this.operations?.operations.some(operation => ["running", "unknown"].includes(operation.state)) ? this.loadOperations(generation) : undefined]); return;}
         if (!this.board || this.recordId || this.recordKind || !this.options.service?.queryActivity) return;
+        if (this.unavailable) return;
         await this.supplement('ui.activity', generation, () => this.options.service!.queryActivity!(this.boardId, this.query), page => {
             if (page.revision !== this.page?.revision) {this.invalid = true; this.refreshInBackground(); return;}
             if (JSON.stringify(page) === JSON.stringify(this.page)) return;
@@ -406,6 +422,15 @@ export class KanbanWorkbench {
         if (target.dataset.session) {event.preventDefault(); await this.options.openSession(target.dataset.session); return;}
         if (this.dirty && !['close-panel', 'copy-reference', 'copy-link', 'copy-resource'].includes(target.dataset.action ?? '')) throw new Error(this.ui.label('unsaved'));
         const path = this.navigationTarget(target);
+        if (this.unavailable) {
+            if (target.dataset.action === 'unavailable-return') {
+                if (this.options.navigate) await this.options.navigate('/');
+                else {if (this.dirty) throw new Error(this.ui.label('unsaved')); this.unavailable = false; await this.openResource('/');}
+                return;
+            }
+            if (target.dataset.action === 'close-panel') {await this.requestClose(true); return;}
+            if (!['copy-reference','copy-link','copy-resource'].includes(target.dataset.action ?? '')) throw new Error(this.ui.label('resourceUnavailable'));
+        }
         if (path && this.options.navigate) {await this.options.navigate(path); return;}
         if (target.dataset.board) {await this.navigate(target.dataset.board); return;}
         if (target.dataset.context) {this.recordKind = target.dataset.context === 'board' ? undefined : target.dataset.context as 'log' | 'decision'; this.recordCursor = undefined; this.closePanel(); await this.refresh(); return;}
@@ -518,6 +543,7 @@ export class KanbanWorkbench {
             if(planning.type!=='plan-item')return;
             await this.execute({type:'save-edit',launchMode:value(data,'launchMode') as 'automatic'|'manual',itemId:this.item.id,editId:value(data,'editId'),title:value(data,'title'),responsibility:value(data,'responsibility'),acceptance:value(data,'acceptance'),planning:planning.planning,externalRefs:[...(this.item.externalRefs??[]).filter(ref=>!value(data,'itemResource')||ref.system!==JSON.parse(value(data,'itemResource')).system),...(value(data,'itemResource')?[JSON.parse(value(data,'itemResource'))]:[])]});
             this.editing=undefined;return;
+        if (this.unavailable) throw new Error(this.ui.label('resourceUnavailable'));
         }
         if (kind === 'amendment') data.set('amendmentId', form.dataset.amendment ?? '');
         if (kind === 'record-link' && this.recordId) {await this.execute({type: 'link-record', recordId: this.recordId, itemId: value(data, 'itemId')}); return;}
@@ -566,6 +592,7 @@ export class KanbanWorkbench {
         catch (error) {
             const raw = (error as {code?: unknown})?.code;
             try {this.options.presentation.log?.({operationId, stage: this.operationStage, result: 'failure', ...failureDetails(error), code: typeof raw === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/.test(raw) ? raw : 'KANBAN_OPERATION_FAILED', durationMs: Date.now() - started});} catch { /* Reporting cannot alter drafts. */ }
+        if (this.unavailable) throw new Error(this.ui.label('resourceUnavailable'));
             if (!this.abort.signal.aborted) this.error(errorText(error, this.ui.label, this.operationStage));
         }
         finally {
@@ -652,6 +679,10 @@ function errorText(error: unknown, label: (key: string) => string, stage: string
     const translated = label('errors.' + safe);
     const details = safe === 'KANBAN_OPERATION_FAILED' ? failureDetails(error) : {};
     const diagnostic = details.errorName ? `\n${label('diagnostic')}: ${stage} · ${details.errorName}${details.source ? ' · ' + details.source : ''}` : '';
+        if (this.unavailable) {
+            if (this.dirty && !explicit) throw new Error(this.ui.label('unsaved'));
+            this.closePanel(); this.options.changed?.(); return;
+        }
     return (translated !== 'kanban.errors.' + safe && translated !== 'errors.' + safe ? `${translated} (${safe})` : `${label('failed')}: ${safe}`) + diagnostic;
 }
 
