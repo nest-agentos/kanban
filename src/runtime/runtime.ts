@@ -33,7 +33,7 @@ export async function assembleKanbanRuntime(options:KanbanRuntimeOptions) {
 function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeContext,extensions:KanbanRuntimeExtension[],setDeletion:(verify:(id:string)=>Promise<void>)=>void) {
     const {service,journal,workLog}=context,directory=options.directory??'/kanban';
     const capabilities:Partial<import('../contracts').KanbanClient>=Object.assign({},...extensions.map(extension=>extension.capabilities));
-    const records=options.resources?createRecordExecution({service,journal,resources:options.resources,requiresItemResource:options.requiresItemResource,planningSession:capabilities.planningSession,log:options.log??(()=>{})}):undefined;
+    const records=options.resources?createRecordExecution({service,journal,archiveSession:options.archiveSession,resources:options.resources,requiresItemResource:options.requiresItemResource,planningSession:capabilities.planningSession,log:options.log??(()=>{})}):undefined;
     const automation=options.automation?createKanbanAutomation({...options.automation,...context,
         directory:directory+'/automation',log:options.log??(()=>{})}):undefined;
     const client={...service,...capabilities,

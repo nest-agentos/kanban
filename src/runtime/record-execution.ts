@@ -1,3 +1,4 @@
+import {cleanupRecordTasks} from './record-cleanup';
 import {advanceRecordControl, requestRecordControl, recordControlKey, type RecordControl} from './record-controls';
 import {DEFAULT_KANBAN_WORK_TYPES,projectKanbanTask} from '../contracts';
 import {journalCommand} from './journal-command';
@@ -9,10 +10,12 @@ import {requireValue} from '../rules';
 import {safeCode} from './diagnostics';
 
 interface SavedRun extends KanbanRecordExecution {
+    previousRunId?:string;
     placement?: KanbanRecordRunRequest['placement']; requestRevision?: number; taskKind?: string; parentKind?: string;
     sourceBoardId: string; record: KanbanProjectRecord; automation: NonNullable<KanbanBoard['automation']>}
 type RunReceipt = Pick<SavedRun, 'id' | 'sourceBoardId' | 'recordId' | 'recordRevision' | 'requestRevision' | 'placement'> & {schema?: 2};
 interface Options {
+    archiveSession?(sessionId:string,operationId:string):Promise<void>;
     planningSession?: KanbanClient['planningSession'];
     requiresItemResource?(board:KanbanBoard):boolean;
     service: KanbanClient; journal: KanbanAutomationJournal; resources: KanbanResourceCatalog;
@@ -50,13 +53,14 @@ export function createRecordExecution(options: Options) {
             }
             return resume(run);
         },
-        controlRecord: async (boardId: string, request: {recordId: string; operationId: string; action: 'pause' | 'resume' | 'cancel'}) => {
+        controlRecord: async (boardId: string, request: Parameters<NonNullable<KanbanClient['controlRecord']>>[1]) => {
             await requestRecordControl(options.service, options.journal, boardId, request);
-            for (const run of await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? []) if (run.recordId === request.recordId) {
+            if((await options.journal.get<RecordControl>(recordControlKey(boardId,request.recordId)))?.settled)return;
+            for (const run of await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? []) if (run.recordId===request.recordId&&!['completed','failed','cancelled'].includes(run.state)) {
                 await pending.get(run.id)?.catch(() => {}); await resume(run);
             }
             const runs = (await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? []).filter(run => run.recordId === request.recordId);
-            if (request.action === 'cancel' && runs.every(run => ['completed','failed','cancelled'].includes(run.state))) await finishDecisionCancellation(options, boardId, request.recordId, request.operationId);
+            if (['cancel','archive','delete','restart'].includes(request.action) && runs.every(run => ['completed','failed','cancelled'].includes(run.state))) await finishDecisionCancellation(options, boardId, request.recordId, request.operationId);
         },
         recordSessions: async (boardId: string, recordId: string) => {
             await options.service.record(boardId, recordId);
@@ -82,7 +86,7 @@ export function createRecordExecution(options: Options) {
             }
             for (const row of await options.journal.find<RecordControl>('record-control:', value => value.action === 'cancel' && !value.settled)) {
                 if (!row.value.boardId || !row.value.recordId) continue;
-                try {await finishDecisionCancellation(options, row.value.boardId, row.value.recordId, row.value.operationId);} catch (error) {errors.push(error);}
+                try {await finishDecisionCancellation(options, row.value.boardId, row.value.recordId, row.value.operationId);} catch(error){errors.push(error);options.log({operationId:row.value.operationId,boardId:row.value.boardId,stage:'record.control.finalize',result:'failure',code:safeCode(error,'RECORD_CONTROL_FINALIZATION_FAILED'),durationMs:0});}
             }
             if (errors.length) throw new AggregateError(errors, 'RECORD_EXECUTION_SCAN_FAILED');
         },
@@ -101,7 +105,7 @@ async function prepare(options: Options, boardId: string, request: KanbanRecordR
     requireValue(!(await options.service.read(boardId)).lifecycle,'BOARD_STOPPING');
     const record = await options.service.record(boardId, request.recordId);
     const control = await options.journal.get<RecordControl>(recordControlKey(boardId, record.id));
-    requireValue(record.deletedAt === undefined && (!control || control.action === 'resume' && control.settled), 'RECORD_CONTROL_ACTIVE');
+    requireValue(record.deletedAt === undefined && record.archivedAt===undefined && (!control || control.action === 'resume' && control.settled || control.after==='restart'&&record.executionEpoch===control.operationId), 'RECORD_CONTROL_ACTIVE');
     const frozen = await options.journal.get<RunReceipt>('record-operation:' + request.operationId);
     if (frozen) {
         requireValue(frozen.sourceBoardId === boardId && frozen.recordId === request.recordId && (frozen.requestRevision ?? frozen.recordRevision) === request.expectedRevision
@@ -120,14 +124,16 @@ async function prepare(options: Options, boardId: string, request: KanbanRecordR
     const placement = request.placement ?? 'current-board';
     requireValue(['current-board', 'new-board'].includes(placement), 'INVALID_EXECUTION_PLACEMENT');
     const saved = await options.journal.update<SavedRun[]>('record-runs:' + boardId, previous => {
-        requireValue(!previous?.some(row => row.recordId === record.id && row.state === 'completed'), 'DECISION_EXECUTION_COMPLETED');
+        requireValue(control?.after==='restart'&&record.executionEpoch===control.operationId||!previous?.some(row=>row.recordId===record.id&&row.state==='completed'),'DECISION_EXECUTION_COMPLETED');
         const same = previous?.find(row => row.id === id || row.recordId === record.id && decisionSignature(row.record) === decisionSignature(record));
         if (same) {requireValue(!same.placement || same.placement === placement, 'DECISION_EXECUTION_PLACEMENT_CONFLICT'); return previous!;}
-        requireValue(!previous?.some(row => row.recordId === record.id && !['completed', 'failed'].includes(row.state)), 'DECISION_EXECUTION_UNSETTLED');
+        requireValue(!previous?.some(row => row.recordId === record.id && !['completed','failed','cancelled'].includes(row.state)), 'DECISION_EXECUTION_UNSETTLED');
         requireValue((previous?.length ?? 0) < 100, 'RECORD_EXECUTION_LIMIT');
-        return [...previous ?? [], newRun(board, record, request, id, options.resources.system)];
+        const candidate=newRun(board,record,request,id,options.resources.system);
+        if(control?.after==='restart')candidate.previousRunId=previous?.filter(row=>row.recordId===record.id).sort((a,b)=>b.createdAt-a.createdAt)[0]?.id;
+        return [...previous??[],candidate];
     });
-    await options.journal.update('record-context:'+id,old=>old??{sourceBoardId:boardId,recordId:record.id,recordRevision:record.revision,runId:id});
+    await options.journal.update('record-context:'+id,old=>old??{sourceBoardId:boardId,recordId:record.id,recordRevision:record.revision,runId:id,previousRunId:saved.find(run=>run.id===id)?.previousRunId});
     const original = saved.find(row => row.id === id || row.recordId === record.id && decisionSignature(row.record) === decisionSignature(record))!;
     return freezeOperation(options, request, original);
 }
@@ -145,7 +151,7 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
     const started = Date.now();
     try {
         const control = await options.journal.get<RecordControl>(recordControlKey(run.sourceBoardId, run.recordId));
-        if (control && !control.settled) {
+        if (control && !control.settled && !(control.after==='restart'&&run.record.executionEpoch===control.operationId)) {
             const state = await advanceRecordControl(options.service, options.journal, run, control);
             const updated = await save(options, {...run, state, updatedAt: Date.now()});
             if (state !== run.state) options.log({operationId:control.operationId, boardId:run.sourceBoardId, stage:'record.control.' + control.action, result:state==='unknown'||state==='blocked'?'failure':'success', code:updated.code, durationMs:Date.now()-started});
@@ -182,7 +188,7 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
 }
 
 function decisionSignature(record: KanbanProjectRecord): string {
-    return sha256HexSync(JSON.stringify([record.title, record.content, record.rationale, record.externalRefs]));
+    return sha256HexSync(JSON.stringify([record.title, record.content, record.rationale, record.externalRefs,record.executionEpoch]));
 }
 function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: KanbanRecordRunRequest, id: string, resourceSystem: string): SavedRun {
     const placement = request.placement ?? 'current-board';
@@ -249,15 +255,29 @@ function view(run: SavedRun): KanbanRecordExecution {
 async function cancelDecision(options: Options, boardId: string, recordId: string, operationId: string): Promise<void> {
     const record = await options.service.record(boardId, recordId);
     if (record.status !== 'cancelled') await journalCommand(options.journal, options.service, boardId, 'record-cancel:' + JSON.stringify([boardId,recordId,operationId]), {type: 'cancel-record', recordId});
-    await options.journal.update<RecordControl>(recordControlKey(boardId, recordId), old => ({...old!, settled: true}));
+
 }
 
 async function finishDecisionCancellation(options: Options, boardId: string, recordId: string, operationId: string): Promise<void> {
-    const runs = (await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? []).filter(run => run.recordId === recordId);
-    if (runs.some(run => !['completed','failed','cancelled'].includes(run.state))) return;
-    const record = await options.service.record(boardId, recordId);
-    const control = await options.journal.get<RecordControl>(recordControlKey(boardId, recordId));
-    requireValue(control, 'RECORD_CONTROL_ACTIVE');
-    const state = await advanceRecordControl(options.service, options.journal, {id: operationId, sourceBoardId: boardId, boardId, recordId, recordRevision: record.revision, itemIds: record.itemIds, state: 'cancelling', createdAt: 0, updatedAt: 0}, control);
-    if (state === 'cancelled') await cancelDecision(options, boardId, recordId, operationId);
+    const started=Date.now(),control=await options.journal.get<RecordControl>(recordControlKey(boardId,recordId));
+    requireValue(control,'RECORD_CONTROL_ACTIVE');if(control.settled)return;
+    const runs=(await options.journal.get<SavedRun[]>('record-runs:'+boardId)??[]).filter(run=>run.recordId===recordId&&!(control.after==='restart'&&run.record.executionEpoch===control.operationId));
+    if(runs.some(run=>!['completed','failed','cancelled'].includes(run.state)))return;
+    const record=await options.service.record(boardId,recordId);
+    if(record.executionEpoch!==control.operationId){
+        const state=await advanceRecordControl(options.service,options.journal,{id:operationId,sourceBoardId:boardId,boardId,recordId,recordRevision:record.revision,itemIds:record.itemIds,state:'cancelling',createdAt:0,updatedAt:0},control);
+        if(state!=='cancelled')return;
+        await cancelDecision(options,boardId,recordId,operationId);
+    }
+    if(control.after)await cleanupRecordTasks(options.service,options.journal,runs,control.after==='delete'?'delete':'archive',operationId,options.archiveSession,options.planningSession);
+    if(control.after==='restart')await restartDecision(options,boardId,recordId,operationId);
+    else if(control.after)await journalCommand(options.journal,options.service,boardId,'record-dispose:'+operationId,{type:control.after==='delete'?'delete-record':'archive-record',recordId});
+    await options.journal.update<RecordControl>(recordControlKey(boardId,recordId),old=>({...old!,settled:true}));
+    options.log({operationId,boardId,stage:'record.control.'+(control.after??'cancel')+'.settled',result:'success',durationMs:Date.now()-started});
+}
+async function restartDecision(options:Options,boardId:string,recordId:string,operationId:string):Promise<void> {
+    await journalCommand(options.journal,options.service,boardId,'record-restart:'+operationId,{type:'restart-record',recordId,epoch:operationId});
+    const record=await options.service.record(boardId,recordId);
+    const run=await prepare(options,boardId,{recordId,operationId:'restart-'+operationId,expectedRevision:record.revision});
+    await advance(options,run);
 }

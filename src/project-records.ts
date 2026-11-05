@@ -1,24 +1,28 @@
+import {archiveItems} from './archives';
 import {sha256HexSync} from './utils';
 import type {KanbanActor, KanbanCommand, KanbanProjectRecord, KanbanRecordPage, KanbanRecordQuery} from './contracts';
 import type {KanbanState} from './ports';
 import {identity, requireValue, text} from './rules';
 import {principal, principalKey} from './identity';
 import {requireReviewer, validateSources} from './amendments';
-export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record'}>;
+export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record'}>;
 export function isRecordCommand(command: KanbanCommand): command is RecordCommand {
-    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record'].includes(command.type);
+    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record'].includes(command.type);
 }
 export function applyRecord(state: KanbanState, command: RecordCommand, actor: KanbanActor, now: number, forceDraft = false): void {
     if (command.type === 'append-record') {append(state, command, actor, now, forceDraft); return;}
     const record = state.records?.find(record => record.id === command.recordId); requireValue(record, 'RECORD_NOT_FOUND');
     requireValue(record.deletedAt === undefined, 'RECORD_DELETED');
-    if (command.type === 'request-record-cancellation' || command.type === 'cancel-record' || command.type === 'delete-record') {
+    if (command.type === 'request-record-cancellation' || command.type === 'cancel-record' || command.type === 'delete-record' || command.type==='archive-record' || command.type==='restart-record') {
         requireReviewer(state.board, actor);
         requireValue(principal(actor).kind === 'human', 'FORBIDDEN');
         requireValue(record.kind === 'decision', 'DECISION_REQUIRED');
         if (command.type !== 'request-record-cancellation') requireValue(record.itemIds.every(id => {const item = state.board.items.find(i => i.id === id) ?? state.archiveIndex?.find(i => i.id === id); return item && ['completed', 'cancelled'].includes(item.status);}), 'RECORD_EXECUTION_UNSETTLED');
+        if(command.type==='delete-record'||command.type==='archive-record')cleanupLinkedTasks(state,record,command.type==='delete-record'?'delete':'archive',now);
         if (command.type === 'request-record-cancellation') record.status = record.status === 'cancelled' ? 'cancelled' : 'cancelling';
         else if (command.type === 'cancel-record') record.status = 'cancelled';
+        else if(command.type==='archive-record')record.archivedAt=now;
+        else if(command.type==='restart-record'){requireValue(record.status==='cancelled','RECORD_CANCEL_REQUIRED');identity(command.epoch);record.executionEpoch=command.epoch;record.status='confirmed';delete record.archivedAt;}
         else {requireValue(['cancelled', 'rejected', 'superseded'].includes(record.status), 'RECORD_CANCEL_REQUIRED'); record.deletedAt = now;}
     } else if (command.type === 'link-record') {
         requireValue(!['cancelling','cancelled'].includes(record.status), 'RECORD_CANCELLING');
@@ -84,7 +88,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
         requireValue(decoded.revision === state.board.revision && decoded.filter === digest, 'CURSOR_STALE');
         offset = decoded.offset; requireValue(Number.isSafeInteger(offset) && offset >= 0, 'INVALID_CURSOR');
     }
-    const matched = summaries.filter(record => (query.includeDeleted || record.deletedAt === undefined) && (!query.kind || query.kind === record.kind)
+    const matched = summaries.filter(record => (query.includeDeleted || record.deletedAt === undefined) && (query.includeArchived || record.archivedAt===undefined) && (!query.kind || query.kind === record.kind)
         && (!query.itemId || record.itemIds.includes(query.itemId)) && (!query.status || query.status === record.status))
         .sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id));
     const items = matched.slice(offset, offset + limit);
@@ -112,4 +116,18 @@ function validateRecordReferences(refs: import('./contracts').KanbanExternalRefe
 export function recordSummary(record: KanbanProjectRecord): import('./contracts').KanbanRecordSummary {
     const {content: _content, rationale: _rationale, sources, ...metadata} = record;
     return {...metadata, sessionIds: [...new Set(sources.map(source => source.sessionId))]};
+}
+
+function cleanupLinkedTasks(state:KanbanState,record:KanbanProjectRecord,action:'archive'|'delete',now:number):void {
+    const ids=new Set(record.itemIds),all=[...state.board.items,...state.archiveIndex??[]];
+    for(let index=0;index<all.length;index++)for(const item of all)if(item.planning?.parentId&&ids.has(item.planning.parentId))ids.add(item.id);
+    const selected=all.filter(item=>ids.has(item.id));
+    requireValue(selected.every(item=>['completed','cancelled'].includes(item.status)),'RECORD_EXECUTION_UNSETTLED');
+    if(action==='archive'){
+        const active=state.board.items.filter(item=>ids.has(item.id)&&item.deletedAt===undefined);
+        for(let at=0;at<active.length;at+=50)archiveItems(state,active.slice(at,at+50).map(item=>item.id),'decision-'+record.id,now);
+    }else{
+        requireValue(!state.archiveIndex?.some(item=>ids.has(item.id)&&item.deletedAt===undefined),'RECORD_TASK_CLEANUP_REQUIRED');
+        for(const item of state.board.items.filter(item=>ids.has(item.id)&&item.deletedAt===undefined)){item.deletedAt=now;item.updatedAt=now;item.revision++;}
+    }
 }

@@ -58,6 +58,8 @@ export type KanbanCommand = import('./task-state').KanbanTaskCommand | import('.
     | {type: 'request-record-cancellation'; recordId: string}
     | {type: 'cancel-record'; recordId: string}
     | {type: 'delete-record'; recordId: string}
+    | {type:'archive-record';recordId:string}
+    | {type:'restart-record';recordId:string;epoch:string}
     | {type:'request-board-stop'; controlId:string; intent:'cancel'|'delete'; mode:'drain'|'cancel'}
     | {type:'observe-board-stop'; controlId:string; phase:'waiting'|'ready'|'blocked'; code?:string}
     | {type: 'delete-board'}

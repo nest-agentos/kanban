@@ -4,18 +4,18 @@ import type {KanbanAutomationJournal} from './automation-journal';
 import {journalCommand} from './journal-command';
 import {requireValue} from '../rules';
 
-export interface RecordControl {boardId?: string; recordId?: string; operationId: string; action: 'pause' | 'resume' | 'cancel'; controls: Record<string, string>; settled?: boolean}
+export interface RecordControl {boardId?: string; recordId?: string; operationId: string; action: 'pause' | 'resume' | 'cancel'; controls: Record<string, string>; settled?: boolean; after?:'archive'|'delete'|'restart'}
 export const recordControlKey = (board: string, record: string) => 'record-control:' + JSON.stringify([board, record]);
 /** Only already materialized work is controlled; cancellation never creates missing work. */
 export async function advanceRecordControl(service: KanbanClient, journal: KanbanAutomationJournal,
     run: KanbanRecordExecution & {sourceBoardId: string}, control: RecordControl): Promise<KanbanRecordExecution['state']> {
-    const ids = new Set([run.rootItemId, ...run.itemIds ?? []]);
+    const ids = new Set([run.rootItemId,...run.itemIds??[]].filter((id):id is string=>!!id));
     let board;
     try {board = await service.read(run.boardId);}
     catch (error) {if (control.action === 'cancel' && (error as {code?: string}).code === 'BOARD_NOT_FOUND') return 'cancelled'; throw error;}
     let items = board.items.filter(item => ids.has(item.id));
     for (let index = 0; index < board.items.length; index++) {
-        const children = board.items.filter(item => ids.has(item.planning?.parentId));
+        const children = board.items.filter(item=>item.planning?.parentId&&ids.has(item.planning.parentId));
         if (children.every(item => ids.has(item.id))) break;
         for (const child of children) ids.add(child.id);
     }
@@ -41,16 +41,19 @@ async function requestItemControl(service: KanbanClient, journal: KanbanAutomati
     control.controls = saved.controls;
 }
 export async function requestRecordControl(service: KanbanClient, journal: KanbanAutomationJournal, boardId: string,
-    request: {recordId: string; operationId: string; action: RecordControl['action']}): Promise<void> {
-    requireValue(/^[\w-]{1,128}$/.test(request.operationId) && ['pause','resume','cancel'].includes(request.action), 'INVALID_RECORD_CONTROL');
+    request: {recordId: string; operationId: string; action: RecordControl['action']|'archive'|'delete'|'restart';expectedRevision?:number}): Promise<void> {
+    requireValue(/^[\w-]{1,128}$/.test(request.operationId) && ['pause','resume','cancel','archive','delete','restart'].includes(request.action), 'INVALID_RECORD_CONTROL');
     const board = await service.read(boardId), actor = await service.currentPrincipal(), record = await service.record(boardId, request.recordId);
     requireValue(actor.kind === 'human' && board.members?.some(m => m.kind === actor.kind && m.id === actor.id && m.roles?.includes('coordinator')), 'COORDINATOR_REQUIRED');
-    requireValue(record.kind === 'decision' && record.deletedAt === undefined, 'DECISION_REQUIRED');
+    requireValue(record.kind==='decision','DECISION_REQUIRED');
+    const after=['archive','delete','restart'].includes(request.action)?request.action as RecordControl['after']:undefined,action=after?'cancel':request.action as RecordControl['action'];
     await journal.update<RecordControl>(recordControlKey(boardId, record.id), old => {
-        if (old?.operationId === request.operationId) {requireValue(old.action === request.action, 'IDEMPOTENCY_CONFLICT'); return old;}
-        requireValue(!old || old.action !== 'cancel', 'RECORD_CANCELLING');
+        if (old?.operationId === request.operationId) {requireValue(old.action===action&&old.after===after,'IDEMPOTENCY_CONFLICT'); return old;}
+        requireValue(record.deletedAt===undefined,'RECORD_DELETED');
+        requireValue(request.expectedRevision===undefined||request.expectedRevision===record.revision,'REVISION_CONFLICT');
+        requireValue(!old || old.action !== 'cancel'||old.settled, 'RECORD_CANCELLING');
         requireValue(request.action !== 'resume' || old?.action === 'pause', 'TASK_NOT_PAUSED');
-        return {boardId, recordId: record.id, operationId: request.operationId, action: request.action, controls: old?.controls ?? {}};
+        return {boardId, recordId: record.id, operationId: request.operationId, action,after, controls: old?.controls ?? {}};
     });
-    if (request.action === 'cancel') await journalCommand(journal, service, boardId, 'record-cancelling:' + JSON.stringify([boardId,record.id,request.operationId]), {type:'request-record-cancellation',recordId:record.id});
+    if(action==='cancel'&&record.deletedAt===undefined)await journalCommand(journal, service, boardId, 'record-cancelling:' + JSON.stringify([boardId,record.id,request.operationId]), {type:'request-record-cancellation',recordId:record.id});
 }

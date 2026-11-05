@@ -4,7 +4,7 @@ import {defaultReferences,type KanbanReferencePolicy} from './ports';
 import type {KanbanBoard,KanbanItem} from '../contracts';
 import type {KanbanAutomationJournal} from './automation-journal';
 
-export interface DecisionContext {sourceBoardId:string;recordId:string;recordRevision:number;runId:string}
+export interface DecisionContext {sourceBoardId:string;recordId:string;recordRevision:number;runId:string;previousRunId?:string}
 /** The host resolves business identity; execution transports receive opaque structured context. */
 export async function workContext(journal:KanbanAutomationJournal,board:KanbanBoard,item:KanbanItem,references:KanbanReferencePolicy=defaultReferences) {
     const runId=item.externalRefs?.find(ref=>ref.system===references.decision)?.id;
@@ -14,10 +14,14 @@ export async function workContext(journal:KanbanAutomationJournal,board:KanbanBo
         const run=runs?.find(run=>run.id===runId);
         if(run)decision={sourceBoardId:run.sourceBoardId,recordId:run.recordId,recordRevision:run.recordRevision,runId};
     }
-    const snapshot = decision ? (await journal.get<Array<{id:string;record:unknown}>>('record-runs:'+decision.sourceBoardId))?.find(run=>run.id===decision.runId)?.record : undefined;
+    const runs=decision?await journal.get<Array<{id:string;record:unknown;boardId:string;itemIds?:string[]}>>('record-runs:'+decision.sourceBoardId):undefined;
+    const currentRun=runs?.find(run=>run.id===decision?.runId),snapshot=currentRun?.record;
+    const index=currentRun?.itemIds?.indexOf(item.id)??-1;
+    const previousRun=runs?.find(run=>run.id===decision?.previousRunId),previousItem=index>=0?previousRun?.itemIds?.[index]:undefined;
+    const prior=previousItem?await currentAnalysis(journal,previousRun!.boardId,previousItem):undefined;
     const own=await currentAnalysis(journal,board.id,item.id);
     const approved=own?.status.state==='ready'?own:item.planning?.parentId?await currentAnalysis(journal,board.id,item.planning.parentId):undefined;
-    return {...(approved?.status.state==='ready'&&approved.result?{planning:{id:approved.id,result:approved.result}}:{}),board:{id:board.id,title:board.title,revision:board.revision,reference:kanbanReference(board)},decision:decision ? {...decision,...(snapshot ? {snapshot} : {})} : null,
+    return {...(prior?.status.state==='ready'&&prior.result?{priorPlanning:{id:prior.id,result:prior.result}}:{}),...(approved?.status.state==='ready'&&approved.result?{planning:{id:approved.id,result:approved.result}}:{}),board:{id:board.id,title:board.title,revision:board.revision,reference:kanbanReference(board)},decision:decision ? {...decision,...(snapshot ? {snapshot} : {})} : null,
         task:{id:item.id,revision:item.revision,reference:kanbanReference(board,item),parentId:item.planning?.parentId??null,title:item.title,responsibility:item.responsibility,acceptance:item.acceptance,
             dependencies:item.planning?.dependencies??[]},
         resources:item.externalRefs?.filter(ref=>ref.system===references.resource)??[]};

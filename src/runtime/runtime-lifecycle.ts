@@ -9,7 +9,7 @@ export async function verifyRuntimeLifecycle(service:KanbanService,journal:Kanba
         const blocker=(await boardDeletionBlockers({service,journal},board.id)).find(row=>row.itemId===command.itemId);
         if(blocker)throw new KanbanError(blocker.code);
     }
-    if(command.type==='cancel-record'||command.type==='delete-record') {
+    if(command.type==='cancel-record'||command.type==='delete-record'||command.type==='archive-record'||command.type==='restart-record') {
         const runs=await journal.get<Array<{recordId:string;state:string}>>('record-runs:'+board.id);
         if(runs?.some(run=>run.recordId===command.recordId&&!['completed','failed','cancelled'].includes(run.state)))throw new KanbanError('RECORD_EXECUTION_UNSETTLED');
     }
