@@ -28,7 +28,7 @@ it('coalesces unchanged state, survives restart and never resubmits a running co
     f.inspect.mockResolvedValue({state:'succeeded',executionId:'original-session',output:{ready:true}});
     await f.tick();await f.tick();expect(f.start).toHaveBeenCalledOnce();
     await f.command({type:'report-analysis',itemId:'child',operationId:'resolved',status:{itemId:'child',state:'ready'}});
-    await f.tick();expect(f.start).toHaveBeenCalledTimes(2);
+    await f.tick();expect(f.start).toHaveBeenCalledOnce();
 });
 it('defers a busy original session and retries preparation without submitting a replacement',async()=>{
     const f=await fixture();await f.tick();
@@ -44,7 +44,7 @@ it('observes admitted work while paused and defers further state events until re
     await f.command({type:'request-control',itemId:'group',controlId:'pause',action:'pause'});
     await f.command({type:'control-receipt',itemId:'group',controlId:'pause',state:'paused'});
     f.inspect.mockResolvedValue({state:'succeeded',executionId:'original-session',output:{ready:true}});
-    await f.command({type:'report-analysis',itemId:'child',operationId:'a',status:{itemId:'child',state:'ready'}});await f.tick();
+    await f.command({type:'report-analysis',itemId:'child',operationId:'a',status:{itemId:'child',state:'failed',code:'CHECK_FAILED'}});await f.tick();
     expect(f.start).toHaveBeenCalledOnce();expect(f.inspect.mock.calls.length).toBeGreaterThan(1);
     await f.command({type:'request-control',itemId:'group',controlId:'resume',action:'resume'});
     await f.command({type:'control-receipt',itemId:'group',controlId:'resume',state:'resumed'});await f.tick();expect(f.start).toHaveBeenCalledTimes(2);

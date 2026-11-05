@@ -43,7 +43,7 @@ async function advance(options:Options,snapshot:CoordinationSnapshot,active:()=>
     const attention=new Set(['waiting-input','error','unknown','review','completed','cancelled']);
     const fingerprint=sha256HexSync(JSON.stringify(snapshot.children.map(child=>[child.id,attention.has(child.phase)?child.phase:'active',attention.has(child.phase)?child.reason:undefined])));
     if(state.fingerprint===fingerprint)return;
-    if(!state.fingerprint&&!snapshot.children.some(child=>['waiting-input','error','unknown','review','completed','cancelled'].includes(child.phase))){await journal.update<State>(key,old=>({...old,fingerprint}));return;}
+    if(!snapshot.children.some(child=>attention.has(child.phase))){await journal.update<State>(key,old=>({...old,fingerprint}));return;}
     const id='coordinate-'+sha256HexSync(JSON.stringify([snapshot.boardId,snapshot.parent.id,fingerprint,state.fingerprint])).slice(0,48),jobKey='coordination-operation:'+id;
     const frozen=await journal.update<CoordinationSnapshot>('coordination-snapshot:'+id,old=>old??snapshot);
     const existing=await journal.get<CoordinationOperation>(jobKey);
