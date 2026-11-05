@@ -15,6 +15,7 @@ interface SavedRun extends KanbanRecordExecution {
     sourceBoardId: string; record: KanbanProjectRecord; automation: NonNullable<KanbanBoard['automation']>}
 type RunReceipt = Pick<SavedRun, 'id' | 'sourceBoardId' | 'recordId' | 'recordRevision' | 'requestRevision' | 'placement'> & {schema?: 2};
 interface Options {
+    archiveItemResources?(boardId:string,itemId:string,operationId:string):Promise<void>;
     archiveSession?(sessionId:string,operationId:string):Promise<void>;
     planningSession?: KanbanClient['planningSession'];
     requiresItemResource?(board:KanbanBoard):boolean;
@@ -248,8 +249,8 @@ async function save(options: Options, run: SavedRun): Promise<SavedRun> {
 }
 
 function view(run: SavedRun): KanbanRecordExecution {
-    const {id, recordId, recordRevision, boardId, rootItemId, itemIds, state, createdAt, updatedAt, code} = run;
-    return {id, recordId, recordRevision, boardId, ...(rootItemId ? {rootItemId, itemIds} : {}), state, createdAt, updatedAt, ...(code ? {code} : {})};
+    const {id, recordId, recordRevision, boardId, rootItemId, itemIds, state, createdAt, updatedAt, archivedAt, code} = run;
+    return {id, recordId, recordRevision, boardId, ...(rootItemId ? {rootItemId, itemIds} : {}), state, createdAt, updatedAt,...(archivedAt!==undefined?{archivedAt}:{}), ...(code ? {code} : {})};
 }
 
 async function cancelDecision(options: Options, boardId: string, recordId: string, operationId: string): Promise<void> {
@@ -269,7 +270,8 @@ async function finishDecisionCancellation(options: Options, boardId: string, rec
         if(state!=='cancelled')return;
         await cancelDecision(options,boardId,recordId,operationId);
     }
-    if(control.after)await cleanupRecordTasks(options.service,options.journal,runs,control.after==='delete'?'delete':'archive',operationId,options.archiveSession,options.planningSession);
+    if(control.after)await cleanupRecordTasks(options.service,options.journal,runs,control.after==='delete'?'delete':'archive',operationId,options.archiveSession,options.planningSession,options.archiveItemResources);
+    if(control.after)await options.journal.update<SavedRun[]>('record-runs:'+boardId,old=>(old??[]).map(row=>runs.some(run=>run.id===row.id)?{...row,archivedAt:row.archivedAt??Date.now()}:row));
     if(control.after==='restart')await restartDecision(options,boardId,recordId,operationId);
     else if(control.after)await journalCommand(options.journal,options.service,boardId,'record-dispose:'+operationId,{type:control.after==='delete'?'delete-record':'archive-record',recordId});
     await options.journal.update<RecordControl>(recordControlKey(boardId,recordId),old=>({...old!,settled:true}));

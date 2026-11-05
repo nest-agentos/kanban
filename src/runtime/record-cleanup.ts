@@ -5,12 +5,13 @@ import {journalCommand} from './journal-command';
 import {requireValue} from '../rules';
 
 /** Only generated run roots and their descendants belong to decision cleanup. */
-export async function cleanupRecordTasks(service:KanbanClient,journal:KanbanAutomationJournal,runs:KanbanRecordExecution[],action:'archive'|'delete',operationId:string,archiveSession?:(id:string,operation:string)=>Promise<void>,planningSession?:KanbanClient['planningSession']):Promise<void> {
+export async function cleanupRecordTasks(service:KanbanClient,journal:KanbanAutomationJournal,runs:KanbanRecordExecution[],action:'archive'|'delete',operationId:string,archiveSession?:(id:string,operation:string)=>Promise<void>,planningSession?:KanbanClient['planningSession'],archiveResources?:(board:string,id:string,operation:string)=>Promise<void>):Promise<void> {
     for(const run of runs){
         const roots=[...new Set([run.rootItemId,...run.itemIds??[]].filter((id):id is string=>!!id))];
         const items=new Map<string,{item:KanbanItem;archived:boolean}>();
         for(const id of roots)await collect(service,run.boardId,id,items);
         if(archiveSession)for(const id of items.keys())await archiveItemSessions(service,planningSession,run.boardId,id,operationId,archiveSession);
+        if(archiveResources)for(const id of items.keys())await archiveResources(run.boardId,id,sha256HexSync(JSON.stringify([operationId,id])));
         for(const {item,archived} of [...items.values()].reverse()){
             requireValue(['completed','cancelled'].includes(item.status),'RECORD_EXECUTION_UNSETTLED');
             if(item.deletedAt!==undefined||action==='archive'&&archived)continue;
