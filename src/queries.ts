@@ -35,6 +35,7 @@ function order(a: KanbanItemSummary, b: KanbanItemSummary): number {
     return a.planning.priority - b.planning.priority || a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 }
 function matchesQuery(item: KanbanItemSummary, query: Omit<KanbanItemQuery, 'cursor' | 'limit'>, board: KanbanState['board']): boolean {
+    if(query.excludeArchived&&item.archivedAt!==undefined)return false;
     if (item.deletedAt !== undefined && !query.includeDeleted) return false;
     if (query.restartedFrom !== undefined && item.restartedFrom !== query.restartedFrom) return false;
     if (query.phase && item.task?.phase !== query.phase) return false;

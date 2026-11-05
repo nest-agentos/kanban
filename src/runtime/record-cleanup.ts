@@ -23,13 +23,11 @@ export async function cleanupRecordTasks(service:KanbanClient,journal:KanbanAuto
 async function collect(service:KanbanClient,board:string,id:string,items:Map<string,{item:KanbanItem;archived:boolean}>):Promise<void> {
     if(items.has(id))return;
     const detail=await service.item(board,id);items.set(id,{item:detail.item,archived:!!detail.archive});
-    for(const view of ['all','archive'] as const){
-        let cursor:string|undefined;
-        do {const page=await service.query(board,{view,parentId:id,limit:200,cursor});
-            for(const child of page.items)await collect(service,board,child.id,items);
-            cursor=page.nextCursor;
-        }while(cursor);
-    }
+    let cursor:string|undefined;
+    do {const page=await service.query(board,{view:'all',parentId:id,limit:200,cursor});
+        for(const child of page.items)await collect(service,board,child.id,items);
+        cursor=page.nextCursor;
+    }while(cursor);
 }
 
 async function archiveItemSessions(service:KanbanClient,planning:KanbanClient['planningSession'],board:string,id:string,operation:string,archive:(id:string,operation:string)=>Promise<void>):Promise<void> {
