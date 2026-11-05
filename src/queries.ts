@@ -27,7 +27,7 @@ export function queryItems(state: KanbanState, query: KanbanItemQuery = {}, all 
     }
     const progress = progressByParent(state, all);
     const items = matches.slice(start, start + limit).map(item => ({...item, ...(progress.has(item.id) ? {progress: progress.get(item.id)} : {})}));
-    return {revision,total:matches.length,items,...(query.parentId?{progress:childProgress(matches),parentTask:all.find(item=>item.id===query.parentId)?.task}:{}), ...(start + items.length < matches.length ? {
+    return {revision,total:matches.length,items,...(query.parentId?{progress:childProgress(matches),attentionItems:matches.filter(item=>['waiting-input','error','unknown','review'].includes(item.task?.phase??'')),parentTask:all.find(item=>item.id===query.parentId)?.task}:{}), ...(start + items.length < matches.length ? {
         nextCursor: JSON.stringify({revision, after: items.at(-1)!.id, filter: fingerprint}),
     } : {})};
 }
@@ -71,9 +71,15 @@ function progressByParent(state: KanbanState, all: KanbanItemSummary[]): Map<str
     for (const item of all.filter(i => executable(state.board, i))) {
         let parent = item.planning.parentId; const seen = new Set<string>();
         while (parent && !seen.has(parent)) {
-            seen.add(parent); const progress = result.get(parent) ?? {total: 0, completed: 0, cancelled: 0, inProgress: 0};
-            progress.total++; if (item.status === 'completed') progress.completed++; if (item.status === 'cancelled') progress.cancelled++;
-            if (item.status === 'claimed' || item.status === 'review') progress.inProgress++;
+            seen.add(parent); const progress = result.get(parent) ?? {total:0,completed:0,cancelled:0,inProgress:0,waitingInput:0,errors:0,review:0,paused:0,waiting:0};
+            progress.total++;const phase=item.task?.phase;
+            if(phase==='completed')progress.completed++;if(phase==='cancelled')progress.cancelled++;
+            if(['running','preparing','analyzing','queued','resuming'].includes(phase??''))progress.inProgress++;
+            if(phase==='waiting-input')progress.waitingInput=(progress.waitingInput??0)+1;
+            if(phase==='error'||phase==='unknown')progress.errors=(progress.errors??0)+1;
+            if(phase==='review')progress.review=(progress.review??0)+1;
+            if(phase==='paused'||phase==='pausing')progress.paused=(progress.paused??0)+1;
+            if(phase==='waiting-start'||phase==='waiting-dependency')progress.waiting=(progress.waiting??0)+1;
             result.set(parent, progress); parent = byId.get(parent)?.planning.parentId;
         }
     }

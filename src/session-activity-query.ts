@@ -6,7 +6,12 @@ export async function querySessionItems(core: KanbanService, boardId: string, in
     project: (rows: KanbanSessionItemSummary[])=>Promise<KanbanSessionItemSummary[]>): Promise<KanbanSessionItemPage> {
     const {execution='all',...query}=input;
     if(!['all','running','recent','active'].includes(execution)) throw new KanbanError('INVALID_EXECUTION_FILTER');
-    if(execution==='all') {const page=await core.query(boardId,query);return {...page,items:await project(page.items)};}
+    if(execution==='all') {
+        const page=await core.query(boardId,query);
+        if(!page.attentionItems)return {...page,items:await project(page.items)};
+        const rows=await project([...new Map([...page.items,...page.attentionItems].map(item=>[item.id,item])).values()]),byId=new Map(rows.map(item=>[item.id,item]));
+        return {...page,items:page.items.map(item=>byId.get(item.id)!),attentionItems:page.attentionItems.map(item=>byId.get(item.id)!)};
+    }
     const {cursor,limit=50,...filters}=query;
     if(!Number.isSafeInteger(limit)||limit<1||limit>200) throw new KanbanError('INVALID_PAGE_SIZE');
     let page=await core.query(boardId,{...filters,limit:200}), rows=[...page.items];const revision=page.revision;

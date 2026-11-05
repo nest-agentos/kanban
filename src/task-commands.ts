@@ -90,7 +90,7 @@ function issues(state: KanbanState, item: KanbanItem, command: KanbanTaskCommand
         if (!old) {requireValue(item.issues.length < 200, 'ISSUE_LIMIT'); item.issues.push(structuredClone(issue));}
     } else if (command.type === 'resolve-issue') {
         const issue = item.issues?.find(i => i.id === command.issueId && i.attemptId === command.attemptId); requireValue(issue, 'ISSUE_NOT_FOUND');
-        identity(command.resolvedBy); requireValue(!issue.resolvedBy || issue.resolvedBy === command.resolvedBy, 'ISSUE_ALREADY_RESOLVED'); issue.resolvedBy = command.resolvedBy;
+        identity(command.resolvedBy);issue.resolvedBy??=command.resolvedBy;
     }
 }
 

@@ -68,7 +68,8 @@ function groupFact(item:Item,workflow:KanbanWorkflowState|undefined,now:number,a
     const children=all.filter(row=>row.planning?.parentId===item.id&&row.deletedAt===undefined&&row.createdAt!==undefined);
     if(!children.length)return {phase:'waiting-dependency',reason:'CHILDREN_UNFINISHED'};
     const phases=children.map(child=>projectKanbanTask(child as Item,workflow,now,all).phase);
-    if(phases.some(phase=>phase==='error'||phase==='unknown'))return {phase:'error',reason:'GROUP_CHILD_ERROR'};
+    if(phases.includes('error'))return {phase:'error',reason:'GROUP_CHILD_ERROR'};
+    if(phases.includes('unknown'))return {phase:'unknown',reason:'GROUP_CHILD_UNCONFIRMED'};
     if(phases.includes('waiting-input'))return {phase:'waiting-input',reason:'GROUP_INPUT_REQUIRED'};
     if(phases.includes('review'))return {phase:'review',reason:'GROUP_CHILD_REVIEW'};
     if(phases.some(phase=>['running','preparing','analyzing','queued','resuming'].includes(phase)))return {phase:'running',reason:'GROUP_CHILD_RUNNING'};

@@ -248,3 +248,11 @@ it('returns current parent state and complete child totals with a child page',as
     const failed=await f.service.query('board',{view:'all',parentId:'group',limit:1});
     expect(failed.progress?.errors).toBe(1);expect(failed.parentTask).toMatchObject({phase:'error',reason:'GROUP_CHILD_ERROR'});
 });
+it('keeps group attention outside the visible child page',async()=>{
+    const f=await fixture();await f.run({type:'create-item',item:{id:'group',title:'Group',responsibility:'Scope',acceptance:'Accepted'}});
+    for(const id of ['a-waiting','z-error'])await f.run({type:'create-item',item:{id,title:id,responsibility:'Work',acceptance:'Verify'},planning:{kind:'subtask',parentId:'group',priority:2,dependencies:[],references:[]}});
+    await f.run({type:'report-analysis',itemId:'z-error',operationId:'failed',status:{itemId:'z-error',state:'failed',code:'EIO'}});
+    const page=await f.service.query('board',{view:'all',parentId:'group',limit:1});
+    expect(page.items[0].id).toBe('a-waiting');expect(page.progress?.errors).toBe(1);
+    expect(page.attentionItems?.map(item=>item.id)).toEqual(['z-error']);
+});
