@@ -78,7 +78,7 @@ function createItem(state: KanbanState, command: Extract<KanbanCommand, { type: 
     identity(input.id); text(input.title); text(input.responsibility); text(input.acceptance);
     requireValue(!board.items.some(i => i.id === input.id) && !state.archiveIndex?.some(i => i.id === input.id), 'ITEM_EXISTS');
     const item: KanbanItem = { ...input, origin: {kind: 'direct', principal: principal(actor)}, status: 'backlog', revision: 1, createdAt: now, readyAt: now, updatedAt: now, workUnits: 0, participants: [] };
-    item.launch = {startAt: now + TASK_START_DELAY_MS};
+    item.launch = {startAt: now + (purpose==='planning'?0:TASK_START_DELAY_MS)};
     requireValue(command.launch?.mode === undefined || ['automatic', 'manual'].includes(command.launch.mode), 'INVALID_LAUNCH_MODE');
     requireValue(command.launch?.paused === undefined || typeof command.launch.paused === 'boolean', 'INVALID_TASK_PAUSE');
     if (command.launch?.mode) item.launch!.mode = command.launch.mode;

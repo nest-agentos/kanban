@@ -256,3 +256,11 @@ it('keeps group attention outside the visible child page',async()=>{
     expect(page.items[0].id).toBe('a-waiting');expect(page.progress?.errors).toBe(1);
     expect(page.attentionItems?.map(item=>item.id)).toEqual(['z-error']);
 });
+it('starts internal decision planning immediately while retaining the delay for development tasks',async()=>{
+    const f=await fixture();
+    await f.run({type:'create-item',item:{id:'planning-carrier',title:'Plan',responsibility:'Plan scope',acceptance:'Confirmed plan',purpose:'planning'}});
+    await f.run({type:'create-item',item:{id:'development-task',title:'Build',responsibility:'Build code',acceptance:'Verified'}});
+    const planning=(await f.service.item('board','planning-carrier')).item,development=(await f.service.item('board','development-task')).item;
+    expect(planning.launch?.startAt).toBe(planning.createdAt);
+    expect(development.launch!.startAt-development.createdAt).toBe(300000);
+});
