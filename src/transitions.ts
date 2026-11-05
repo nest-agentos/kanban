@@ -22,9 +22,12 @@ function claim(state: KanbanState, item: KanbanItem, command: Extract<ItemComman
     requireValue(!taskEditing(item,now),'EDIT_LEASE_ACTIVE');
     eligible(board, item, actor); assertReady(state, item);
     requireValue(command.estimate || board.policy.requireEstimate === false, 'ESTIMATE_REQUIRED'); if (command.estimate) validateEstimate(command.estimate);
-    const wip = board.items.filter(i => i.status === 'claimed' || i.status === 'review');
-    if (command.type === 'claim') requireValue(wip.length < limits(state).inProgress, 'WIP_LIMIT');
-    requireValue(wip.filter(i => i.id !== item.id && i.owner && assigneeKey(i.owner) === key).length < limits(state).perAssignee, principal(actor).kind === 'agent' ? 'AGENT_WIP_LIMIT' : 'ASSIGNEE_WIP_LIMIT');
+    const active = board.items.filter(i => i.status === 'claimed');
+    const wip = [...active, ...board.items.filter(i => i.status === 'review')];
+    const global = board.policy.maxInProgress === undefined ? active : wip;
+    const assigned = board.policy.maxInProgressPerAssignee === undefined && board.policy.maxInProgressPerAgent === undefined ? active : wip;
+    if (command.type === 'claim') requireValue(global.length < limits(state).inProgress, 'WIP_LIMIT');
+    requireValue(assigned.filter(i => i.id !== item.id && i.owner && assigneeKey(i.owner) === key).length < limits(state).perAssignee, principal(actor).kind === 'agent' ? 'AGENT_WIP_LIMIT' : 'ASSIGNEE_WIP_LIMIT');
     if (command.type === 'claim') requireValue(item.status === 'open' && !item.owner, 'ALREADY_OWNED');
     else {
         requireValue(item.status === 'claimed' && item.transfer && principalKey(transferTarget(item.transfer)) === key, 'TRANSFER_NOT_OFFERED');

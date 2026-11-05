@@ -52,9 +52,10 @@ function waitingFact(item:Item,now:number,all:Array<Pick<KanbanItemSummary,'id'|
     const analysis=analysisFact(item);if(analysis)return analysis;
     const dependency=item.planning?.dependencies.find(id=>all.find(i=>i.id===id)?.status!=='completed');
     if(dependency)return {phase:'waiting-dependency',reason:'DEPENDENCY_UNFINISHED:'+dependency,actions:item.launch?.admittedAt===undefined?['edit','cancel']:[]};
+    if(item.planning?.execution==='children')return {phase:'waiting-dependency',reason:'CHILDREN_UNFINISHED',actions:[]};
     if(taskEditing(item,now))return {phase:'waiting-start',reason:'EDIT_LEASE_ACTIVE'};
     if(item.launch?.admittedAt!==undefined)return {phase:'queued'};
-    return {phase:'waiting-start',reason:item.launch?.mode==='manual'?'MANUAL_START_REQUIRED':taskDue(item,now)?'ADMISSION_PENDING':'START_AT_PENDING',actions:['run','edit','pause','cancel']};
+    return {phase:taskDue(item,now)?'queued':'waiting-start',reason:item.launch?.mode==='manual'?'MANUAL_START_REQUIRED':taskDue(item,now)?'ADMISSION_PENDING':'START_AT_PENDING',actions:['run','edit','pause','cancel']};
 }
 function analysisFact(item:Item):Fact|undefined {
     if(item.analysis?.state==='clarification')return {phase:'waiting-input',reason:item.analysis.reason};

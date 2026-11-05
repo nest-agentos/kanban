@@ -2,17 +2,17 @@ import {afterEach, expect, it, vi} from 'vitest';
 import {createVFS, MemoryBackend} from '@nestos/vfs-core';
 import {createKanbanModule, SeqKanbanStore, projectKanbanTask, taskStartAt} from '../src';
 import {createKanbanExecutionBridge} from '../src/execution';
-import type {KanbanCommand, KanbanService, KanbanItem} from '../src/contracts';
+import type {KanbanCommand, KanbanService, KanbanItem, KanbanBoard} from '../src/contracts';
 
 const closes:Array<()=>Promise<void>>=[];
 afterEach(async()=>{for(const close of closes.splice(0).reverse())await close();vi.restoreAllMocks();});
-async function fixture() {
+async function fixture(policy: Partial<KanbanBoard['policy']> = {}) {
     let now=1000000,seq=0;vi.spyOn(Date,'now').mockImplementation(()=>now);
     const {manager}=await createVFS({rootBackend:new MemoryBackend()});closes.push(()=>manager.dispose());
     const fs=await manager.openFileSystem('/'),store=await SeqKanbanStore.open(fs);
     const api=(id:string)=>createKanbanModule({store,actor:{kind:'service',id},authorize:async()=>{},now:()=>now,log(){}});
     const service=api('manager'),worker=api('worker');
-    await service.create({id:'board',title:'Work',scope:{kind:'system'},policy:{requireEstimate:false,review:'independent'},members:[{kind:'service',id:'manager',roles:['coordinator','reviewer'],responsibility:'Manage'},{kind:'service',id:'worker',roles:['worker'],responsibility:'Build'}]});
+    await service.create({id:'board',title:'Work',scope:{kind:'system'},policy:{requireEstimate:false,review:'independent',...policy},members:[{kind:'service',id:'manager',roles:['coordinator','reviewer'],responsibility:'Manage'},{kind:'service',id:'worker',roles:['worker'],responsibility:'Build'}]});
     const run=async(command:KanbanCommand,client:KanbanService=service)=>client.execute('board',{operationId:'op-'+ ++seq,expectedRevision:(await client.read('board')).revision,command});
     await run({type:'publish-plan',plan:{schema:'kanban.plan/1',id:'plan',revision:1,sealed:true,items:[{id:'task',title:'Task',responsibility:'Build',acceptance:'Verify',assignee:{kind:'service',id:'worker'},dependsOn:[]}]}});
     const executor={prepare:vi.fn(async()=>({id:'original'})),start:vi.fn(async()=>({outcome:'running' as const,executionSessionId:'original-session'})),inspect:vi.fn(async()=>({outcome:'running' as const,executionSessionId:'original-session'}))};
@@ -199,4 +199,30 @@ it('allocates readable task IDs transactionally while numbering custom IDs indep
     await f.run({type:'create-item',item:{id:'meaningful-name',title:'Named task',responsibility:'Build',acceptance:'Verify'}},f.human);
     expect((await f.human.item('board','meaningful-name')).item.number).toBe(3);
     await expect(f.run({type:'create-item',item:{id:'meaningful-name',title:'Duplicate',responsibility:'Build',acceptance:'Verify'}},f.human)).rejects.toMatchObject({code:'ITEM_EXISTS'});
+});
+
+it.each([
+    [{}, true],
+    [{maxInProgressPerAssignee: 1}, false],
+    [{maxInProgressPerAgent: 1}, false],
+    [{maxInProgress: 1}, false],
+] as const)('separates default execution capacity from explicit review WIP: %j', async (policy, starts) => {
+    const f = await fixture(policy);
+    await f.run({type: 'request-run', itemId: 'task'});
+    const bridge = await f.bridge(); await bridge.scan();
+    const dispatch = Object.values((await f.service.workflow('board')).dispatches)[0];
+    await f.run({type: 'observe-execution', dispatchId: dispatch.id, fence: dispatch.fence, outcome: 'succeeded'});
+    await f.run({type: 'publish-plan', plan: {schema: 'kanban.plan/1', id: 'next-plan', revision: 1, sealed: true,
+        items: [{id: 'next', title: 'Next', responsibility: 'Build', acceptance: 'Verify', assignee: {kind: 'service', id: 'worker'}, dependsOn: []}]}});
+    await f.run({type: 'request-run', itemId: 'next'}); await bridge.scan();
+    expect(f.executor.start).toHaveBeenCalledTimes(starts ? 2 : 1);
+    expect((await f.item()).status).toBe('review');
+});
+it('keeps active executions within the default per-assignee capacity', async () => {
+    const f = await fixture(); await f.run({type: 'request-run', itemId: 'task'});
+    const bridge = await f.bridge(); await bridge.scan();
+    await f.run({type: 'publish-plan', plan: {schema: 'kanban.plan/1', id: 'next-plan', revision: 1, sealed: true,
+        items: [{id: 'next', title: 'Next', responsibility: 'Build', acceptance: 'Verify', assignee: {kind: 'service', id: 'worker'}, dependsOn: []}]}});
+    await f.run({type: 'request-run', itemId: 'next'}); await bridge.scan();
+    expect(f.executor.start).toHaveBeenCalledTimes(1);
 });

@@ -10,7 +10,7 @@ export function queryItems(state: KanbanState, query: KanbanItemQuery = {}, all 
     const {cursor, limit = 50, ...filters} = query;
     requireValue(Number.isSafeInteger(limit) && limit >= 1 && limit <= 200, 'INVALID_PAGE_SIZE');
     requireValue(['ready', 'backlog', 'in-progress', 'review', 'closed', 'proposed', 'archive', 'all'].includes(query.view ?? 'ready'), 'INVALID_VIEW');
-    for (const field of ['area', 'milestone', 'parentId', 'kind', 'sessionId', 'search'] as const) if (filters[field] !== undefined) requireValue(typeof filters[field] === 'string' && filters[field]!.length <= 256, 'INVALID_FILTER');
+    for (const field of ['area', 'milestone', 'parentId', 'kind', 'sessionId', 'search', 'restartedFrom'] as const) if (filters[field] !== undefined) requireValue(typeof filters[field] === 'string' && filters[field]!.length <= 256, 'INVALID_FILTER');
     if (filters.reference) requireValue(typeof filters.reference.system === 'string' && typeof filters.reference.id === 'string' && filters.reference.system.length <= 256 && filters.reference.id.length <= 256, 'INVALID_REFERENCE_FILTER');
     const fingerprint = JSON.stringify(Object.fromEntries(Object.entries({...filters, view: filters.view ?? 'ready'}).sort(([a], [b]) => a.localeCompare(b)))), revision = state.board.revision;
     all = all.map(item => ({...item, task: projectKanbanTask(item, state.workflow, now, all)}));
@@ -36,6 +36,7 @@ function order(a: KanbanItemSummary, b: KanbanItemSummary): number {
 }
 function matchesQuery(item: KanbanItemSummary, query: Omit<KanbanItemQuery, 'cursor' | 'limit'>, board: KanbanState['board']): boolean {
     if (item.deletedAt !== undefined && !query.includeDeleted) return false;
+    if (query.restartedFrom !== undefined && item.restartedFrom !== query.restartedFrom) return false;
     if (query.phase && item.task?.phase !== query.phase) return false;
     if (!matchesView(item, query.view ?? 'ready')) return false;
     for (const field of ['area', 'milestone', 'parentId', 'kind'] as const) if (query[field] !== undefined && item.planning[field] !== query[field]) return false;
