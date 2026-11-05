@@ -162,9 +162,9 @@ export class KanbanWorkbench {
         this.container?.replaceChildren(); this.container?.classList.remove('kanban-layout');
     }
     invalidateFromEvents(): void {
+        if (this.unavailable) return;
         this.invalid = true; this.eventGeneration++;
         this.refreshInBackground();
-        if (this.unavailable) return;
     }
     setVisible(visible: boolean): void {this.visible = visible; if (visible && this.invalid) this.invalidateFromEvents();}
     private refreshInBackground(activityOnly = false): void {
@@ -187,9 +187,9 @@ export class KanbanWorkbench {
             ? service.queryActivity(this.boardId, this.query) : service.query(this.boardId, this.query);
     }
     private async refreshActivity(generation: number): Promise<void> {
+        if (this.unavailable) return;
         if (this.item && this.itemId) {await Promise.all([this.loadExecutionSections(generation, this.item, this.itemArchived), this.operations?.operations.some(operation => ["running", "unknown"].includes(operation.state)) ? this.loadOperations(generation) : undefined]); return;}
         if (!this.board || this.recordId || this.recordKind || !this.options.service?.queryActivity) return;
-        if (this.unavailable) return;
         await this.supplement('ui.activity', generation, () => this.options.service!.queryActivity!(this.boardId, this.query), page => {
             if (page.revision !== this.page?.revision) {this.invalid = true; this.refreshInBackground(); return;}
             if (JSON.stringify(page) === JSON.stringify(this.page)) return;
@@ -417,11 +417,6 @@ export class KanbanWorkbench {
     }
     private async click(event: Event): Promise<void> {
         const target = (event.target as HTMLElement).closest<HTMLElement>('button, a'); if (!target || target.matches(':disabled')) return;
-        if (target.dataset.action === 'refresh-related-sessions') {await this.loadRelatedSessions(true); return;}
-        for (const menu of this.options.editor.querySelectorAll<HTMLDetailsElement>('[data-popover][open]')) if (!menu.contains(target)) menu.open = false;
-        if (target.dataset.session) {event.preventDefault(); await this.options.openSession(target.dataset.session); return;}
-        if (this.dirty && !['close-panel', 'copy-reference', 'copy-link', 'copy-resource'].includes(target.dataset.action ?? '')) throw new Error(this.ui.label('unsaved'));
-        const path = this.navigationTarget(target);
         if (this.unavailable) {
             if (target.dataset.action === 'unavailable-return') {
                 if (this.options.navigate) await this.options.navigate('/');
@@ -431,6 +426,11 @@ export class KanbanWorkbench {
             if (target.dataset.action === 'close-panel') {await this.requestClose(true); return;}
             if (!['copy-reference','copy-link','copy-resource'].includes(target.dataset.action ?? '')) throw new Error(this.ui.label('resourceUnavailable'));
         }
+        if (target.dataset.action === 'refresh-related-sessions') {await this.loadRelatedSessions(true); return;}
+        for (const menu of this.options.editor.querySelectorAll<HTMLDetailsElement>('[data-popover][open]')) if (!menu.contains(target)) menu.open = false;
+        if (target.dataset.session) {event.preventDefault(); await this.options.openSession(target.dataset.session); return;}
+        if (this.dirty && !['close-panel', 'copy-reference', 'copy-link', 'copy-resource'].includes(target.dataset.action ?? '')) throw new Error(this.ui.label('unsaved'));
+        const path = this.navigationTarget(target);
         if (path && this.options.navigate) {await this.options.navigate(path); return;}
         if (target.dataset.board) {await this.navigate(target.dataset.board); return;}
         if (target.dataset.context) {this.recordKind = target.dataset.context === 'board' ? undefined : target.dataset.context as 'log' | 'decision'; this.recordCursor = undefined; this.closePanel(); await this.refresh(); return;}
@@ -512,6 +512,7 @@ export class KanbanWorkbench {
         this.boardId = id; this.itemId = ''; this.recordKind = undefined; this.recordCursor = undefined; this.query = {view: 'all', limit: 50}; this.closePanel(); await this.refresh();
     }
     private async submit(event: Event): Promise<void> {
+        if (this.unavailable) throw new Error(this.ui.label('resourceUnavailable'));
         const form = event.target as HTMLFormElement, kind = form.dataset.form, data = new FormData(form);
         form.dataset.resourceId ??= randomUUID();
         if (!form.reportValidity()) return;
@@ -543,7 +544,6 @@ export class KanbanWorkbench {
             if(planning.type!=='plan-item')return;
             await this.execute({type:'save-edit',launchMode:value(data,'launchMode') as 'automatic'|'manual',itemId:this.item.id,editId:value(data,'editId'),title:value(data,'title'),responsibility:value(data,'responsibility'),acceptance:value(data,'acceptance'),planning:planning.planning,externalRefs:[...(this.item.externalRefs??[]).filter(ref=>!value(data,'itemResource')||ref.system!==JSON.parse(value(data,'itemResource')).system),...(value(data,'itemResource')?[JSON.parse(value(data,'itemResource'))]:[])]});
             this.editing=undefined;return;
-        if (this.unavailable) throw new Error(this.ui.label('resourceUnavailable'));
         }
         if (kind === 'amendment') data.set('amendmentId', form.dataset.amendment ?? '');
         if (kind === 'record-link' && this.recordId) {await this.execute({type: 'link-record', recordId: this.recordId, itemId: value(data, 'itemId')}); return;}
@@ -561,6 +561,7 @@ export class KanbanWorkbench {
         this.itemId='';this.drawer.show(this.ui.newItemForm(board,parent,resources),parent?'new-child':'new-item');this.dirty=true;
     }
     private async execute(command: KanbanCommand): Promise<void> {
+        if (this.unavailable) throw new Error(this.ui.label('resourceUnavailable'));
         if (!this.board || !this.options.service) return;
         if (command.type === 'review') {
             const workflow = await this.options.service.workflow(this.board.id);
@@ -592,7 +593,6 @@ export class KanbanWorkbench {
         catch (error) {
             const raw = (error as {code?: unknown})?.code;
             try {this.options.presentation.log?.({operationId, stage: this.operationStage, result: 'failure', ...failureDetails(error), code: typeof raw === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/.test(raw) ? raw : 'KANBAN_OPERATION_FAILED', durationMs: Date.now() - started});} catch { /* Reporting cannot alter drafts. */ }
-        if (this.unavailable) throw new Error(this.ui.label('resourceUnavailable'));
             if (!this.abort.signal.aborted) this.error(errorText(error, this.ui.label, this.operationStage));
         }
         finally {
@@ -648,6 +648,10 @@ export class KanbanWorkbench {
     }
     private closePanel(): void {this.dirty = false; this.itemId = ''; this.recordId = ''; this.item = undefined; this.drawer.close();}
     private async requestClose(explicit: boolean): Promise<void> {
+        if (this.unavailable) {
+            if (this.dirty && !explicit) throw new Error(this.ui.label('unsaved'));
+            this.closePanel(); this.options.changed?.(); return;
+        }
         if (this.editing && explicit) {await this.execute({type:'end-edit',...this.editing});this.editing=undefined;}
         if (this.dirty && !explicit) throw new Error(this.ui.label('unsaved'));
         if (this.options.navigate && this.boardId) {
@@ -679,10 +683,6 @@ function errorText(error: unknown, label: (key: string) => string, stage: string
     const translated = label('errors.' + safe);
     const details = safe === 'KANBAN_OPERATION_FAILED' ? failureDetails(error) : {};
     const diagnostic = details.errorName ? `\n${label('diagnostic')}: ${stage} · ${details.errorName}${details.source ? ' · ' + details.source : ''}` : '';
-        if (this.unavailable) {
-            if (this.dirty && !explicit) throw new Error(this.ui.label('unsaved'));
-            this.closePanel(); this.options.changed?.(); return;
-        }
     return (translated !== 'kanban.errors.' + safe && translated !== 'errors.' + safe ? `${translated} (${safe})` : `${label('failed')}: ${safe}`) + diagnostic;
 }
 

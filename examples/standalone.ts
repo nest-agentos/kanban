@@ -1,33 +1,22 @@
 import {createVFS, MemoryBackend} from '@nestos/vfs-core';
-import {createKanbanModule, SeqKanbanStore} from '@nestos/kanban';
-import {createKanbanExecutionBridge} from '@nestos/kanban/execution';
+import {createKanban, SeqKanbanStore} from '@nestos/kanban';
 
-// No application runtime, Session, Flow, Kernel or model is needed.
 const {manager} = await createVFS({rootBackend: new MemoryBackend()});
-const fs = await manager.openFileSystem('/');
-const store = await SeqKanbanStore.open(fs);
-const api = (id: string) => createKanbanModule({store, actor: {kind: 'service', id},
-    authorize: async () => {}, log: event => {if (event.result === 'failure') console.error(event);}});
-const coordinator = api('coordinator'), worker = api('worker');
-await coordinator.create({id: 'research', title: 'Independent research board', scope: {kind: 'collection', namespace: 'lab', id: 'research'},
-    members: [{kind: 'service', id: 'coordinator', responsibility: 'Coordinate', roles: ['coordinator', 'reviewer']},
-        {kind: 'service', id: 'worker', responsibility: 'Research', roles: ['worker']}],
-    policy: {requireEstimate: false, review: 'assignee'}});
-await coordinator.execute('research', {operationId: 'publish-research', expectedRevision: 1, command: {type: 'publish-plan', plan: {
-    schema: 'kanban.plan/1', id: 'plan', revision: 1, sealed: true,
-    items: ['collect', 'evaluate'].map((id, index) => ({id, title: id, responsibility: 'Produce evidence', acceptance: 'Evidence verified',
-        assignee: {kind: 'service', id: 'worker'}, dependsOn: index ? ['collect'] : []})),
-}}});
-const bridge = await createKanbanExecutionBridge({fs, directory: '/execution', boardId: 'research', service: coordinator,
-    worker: async () => worker, autoDispatch: true, authorize: async () => {}, log: () => {}, executor: {
-        prepare: async dispatch => ({id: dispatch.id}),
-        start: async () => ({outcome: 'succeeded'}),
-        inspect: async () => ({outcome: 'unknown', code: 'RECEIPT_UNAVAILABLE'}),
-    }});
+const store = await SeqKanbanStore.open(await manager.openFileSystem('/'));
+// The demo trusts its single in-memory user. Production hosts enforce authorization here.
+const api = createKanban({store, actor: {kind: 'human', id: 'owner'}, authorize: async () => {}});
 try {
-    await bridge.tick(); await bridge.tick();
-    console.log(JSON.stringify({completedPlans: (await coordinator.workflow('research')).completedPlans,
-        items: (await coordinator.query('research', {view: 'all'})).items.map(item => ({id: item.id, status: item.status}))}));
-} finally {
-    await bridge.quiesce(); await coordinator.quiesce(); await worker.quiesce(); await manager.dispose();
-}
+    await api.boards.create({id: 'research', title: 'Research', scope: {kind: 'system'},
+        members: [{kind: 'human', id: 'owner', responsibility: 'Research'}],
+        policy: {requireEstimate: false, review: 'assignee'}});
+    await api.execute('research', {operationId: 'create', expectedRevision: (await api.boards.get('research')).revision,
+        command: {type: 'create-item', stage: 'open', item: {id: 'experiment', title: 'Experiment', responsibility: 'Collect evidence', acceptance: 'Evidence recorded'}}});
+    await api.execute('research', {operationId: 'claim', expectedRevision: (await api.boards.get('research')).revision,
+        command: {type: 'claim', itemId: 'experiment'}});
+    const item = (await api.items.get('research', 'experiment')).item;
+    await api.execute('research', {operationId: 'submit', expectedRevision: (await api.boards.get('research')).revision,
+        command: {type: 'submit', itemId: item.id, token: item.owner!.token, resultRef: 'lab:evidence'}});
+    const delivered = (await api.items.get('research', 'experiment')).item;
+    if (delivered.status !== 'completed') throw new Error('Expected a completed item');
+    console.log(JSON.stringify({id: delivered.id, status: delivered.status}));
+} finally {await api.dispose(); await manager.dispose();}

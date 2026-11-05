@@ -14,7 +14,7 @@
 - 事项、记录详情与新建表单共用 panelHeader：左侧关闭/返回、单行名称、右侧引用菜单，长标题保留 title 与可访问文本，不额外插入编号工具行。返回只关闭抽屉，保留看板和筛选，已有草稿保护沿用原操作规则。
 - initialResource 显式提供时只加载对应资源，根路径展示目录；未提供时保留独立 UI 的默认看板选择。可选 navigate、mountWindowList、changed 将资源导航与窗口动作交给宿主；库只提供插槽和当前页面状态，不创建窗口管理器。窗口插槽随 DOM 替换释放，销毁释放全部监听。
 
-验证：`pnpm typecheck`、`pnpm test`、`pnpm build`。协议与装配见 [README](README.md) 及 [协调设计](../../doc/design/kanban-coordination.md)。
+验证：`pnpm typecheck`、`pnpm test`、`pnpm build`。协议与装配见 [README](README.md) 及 [协调设计](https://github.com/nest-agentos/NestOS/blob/main/doc/design/kanban-coordination.md)。
 
 mountTitleBar 提供时，目录、看板、详情和新建表单使用完整宿主标题栏，不再同时挂载局部导航和窗口插槽。库交接原标题、关闭及菜单节点，宿主保留其事件与状态；库只提供 fallback 与公开语义插槽，不导入宿主 UI 包。
 

@@ -1,6 +1,6 @@
 {
   "name": "@nestos/kanban",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Portable VFS-backed work coordination and transactional file protocols.",
   "type": "module",
   "main": "./src/index.ts",
@@ -16,16 +16,18 @@
     "./activity": "./src/activity.ts"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/check-package.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "example": "tsx examples/standalone.ts"
+    "example": "tsx examples/standalone.ts",
+    "prepack": "pnpm build",
+    "test:package": "node scripts/check-package.mjs"
   },
   "peerDependencies": {
     "@nestos/vfs-core": "^0.5.1"
   },
   "devDependencies": {
-    "@nestos/vfs-core": "workspace:*",
+    "@nestos/vfs-core": "^0.5.1",
     "typescript": "^5.9.3",
     "tsup": "^8.5.0",
     "vitest": "^3.2.4",
@@ -119,11 +121,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nest-agentos/NestOS.git",
-    "directory": "libraries/kanban"
+    "url": "git+https://github.com/nest-agentos/kanban.git"
   },
   "bugs": {
-    "url": "https://github.com/nest-agentos/NestOS/issues"
+    "url": "https://github.com/nest-agentos/kanban/issues"
   },
-  "homepage": "https://github.com/nest-agentos/NestOS#readme"
+  "homepage": "https://github.com/nest-agentos/kanban#readme",
+  "packageManager": "pnpm@10.20.0",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=20.19.0"
+  }
 }

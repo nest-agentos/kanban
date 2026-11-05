@@ -1,6 +1,20 @@
 # @nestos/kanban
 
-基于 VFS 的通用看板与工作协调库，仅依赖 `@nestos/vfs-core`。提供唯一责任人、估算与在制额度、依赖、验收、归档、日志和决策，以及持久派发意图。库不调用模型、不创建 Session/Task、不安装后台调度器。包含可独立挂载的 DOM UI；执行、来源与资源活动通过可选端口接入。
+## 独立安装与开发
+
+```sh
+npm install @nestos/kanban @nestos/vfs-core
+# 在本仓库开发
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm pack
+```
+
+根入口与 `/contracts` 入口不依赖 NestOS 服务；可选 `/ui` 入口使用原生 DOM，并通过宿主传入文案、图标及导航。按需引入 `@nestos/kanban/ui.css`。Node 或只使用领域功能的消费者无需导入 UI。
+
+基于 VFS 的通用看板与工作协调库，核心依赖 `@nestos/vfs-core`，可选 UI 使用 `@nestos/ui-common`。提供唯一责任人、估算与在制额度、依赖、验收、归档、日志和决策，以及持久派发意图。库不调用模型、不创建 Session/Task、不安装后台调度器。包含可独立挂载的 DOM UI；执行、来源与资源活动通过可选端口接入。
 
 ```ts
 import {SeqKanbanStore, createKanbanModule} from '@nestos/kanban';
@@ -109,7 +123,7 @@ VFS `seq:committed` 可用于唤醒宿主，但持久状态与定期补扫才是
 
 关闭顺序：停止事件/定时准入 → service.quiesce（拒新操作、等待已准入事务）→ 排空执行适配器 → 最后关闭 VFS。宿主重启后扫描持久派发、检查原执行身份并补投 outbox。SeqFile 不能与模型调用、远程服务或另一数据库组成单一事务，执行桥必须保留提交前日志和 unknown 状态。
 
-NestOS 的默认目录、远程 HttpSeqClient、Session 来源读取、发布 Agent/Flow、Kernel 回执、系统 notify 与调度接线均位于 `backend/app-core/src/kanban/`。扫描状态机、批量提交、远程事务编码与执行恢复归独立库；UI 的 NestOS 包装位于 `ui/app-shell/src/kanban/`。应用入口只导出实际 NestOS 绑定，不代转出库 API，核心没有这些运行依赖。完整规范见 [Kanban 协调设计](../../doc/design/kanban-coordination.md)。
+NestOS 的默认目录、远程 HttpSeqClient、Session 来源读取、发布 Agent/Flow、Kernel 回执、系统 notify 与调度接线均位于 `backend/app-core/src/kanban/`。扫描状态机、批量提交、远程事务编码与执行恢复归独立库；UI 的 NestOS 包装位于 `ui/app-shell/src/kanban/`。应用入口只导出实际 NestOS 绑定，不代转出库 API，核心没有这些运行依赖。完整规范见 [Kanban 协调设计](https://github.com/nest-agentos/NestOS/blob/main/doc/design/kanban-coordination.md)。
 
 会话活动入口 `executionSession(boardId, itemId)` 只读取当前执行摘要。显式传入 `{includeRelated: true}` 时，通过可选 `KanbanSessionSource.related` 合并宿主关联与已有执行绑定、参与者；返回的 `sessions` 按不透明 Session ID 去重，各自包含用途和 `executions` 执行记录。续办在同一 Session 下保留不同尝试，`current` 仅由正式执行绑定决定。UI 在展开「相关会话」时加载，支持刷新和宿主注入的原始资源链接；普通活动轮询不读取历史。资源属性由宿主提供，库不识别工作区、Git 或原生会话协议。
 
@@ -119,4 +133,4 @@ Boards may store automation settings with opaque planner/executor references and
 
 宿主已有工作区导航时，可直接构造 `KanbanWorkbench` 并省略 `sidebar`，通过 `createBoard()` 接入导航动作，通过 `committed` 刷新目录；`mountKanban` 的独立默认侧栏保持可用。父项详情提供子事项分页与新建入口，子项通过 `planning.parentId` 关联父项，执行依赖仍单独保存在 `planning.dependencies`。
 
-Task 的持久 startAt、编辑租约、单一状态投影与文件协议见 [执行规范](../../doc/design/kanban-task-execution.md)。`item().task` 和 query 的 `task` 为相同宿主事实的投影，`phase` 过滤在服务端执行。
+Task 的持久 startAt、编辑租约、单一状态投影与文件协议见 [执行规范](https://github.com/nest-agentos/NestOS/blob/main/doc/design/kanban-task-execution.md)。`item().task` 和 query 的 `task` 为相同宿主事实的投影，`phase` 过滤在服务端执行。
