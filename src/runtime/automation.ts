@@ -62,7 +62,7 @@ async function planNext(options:KanbanAutomationOptions,board:KanbanBoard,active
     if(!options.analyze)return;
     const workflow=await options.service.workflow(board.id),planned=new Set(Object.values(workflow.plans).flatMap(plan=>plan.itemIds));
     const candidates=board.items.filter(item=>!planned.has(item.id)&&['backlog','open'].includes(item.status)&&!item.owner&&!item.blocked
-        &&boardAllowsStart(board,item)&&!['failed','clarification'].includes(item.analysis?.state??'')&&executableWorkItem(board,item)
+        &&boardAllowsStart(board,item)&&item.analysis?.state!=='failed'&&executableWorkItem(board,item)
         &&(!item.control||item.control.action==='resume'&&item.control.state==='resumed')&&(item.launch?.admittedAt!==undefined||taskDue(item,Date.now())));
     for(const item of candidates) {
         if(!active())return;if(!await dependenciesComplete(options.service,board,item))continue;

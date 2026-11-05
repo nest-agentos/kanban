@@ -22,7 +22,7 @@ export function applyTaskCommand(state: KanbanState, command: KanbanTaskCommand,
     if (command.type === 'reopen-item') reopen(state, item, command.reopenId, actor, now);
     else if (['begin-edit', 'end-edit', 'save-edit'].includes(command.type)) edit(state, item, command, actor, now);
     else if(command.type==='retry-analysis') {
-        identity(command.retryId);requireValue(['failed','clarification'].includes(item.analysis?.state??'')&&!item.owner,'ANALYSIS_NOT_RETRYABLE');
+        identity(command.retryId);requireValue(item.analysis?.state!=='clarification','ANALYSIS_CLARIFICATION_PENDING');requireValue(item.analysis?.state==='failed'&&!item.owner,'ANALYSIS_NOT_RETRYABLE');
         item.launch.analysisEpoch=command.retryId;delete item.analysis;
     }
     else if (command.type === 'set-launch-mode') {assertDefinitionEditable(item, now); setMode(item, command.mode);}

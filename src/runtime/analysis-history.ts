@@ -1,7 +1,7 @@
 import {sha256HexSync} from '../utils';
 import type {KanbanAnalysisStatus} from '../contracts';
 import type {KanbanAutomationJournal} from './automation-journal';
-export interface AnalysisJournalEntry {id:string;itemRevision:number;signature:string;phase:'prepared'|'submitting'|'settled';status:KanbanAnalysisStatus;terminalOutcome?:'succeeded'|'failed'|'cancelled'}
+export interface AnalysisJournalEntry {id:string;itemRevision:number;signature:string;phase:'prepared'|'submitting'|'waiting-input'|'settled';status:KanbanAnalysisStatus;terminalOutcome?:'succeeded'|'failed'|'cancelled'}
 /** Rebuild legacy history once; the hash proves board/item scope even when item IDs overlap. */
 export async function analysisHistory<T extends AnalysisJournalEntry = AnalysisJournalEntry>(journal: KanbanAutomationJournal, boardId: string, itemId: string) {
     const key = 'analysis-history:' + JSON.stringify([boardId, itemId]);
@@ -14,4 +14,9 @@ export async function analysisHistory<T extends AnalysisJournalEntry = AnalysisJ
     }
     const jobs = await journal.getMany<T>(saved.keys);
     return jobs.filter((job): job is T => !!job);
+}
+
+export async function currentAnalysis<Input=unknown>(journal:KanbanAutomationJournal,boardId:string,itemId:string) {
+    const key=await journal.get<string>('analysis-current:'+JSON.stringify([boardId,itemId]));
+    return key?journal.get<AnalysisJournalEntry & {input:Input;result?:unknown}>(key):undefined;
 }

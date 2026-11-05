@@ -1,3 +1,4 @@
+import {currentAnalysis} from './analysis-history';
 import {kanbanReference} from '../contracts/references';
 import {defaultReferences,type KanbanReferencePolicy} from './ports';
 import type {KanbanBoard,KanbanItem} from '../contracts';
@@ -14,7 +15,9 @@ export async function workContext(journal:KanbanAutomationJournal,board:KanbanBo
         if(run)decision={sourceBoardId:run.sourceBoardId,recordId:run.recordId,recordRevision:run.recordRevision,runId};
     }
     const snapshot = decision ? (await journal.get<Array<{id:string;record:unknown}>>('record-runs:'+decision.sourceBoardId))?.find(run=>run.id===decision.runId)?.record : undefined;
-    return {board:{id:board.id,title:board.title,revision:board.revision,reference:kanbanReference(board)},decision:decision ? {...decision,...(snapshot ? {snapshot} : {})} : null,
+    const own=await currentAnalysis(journal,board.id,item.id);
+    const approved=own?.status.state==='ready'?own:item.planning?.parentId?await currentAnalysis(journal,board.id,item.planning.parentId):undefined;
+    return {...(approved?.status.state==='ready'&&approved.result?{planning:{id:approved.id,result:approved.result}}:{}),board:{id:board.id,title:board.title,revision:board.revision,reference:kanbanReference(board)},decision:decision ? {...decision,...(snapshot ? {snapshot} : {})} : null,
         task:{id:item.id,revision:item.revision,reference:kanbanReference(board,item),parentId:item.planning?.parentId??null,title:item.title,responsibility:item.responsibility,acceptance:item.acceptance,
             dependencies:item.planning?.dependencies??[]},
         resources:item.externalRefs?.filter(ref=>ref.system===references.resource)??[]};

@@ -7,7 +7,7 @@ export {advanceRecordControl, requestRecordControl, recordControlKey, type Recor
 export {safeCode} from './diagnostics';
 export type {KanbanJournalOptions, KanbanRuntimeDiagnostic, KanbanResourceCatalog, KanbanReferencePolicy} from './ports';
 export {defaultReferences} from './ports';
-export {analysisHistory, type AnalysisJournalEntry} from './analysis-history';
+export {currentAnalysis,analysisHistory, type AnalysisJournalEntry} from './analysis-history';
 export {createBoardDeletion, withBoardDeletion} from './board-deletion';
 export {boardDeletionBlockers, deletionPreview} from './board-deletion-inspection';
 export {KanbanWorkLog, type WorkLogFact} from './work-log';

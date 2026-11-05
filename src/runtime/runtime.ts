@@ -32,10 +32,10 @@ export async function assembleKanbanRuntime(options:KanbanRuntimeOptions) {
 }
 function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeContext,extensions:KanbanRuntimeExtension[],setDeletion:(verify:(id:string)=>Promise<void>)=>void) {
     const {service,journal,workLog}=context,directory=options.directory??'/kanban';
-    const records=options.resources?createRecordExecution({service,journal,resources:options.resources,requiresItemResource:options.requiresItemResource,log:options.log??(()=>{})}):undefined;
+    const capabilities:Partial<import('../contracts').KanbanClient>=Object.assign({},...extensions.map(extension=>extension.capabilities));
+    const records=options.resources?createRecordExecution({service,journal,resources:options.resources,requiresItemResource:options.requiresItemResource,planningSession:capabilities.planningSession,log:options.log??(()=>{})}):undefined;
     const automation=options.automation?createKanbanAutomation({...options.automation,...context,
         directory:directory+'/automation',log:options.log??(()=>{})}):undefined;
-    const capabilities:Partial<import('../contracts').KanbanClient>=Object.assign({},...extensions.map(extension=>extension.capabilities));
     const client={...service,...capabilities,
         ...(records?{...records,recordExecutions:async(board:string,id:string)=>(await workLog.record(service,board,id)).kind==='decision'?records.recordExecutions(board,id):[]}:{}),
         ...(automation?{automationCatalog:automation.automationCatalog,analysisStatus:automation.analysisStatus}:{}),

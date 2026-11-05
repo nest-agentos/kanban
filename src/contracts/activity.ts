@@ -6,6 +6,7 @@ export interface KanbanExecutionSession {
     createdAt?: number;
     lastActivityAt?: number; observedAt?: number; stale: boolean; recent: boolean; code?: string;
 }
+export interface KanbanPlanningSession extends KanbanExecutionSession {itemId: string; analysisId: string}
 export interface KanbanSessionActivityQuery extends KanbanItemQuery {execution?: 'all' | 'running' | 'recent' | 'active'}
 export interface KanbanSessionItemSummary extends KanbanItemSummary {execution?: KanbanExecutionSession}
 export interface KanbanSessionItemPage extends Omit<KanbanItemPage,'items'> {items: KanbanSessionItemSummary[]}
@@ -51,6 +52,8 @@ export interface KanbanClient extends KanbanService {
     itemResources?(boardId:string,parentId?:string):Promise<import('./record-execution').KanbanItemResourceCatalog>;
     recordResources?(): Promise<import('./record-execution').KanbanRecordResource[]>;
     runRecord?(boardId: string, request: import('./record-execution').KanbanRecordRunRequest): Promise<import('./record-execution').KanbanRecordExecution>;
+    planningSession?(boardId: string, itemId: string): Promise<KanbanPlanningSession | undefined>;
+    recordSessions?(boardId: string, recordId: string): Promise<KanbanPlanningSession[]>;
     recordExecutions?(boardId: string, recordId: string): Promise<import('./record-execution').KanbanRecordExecution[]>;
     automationCatalog?(): Promise<import('./automation').KanbanAutomationCatalog>;
     analysisStatus?(boardId: string, itemId: string): Promise<import('./automation').KanbanAnalysisStatus | null>;

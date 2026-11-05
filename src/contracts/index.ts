@@ -11,7 +11,7 @@ export type {KanbanArtifactRef, KanbanWorkDefinition, KanbanWorkPlan, KanbanPubl
 
 export type {KanbanScanSession, KanbanScanText, KanbanScanConnection, KanbanScanPolicy, KanbanScanInput, KanbanDiscoveryResult} from './discovery';
 export {DEFAULT_KANBAN_SCAN_POLICY} from './discovery';
-export type {KanbanClient, KanbanSessionPhase, KanbanExecutionSession, KanbanSessionActivityQuery, KanbanSessionItemSummary, KanbanSessionItemPage, KanbanExecutionSessionDetail} from './activity';
+export type {KanbanClient, KanbanSessionPhase, KanbanExecutionSession, KanbanPlanningSession, KanbanSessionActivityQuery, KanbanSessionItemSummary, KanbanSessionItemPage, KanbanExecutionSessionDetail} from './activity';
 export type {KanbanSessionPurpose, KanbanSessionExecution, KanbanSessionAssociation, KanbanRelatedSession, KanbanSessionDetailQuery} from './activity';
 export type {KanbanContent, KanbanContentItem, KanbanContentRecord, KanbanContentAmendment} from './content';
 export type {KanbanAutomationSettings, KanbanAutomationOption, KanbanAutomationTarget, KanbanAutomationCatalog, KanbanAnalysisStatus} from './automation';

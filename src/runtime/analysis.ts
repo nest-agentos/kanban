@@ -6,14 +6,14 @@ import type {KanbanAutomationJournal} from './automation-journal';
 import type {AnalysisJournalEntry} from './analysis-history';
 import {safeCode} from './diagnostics';
 export interface AnalysisResult {ready:boolean;dependencies:string[];reason:string;estimate?:KanbanEstimate;subtasks?:AnalysisSubtask[]}
-export interface KanbanAnalysisObservation {state:'running'|'unknown'|'succeeded'|'failed'|'cancelled';output?:unknown;code?:string}
+export interface KanbanAnalysisObservation {state:'running'|'unknown'|'clarification'|'succeeded'|'failed'|'cancelled';output?:unknown;code?:string;reason?:string}
 export interface KanbanAnalysisPort<Target = KanbanExternalReference, Input = unknown> {
     prepare(input:{id:string;board:KanbanBoard;item:KanbanItem;target:Target}):Promise<Input>;
     prepareExecution(id:string,input:Input):Promise<void>;
     submit(input:Input):Promise<void>;
     inspect(id:string,input:Input):Promise<KanbanAnalysisObservation>;
 }
-interface AnalysisJob<Input> extends AnalysisJournalEntry {input:Input;result?:AnalysisResult}
+interface AnalysisJob<Input> extends AnalysisJournalEntry {input:Input;result?:AnalysisResult;signatureVersion?:2}
 export interface KanbanAnalysisOptions<Target = KanbanExternalReference, Input = unknown> {
     journal:KanbanAutomationJournal;port:KanbanAnalysisPort<Target,Input>;active():boolean;
     inheritReferences?(references:readonly KanbanExternalReference[]):KanbanExternalReference[];
@@ -25,8 +25,8 @@ export async function analysisStatus<Input = unknown>(journal: KanbanAutomationJ
     const key = await journal.get<string>(keyFor(board, item));
     return key ? (await journal.get<AnalysisJob<Input>>(key))?.status ?? null : await journal.get<KanbanAnalysisStatus>('decomposition-status:'+JSON.stringify([board,item]))??null;
 }
-export function analysisSignature(board: KanbanBoard): string {
-    return sha256HexSync(JSON.stringify([board.automation, board.items.map(item => [item.id, item.title, item.responsibility, item.acceptance, item.planning])]));
+export function analysisSignature(board: KanbanBoard,itemId?:string): string {
+    return sha256HexSync(JSON.stringify([board.automation, board.items.filter(item=>!itemId||item.id===itemId).map(item => itemId?[item.id,item.title,item.responsibility,item.acceptance,item.planning,item.externalRefs]:[item.id,item.title,item.responsibility,item.acceptance,item.planning])]));
 }
 export async function analyzeItem<Target, Input>(options: KanbanAnalysisOptions<Target, Input>, board: KanbanBoard, item: KanbanItem, target: Target | undefined, service: KanbanService): Promise<void> {
     const started = Date.now();
@@ -36,7 +36,7 @@ export async function analyzeItem<Target, Input>(options: KanbanAnalysisOptions<
     const {key} = loaded; let {job} = loaded;
     if (job.phase === 'prepared') job = await submitAnalysis(options, key, job);
     if (!options.active()) return;
-    if (job.phase === 'submitting') job = await observeAnalysis(options, key, job);
+    if (job.phase === 'submitting' || job.phase === 'waiting-input' || job.status.state==='clarification') job = await observeAnalysis(options, key, job);
     job = await finalizeAnalysis(options, board.id, item, key, job);
     if (job.result?.ready && job.status.state === 'ready' && !board.executionControl?.paused && board.automation?.enabled && options.active()) {
         try {await adoptAnalysis(options.journal, board, item, job, service, options.inheritReferences?.(item.externalRefs ?? []) ?? []);}
@@ -44,12 +44,13 @@ export async function analyzeItem<Target, Input>(options: KanbanAnalysisOptions<
     }
     if (!options.active()) return;
     const status = (await options.journal.get<AnalysisJob<Input>>(key))?.status;
+    let changed=false;
     if (status) {
         const currentBoard = await service.read(board.id), currentItem = currentBoard.items.find(i => i.id === item.id)!;
         if (currentItem.control?.action === 'cancel' || ['completed','cancelled'].includes(currentItem.status)) return;
-        if (JSON.stringify(currentItem.analysis) !== JSON.stringify(status)) await service.execute(board.id, {operationId:'analysis-status:'+job.id+':'+sha256HexSync(JSON.stringify(status)), expectedRevision:currentBoard.revision, command:{type:'report-analysis',itemId:item.id,operationId:job.id,status}});
+        if (JSON.stringify(currentItem.analysis) !== JSON.stringify(status)) {changed=true;await service.execute(board.id, {operationId:'analysis-status:'+job.id+':'+sha256HexSync(JSON.stringify(status)), expectedRevision:currentBoard.revision, command:{type:'report-analysis',itemId:item.id,operationId:job.id,status}});}
     }
-    options.log({operationId: job.id, stage: 'automation.analysis', result: status?.state === 'failed' || status?.state === 'unknown' ? 'failure' : 'success', code: status?.code, durationMs: Date.now() - started});
+    if(changed)options.log({operationId: job.id, stage: 'automation.analysis', result: status?.state === 'failed' || status?.state === 'unknown' ? 'failure' : 'success', code: status?.code, durationMs: Date.now() - started});
 }
 async function finalizeAnalysis<Target, Input>(options: KanbanAnalysisOptions<Target, Input>, boardId: string, item: KanbanItem, key: string, job: AnalysisJob<Input>): Promise<AnalysisJob<Input>> {
     if (!options.active() || job.phase !== 'settled' || !options.onSettled) return job;
@@ -61,16 +62,16 @@ async function finalizeAnalysis<Target, Input>(options: KanbanAnalysisOptions<Ta
 }
 async function loadJob<Target, Input>(options: KanbanAnalysisOptions<Target, Input>, board: KanbanBoard, item: KanbanItem, target?: Target) {
     requireValue(board.items.length <= 200, 'AUTOMATION_CONTEXT_LIMIT');
-    const signature = analysisSignature(board), currentKey = await options.journal.get<string>(keyFor(board.id, item.id));
+    const signature = analysisSignature(board,item.id), currentKey = await options.journal.get<string>(keyFor(board.id, item.id));
     const currentJob = currentKey ? await options.journal.get<AnalysisJob<Input>>(currentKey) : undefined;
-    if (!board.automation?.enabled && currentJob?.phase !== 'submitting') return;
-    const key = currentJob?.phase === 'submitting' ? currentKey! : 'analysis:' + sha256HexSync(JSON.stringify([board.id, item.id, item.launch?.requestedAt, item.launch?.analysisEpoch, signature]));
+    if (!board.automation?.enabled && !['submitting','waiting-input'].includes(currentJob?.phase??'')) return;
+    const key = currentJob && (['submitting','waiting-input'].includes(currentJob.phase)||currentJob.status.state==='clarification') ? currentKey! : 'analysis:' + sha256HexSync(JSON.stringify([board.id, item.id, item.launch?.requestedAt, item.launch?.analysisEpoch, signature]));
     let job = await options.journal.get<AnalysisJob<Input>>(key);
     if (!job) {
         requireValue(target, 'AUTOMATION_TARGET_CHANGED');
         const id = await options.journal.update<string>('analysis-identity:' + key, old => old ?? randomUUID());
         const input = await options.port.prepare({id, board, item, target});
-        const candidate: AnalysisJob<Input> = {id,signature,itemRevision:item.revision,phase:'prepared',status:{itemId:item.id,state:'analyzing'},input};
+        const candidate: AnalysisJob<Input> = {id,signature,signatureVersion:2,itemRevision:item.revision,phase:'prepared',status:{itemId:item.id,state:'analyzing'},input};
         job = await options.journal.update<AnalysisJob<Input>>(key, previous => previous ?? candidate);
     }
     if (!options.active()) return;
@@ -94,11 +95,12 @@ async function submitAnalysis<Target,Input>(options:KanbanAnalysisOptions<Target
 async function observeAnalysis<Target,Input>(options:KanbanAnalysisOptions<Target,Input>,key:string,job:AnalysisJob<Input>):Promise<AnalysisJob<Input>> {
     const observation=await options.port.inspect(job.id,job.input);
     if(!options.active()||observation.state==='running')return job;
+    if(observation.state==='clarification')return options.journal.update<AnalysisJob<Input>>(key,current=>({...current!,phase:'waiting-input',status:{itemId:job.status.itemId,state:'clarification',reason:observation.reason??'PLANNING_INPUT_REQUIRED',code:observation.code}}));
     if(observation.state==='unknown')return options.journal.update<AnalysisJob<Input>>(key,current=>current!.phase==='submitting'?{...current!,status:{...job.status,state:'unknown',code:observation.code??'AUTOMATION_ADMISSION_UNKNOWN'}}:current!);
     if(observation.state==='failed'||observation.state==='cancelled')return saveFailure(options,key,job,observation.code??'AUTOMATION_ANALYSIS_FAILED',observation.state);
     try {
         requireValue(observation.output!==undefined,'AUTOMATION_ANALYSIS_INVALID');const analysis=parseAnalysis(observation.output);
-        return options.journal.update<AnalysisJob<Input>>(key,current=>({...current!,phase:'settled',result:analysis,status:{itemId:job.status.itemId,state:analysis.ready?'ready':'clarification',reason:analysis.reason,dependencies:analysis.dependencies}}));
+        return options.journal.update<AnalysisJob<Input>>(key,current=>({...current!,phase:analysis.ready?'settled':'waiting-input',result:analysis,status:{itemId:job.status.itemId,state:analysis.ready?'ready':'clarification',reason:analysis.reason,dependencies:analysis.dependencies}}));
     }catch(error){return saveFailure(options,key,job,safeCode(error,'AUTOMATION_ANALYSIS_INVALID'));}
 }
 async function saveFailure<Target,Input>(options:KanbanAnalysisOptions<Target,Input>,key:string,job:AnalysisJob<Input>,code:string,terminalOutcome:'failed'|'cancelled'='failed'):Promise<AnalysisJob<Input>> {
@@ -115,7 +117,7 @@ export function parseAnalysis(output: unknown): AnalysisResult {
 }async function adoptAnalysis<Input>(journal:KanbanAutomationJournal, snapshot: KanbanBoard, item: KanbanItem, job: AnalysisJob<Input>, service: KanbanService, inherited: KanbanExternalReference[]): Promise<void> {
     if ((await service.workflow(snapshot.id)).plans[job.id]) return;
     const board = await service.read(snapshot.id), current = board.items.find(candidate => candidate.id === item.id);
-    requireValue(board.automation?.enabled && current && analysisSignature(board) === job.signature, 'AUTOMATION_ANALYSIS_STALE');
+    requireValue(board.automation?.enabled && current && analysisSignature(board,job.signatureVersion===2?item.id:undefined) === job.signature, 'AUTOMATION_ANALYSIS_STALE');
     requireValue(board.policy.requireEstimate === false || job.result?.estimate, 'ESTIMATE_REQUIRED');
     const dependencies = [...new Set([...(item.planning?.dependencies ?? []), ...job.result!.dependencies])];
     if(job.result?.subtasks?.length) return adoptDecomposition(journal,board,item,{id:job.id,reason:job.result.reason,dependencies,subtasks:job.result.subtasks},service,inherited);

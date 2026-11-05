@@ -13,6 +13,7 @@ interface SavedRun extends KanbanRecordExecution {
     sourceBoardId: string; record: KanbanProjectRecord; automation: NonNullable<KanbanBoard['automation']>}
 type RunReceipt = Pick<SavedRun, 'id' | 'sourceBoardId' | 'recordId' | 'recordRevision' | 'requestRevision' | 'placement'> & {schema?: 2};
 interface Options {
+    planningSession?: KanbanClient['planningSession'];
     requiresItemResource?(board:KanbanBoard):boolean;
     service: KanbanClient; journal: KanbanAutomationJournal; resources: KanbanResourceCatalog;
     log(input: {operationId: string; boardId: string; stage: string; result: 'success' | 'failure'; code?: string; durationMs: number}): void;
@@ -56,6 +57,13 @@ export function createRecordExecution(options: Options) {
             }
             const runs = (await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? []).filter(run => run.recordId === request.recordId);
             if (request.action === 'cancel' && runs.every(run => ['completed','failed','cancelled'].includes(run.state))) await finishDecisionCancellation(options, boardId, request.recordId, request.operationId);
+        },
+        recordSessions: async (boardId: string, recordId: string) => {
+            await options.service.record(boardId, recordId);
+            const runs = await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? [];
+            const targets = new Map(runs.filter(run => run.recordId === recordId).flatMap(run => (run.itemIds ?? []).map(id => [JSON.stringify([run.boardId,id]), {board:run.boardId,id}] as const)));
+            const sessions = await Promise.all([...targets.values()].map(row => options.planningSession?.(row.board,row.id)));
+            return sessions.filter((row): row is NonNullable<typeof row> => !!row);
         },
         recordExecutions: async (boardId: string, recordId: string) => {
             await options.service.record(boardId, recordId);

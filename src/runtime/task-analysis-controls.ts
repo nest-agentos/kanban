@@ -12,7 +12,7 @@ export async function controlTaskAnalyses(options: CallLifecyclePorts, journal: 
     const keys = (await journal.get<{keys: string[]}>('analysis-history:' + JSON.stringify([board, item.id])))?.keys ?? [];
     const byId = new Map((await journal.getMany<Job>(keys)).flatMap((job, index) => job ? [[job.id, keys[index]] as const] : []));
     for (const job of analyses) {
-        if (job.phase === 'settled') continue;
+        if (job.phase === 'settled' && job.status.state!=='clarification') continue;
         const key = byId.get(job.id); requireValue(key, 'TASK_CONTROL_ROUTE_MISSING');
         const state = await controlAnalysis(options,journal,key,job,item.control!);
         if (state) return state;
@@ -21,9 +21,10 @@ export async function controlTaskAnalyses(options: CallLifecyclePorts, journal: 
 async function controlAnalysis(options: CallLifecyclePorts, journal: KanbanAutomationJournal, key: string, job: Job, control: KanbanTaskControl): Promise<KanbanTaskControl['state'] | undefined> {
     if (control.action === 'cancel') {
         const current = await journal.update<Job>(key, old => old!.phase === 'prepared' ? cancelled(old!) : old!);
-        if (current.phase === 'settled') return;
+        if (current.phase === 'settled' && current.status.state!=='clarification') return;
     } else if (job.phase === 'prepared') return;
-    const state = await controlCall(options,journal,job.id,control.id + '-analysis-' + job.id,control.action);
+    const state = job.phase==='waiting-input'||job.status.state==='clarification' ? await options.control.control({kind:'conversation',executionId:job.id,operationId:control.id+'-analysis-'+job.id,action:control.action})
+        : await controlCall(options,journal,job.id,control.id + '-analysis-' + job.id,control.action);
     const target = control.action === 'pause' ? 'paused' : control.action === 'resume' ? 'resumed' : 'cancelled';
     if (state !== target) return state;
     if (control.action === 'cancel') await journal.update<Job>(key, old => cancelled(old!));
