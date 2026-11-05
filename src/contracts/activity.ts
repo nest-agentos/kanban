@@ -8,7 +8,7 @@ export interface KanbanExecutionSession {
 }
 export interface KanbanPlanningSession extends KanbanExecutionSession {itemId: string; analysisId: string}
 export interface KanbanSessionActivityQuery extends KanbanItemQuery {execution?: 'all' | 'running' | 'recent' | 'active'}
-export interface KanbanSessionItemSummary extends KanbanItemSummary {execution?: KanbanExecutionSession;planningSession?:KanbanPlanningSession}
+export interface KanbanSessionItemSummary extends KanbanItemSummary {execution?: KanbanExecutionSession}
 export interface KanbanSessionItemPage extends Omit<KanbanItemPage,'items'> {items: KanbanSessionItemSummary[]}
 export type KanbanSessionPurpose = 'execution' | 'planning' | 'fix' | 'finalization' | 'discussion';
 /** A run belongs to a Session; continuing it does not create another Session. */
@@ -53,7 +53,7 @@ export interface KanbanClient extends KanbanService {
     recordResources?(): Promise<import('./record-execution').KanbanRecordResource[]>;
     runRecord?(boardId: string, request: import('./record-execution').KanbanRecordRunRequest): Promise<import('./record-execution').KanbanRecordExecution>;
     planningSession?(boardId: string, itemId: string): Promise<KanbanPlanningSession | undefined>;
-    recordSessions?(boardId: string, recordId: string): Promise<KanbanPlanningSession[]>;
+    recordSessions?(boardId:string,recordId:string,query?:{includeArchived?:boolean}): Promise<KanbanPlanningSession[]>;
     recordExecutions?(boardId: string, recordId: string): Promise<import('./record-execution').KanbanRecordExecution[]>;
     automationCatalog?(): Promise<import('./automation').KanbanAutomationCatalog>;
     analysisStatus?(boardId: string, itemId: string): Promise<import('./automation').KanbanAnalysisStatus | null>;

@@ -30,6 +30,7 @@ export async function advanceRecordControl(service: KanbanClient, journal: Kanba
     return managed.every(item => item.control?.state === target) ? control.action === 'pause' ? 'paused' : 'running' : control.action === 'pause' ? 'pausing' : 'resuming';
 }
 async function requestItemControl(service: KanbanClient, journal: KanbanAutomationJournal, run: KanbanRecordExecution & {sourceBoardId: string}, control: RecordControl, item: KanbanItem): Promise<void> {
+    if(control.action!=='cancel'&&item.planning?.execution==='children')return;
     const action = control.action, controlId = sha256HexSync(JSON.stringify([run.sourceBoardId, run.recordId, control.operationId, run.boardId, item.id, action]));
     if (item.control?.id !== controlId) {
         if (action === 'resume' && (!control.controls[item.id] || item.control?.id !== control.controls[item.id])) return;

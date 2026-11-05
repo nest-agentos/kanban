@@ -1,6 +1,7 @@
 import type {KanbanDispatch,KanbanItem,KanbanItemSummary,KanbanWorkflowState,KanbanTaskProjection,KanbanTaskPhase} from './index';
 
 type Item=Pick<KanbanItem,'deletedAt'|'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>;
+type Related=Pick<KanbanItemSummary,'id'|'status'>&Partial<KanbanItemSummary>;
 type Fact={phase:KanbanTaskPhase;reason?:string;actions?:KanbanTaskProjection['actions']};
 export const TASK_START_DELAY_MS=300000;
 export function taskStartAt(item:Pick<Item,'createdAt'|'launch'>):number {return item.launch?.startAt??item.createdAt+TASK_START_DELAY_MS;}
@@ -10,16 +11,16 @@ export function taskDue(item:Item,now:number):boolean {
         &&(item.launch?.requestedAt!==undefined||item.launch?.mode!=='manual'&&taskStartAt(item)<=now);
 }
 /** Ordered evidence projection shared by storage queries, CLI and UI. Session idle never proves acceptance. */
-export function projectKanbanTask(item:Item,workflow?:KanbanWorkflowState,now=Date.now(),all:Array<Pick<KanbanItemSummary,'id'|'status'>>=[]):KanbanTaskProjection {
+export function projectKanbanTask(item:Item,workflow?:KanbanWorkflowState,now=Date.now(),all:Related[]=[]):KanbanTaskProjection {
     const dispatch=Object.values(workflow?.dispatches??{}).filter(d=>d.itemId===item.id).sort((a,b)=>b.attempt-a.attempt)[0];
-    const fact=terminalFact(item)??controlFact(item)??issueFact(item,dispatch)??failureFact(item,dispatch)??executionFact(item,dispatch)??waitingFact(item,now,all);
+    const fact=terminalFact(item)??controlFact(item)??issueFact(item,dispatch)??groupFact(item,workflow,now,all)??failureFact(item,dispatch)??executionFact(item,dispatch)??waitingFact(item,now,all);
     const extra: KanbanTaskProjection['actions'] = [];
     if (!['completed','cancelled'].includes(item.status) && item.control?.action !== 'cancel') {
         if (!fact.actions?.includes('cancel')) extra.push('cancel');
         if (item.status !== 'review' && !fact.actions?.includes('pause') && !fact.actions?.includes('resume') && (dispatch?.controlCapabilities?.pause === 'boundary' || !dispatch)) extra.push('pause');
     }
     return {...fact,startAt:taskStartAt(item),dispatchId:dispatch?.id,sessionId:dispatch?.executionSessionId,
-        actions:item.deletedAt === undefined ? [...fact.actions??[],...extra,...(dispatch||item.launch?.admittedAt!==undefined||['claimed','review','completed'].includes(item.status)?['fix' as const]:[]),...(dispatch?.executionSessionId?['open-session' as const]:[])] : []};
+        actions:item.deletedAt === undefined ? [...fact.actions??[],...extra,...(dispatch||item.launch?.admittedAt!==undefined||['claimed','review','completed'].includes(item.status)?['fix' as const]:[]),...(dispatch?.executionSessionId?['open-session' as const]:[])].filter(action=>item.planning?.execution!=='children'||['cancel','delete'].includes(action)) : []};
 }
 function terminalFact(item:Item):Fact|undefined {
     if(item.status==='completed'||item.status==='cancelled')return {phase:item.status,actions:['delete']};
@@ -60,4 +61,18 @@ function waitingFact(item:Item,now:number,all:Array<Pick<KanbanItemSummary,'id'|
 function analysisFact(item:Item):Fact|undefined {
     if(item.analysis?.state==='clarification')return {phase:'waiting-input',reason:item.analysis.reason};
     if(item.analysis?.state==='analyzing')return {phase:'analyzing'};
+}
+
+function groupFact(item:Item,workflow:KanbanWorkflowState|undefined,now:number,all:Related[]):Fact|undefined {
+    if(item.planning?.execution!=='children')return;
+    const children=all.filter(row=>row.planning?.parentId===item.id&&row.deletedAt===undefined&&row.createdAt!==undefined);
+    if(!children.length)return {phase:'waiting-dependency',reason:'CHILDREN_UNFINISHED'};
+    const phases=children.map(child=>projectKanbanTask(child as Item,workflow,now,all).phase);
+    if(phases.some(phase=>phase==='error'||phase==='unknown'))return {phase:'error',reason:'GROUP_CHILD_ERROR'};
+    if(phases.includes('waiting-input'))return {phase:'waiting-input',reason:'GROUP_INPUT_REQUIRED'};
+    if(phases.includes('review'))return {phase:'review',reason:'GROUP_CHILD_REVIEW'};
+    if(phases.some(phase=>['running','preparing','analyzing','queued','resuming'].includes(phase)))return {phase:'running',reason:'GROUP_CHILD_RUNNING'};
+    if(phases.some(phase=>phase==='paused')&&phases.every(phase=>phase==='paused'||phase==='completed'))return {phase:'paused',reason:'GROUP_CHILD_PAUSED'};
+    if(phases.some(phase=>phase==='cancelled'))return {phase:'error',reason:'GROUP_CHILD_CANCELLED'};
+    return {phase:'waiting-dependency',reason:phases.every(phase=>phase==='completed')?'GROUP_SETTLEMENT_PENDING':'CHILDREN_UNFINISHED'};
 }

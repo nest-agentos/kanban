@@ -23,6 +23,7 @@ export function publishPlan(state: KanbanState, plan: KanbanWorkPlan, actor: Kan
     if(plan.rootItemId) {
         const root=state.board.items.find(item=>item.id===plan.rootItemId);
         requireValue(root&&!root.owner&&['backlog','open'].includes(root.status),'PLAN_ROOT_UNAVAILABLE');
+        delete root.purpose;
         if(root.planning?.execution!=='children')apply({type:'plan-item',itemId:root.id,planning:{...planning(root),execution:'children'}});
     }
     const ordered = orderWork(plan.items, state), definitions: KanbanPublishedPlan['definitions'] = {};
@@ -50,6 +51,7 @@ function adoptItem(state: KanbanState, definition: KanbanWorkDefinition, apply: 
         && item.acceptance === definition.acceptance, 'PLAN_ITEM_CHANGED_REQUIRES_NEW_ID');
     requireValue(planning(item).dependencies.every(id => definition.dependsOn.includes(id)), 'EXISTING_DEPENDENCY_REQUIRED');
     apply({type: 'plan-item', itemId: item.id, planning: {...planning(item), dependencies: definition.dependsOn}});
+    delete item.purpose;
     item.eligiblePrincipals = [definition.assignee]; delete item.eligibleAgentIds;
     validateCandidates(state.board, item, true);
 }

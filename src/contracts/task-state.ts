@@ -19,6 +19,7 @@ export interface KanbanTaskProjection {
     actions: Array<'delete' | 'run' | 'edit' | 'cancel' | 'pause' | 'resume' | 'fix' | 'open-session' | 'resolve' | 'review'>;
 }
 export type KanbanTaskCommand =
+    | {type:'mark-planning'|'finish-planning';itemId:string}
     | {type: 'reopen-item'; itemId: string; reopenId: string}
     | {type: 'begin-edit'; itemId: string; editId: string; leaseMs: number}
     | {type: 'end-edit'; itemId: string; editId: string}

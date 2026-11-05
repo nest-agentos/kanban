@@ -6,6 +6,7 @@ export interface KanbanPlanning {
     priority: number; dependencies: string[]; references: string[];
 }
 export interface KanbanItemSummary {
+    purpose?:'planning';
     deletedAt?: number;
     restartedFrom?: string;
     launch?: import('./task-state').KanbanLaunch; analysis?: import('./automation').KanbanAnalysisStatus;
@@ -22,7 +23,7 @@ export interface KanbanItemSummary {
 }
 export interface KanbanArchivedItem {item: KanbanItem; archivedAt: number; reason: string}
 export interface KanbanItemQuery {
-    includeDeleted?: boolean; excludeArchived?:boolean;
+    includeDeleted?: boolean; excludeArchived?:boolean; excludePlanning?:boolean;
     restartedFrom?: string;
     phase?: import('./task-state').KanbanTaskPhase;
     view?: 'ready' | 'backlog' | 'in-progress' | 'review' | 'closed' | 'proposed' | 'archive' | 'all';
@@ -30,8 +31,10 @@ export interface KanbanItemQuery {
     reference?: Pick<KanbanExternalReference, 'system' | 'id'>;
     sessionId?: string; search?: string; limit?: number; cursor?: string;
 }
-export interface KanbanItemPage {revision: number; total: number; items: KanbanItemSummary[]; nextCursor?: string}
+export interface KanbanProgress {total:number;completed:number;cancelled:number;inProgress:number;waitingInput:number;errors:number;review:number;paused:number;waiting:number}
+export interface KanbanItemPage {parentTask?:import('./task-state').KanbanTaskProjection;progress?:KanbanProgress;revision: number; total: number; items: KanbanItemSummary[]; nextCursor?: string}
 export interface KanbanOverview {
+    attention?:{board:number;decision:number;log:number};
     revision: number; visible: number; active: number; archived: number; ready: number; inProgress: number; backlog: number;
     proposed: number; closed: number; dueForReview: number;
     limits: {ready: number; inProgress: number; perAgent: number; perAssignee: number};

@@ -1,4 +1,4 @@
-export type {KanbanPlanning, KanbanItemSummary, KanbanArchivedItem, KanbanItemQuery, KanbanItemPage, KanbanOverview} from './planning';
+export type {KanbanPlanning, KanbanProgress, KanbanItemSummary, KanbanArchivedItem, KanbanItemQuery, KanbanItemPage, KanbanOverview} from './planning';
 export type {KanbanReferenceTarget} from './references';
 export {kanbanReference} from './references';
 export type {KanbanPrincipal, KanbanMember, KanbanWorkType, KanbanColumn, KanbanNotificationPolicy, KanbanExternalReference} from './configuration';

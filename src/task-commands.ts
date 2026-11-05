@@ -9,7 +9,7 @@ import {validatePlan, catalog} from './planning';
 import {attachReference} from './planning-commands';
 import {requireCoordinator} from './workflow-plans';
 
-const types = ['reopen-item', 'set-launch-mode', 'retry-analysis', 'begin-edit', 'end-edit', 'save-edit', 'request-run', 'admit-item', 'report-analysis', 'request-control', 'control-receipt', 'report-issue', 'resolve-issue'];
+const types = ['mark-planning','finish-planning','reopen-item', 'set-launch-mode', 'retry-analysis', 'begin-edit', 'end-edit', 'save-edit', 'request-run', 'admit-item', 'report-analysis', 'request-control', 'control-receipt', 'report-issue', 'resolve-issue'];
 export function taskCommand(command: KanbanCommand): command is KanbanTaskCommand {return types.includes(command.type);}
 export function assertDefinitionEditable(item: KanbanItem, now: number, editId?: string, actor?: KanbanActor): void {
     requireValue(item.control?.action !== 'cancel', 'TASK_CANCELLING');
@@ -19,7 +19,9 @@ export function assertDefinitionEditable(item: KanbanItem, now: number, editId?:
 export function applyTaskCommand(state: KanbanState, command: KanbanTaskCommand, actor: KanbanActor, now: number): void {
     const item = state.board.items.find(i => i.id === command.itemId); requireValue(item, 'ITEM_NOT_FOUND');
     item.launch ??= {startAt: taskStartAt(item)};
-    if (command.type === 'reopen-item') reopen(state, item, command.reopenId, actor, now);
+    if(command.type==='finish-planning'){requireCoordinator(state,actor);const children=catalog(state).filter(row=>row.planning.parentId===item.id&&row.deletedAt===undefined);requireValue(children.length>0&&children.every(row=>row.purpose!=='planning'),'ANALYSIS_CLARIFICATION_PENDING');delete item.purpose;}
+    else if(command.type==='mark-planning'){requireCoordinator(state,actor);requireValue(!item.owner&&['backlog','open'].includes(item.status),'PLAN_ROOT_UNAVAILABLE');requireValue(!Object.values(state.workflow?.plans??{}).some(plan=>plan.rootItemId===item.id||plan.itemIds.includes(item.id)),'ITEM_IN_OTHER_PLAN');item.purpose='planning';}
+    else if (command.type === 'reopen-item') reopen(state, item, command.reopenId, actor, now);
     else if (['begin-edit', 'end-edit', 'save-edit'].includes(command.type)) edit(state, item, command, actor, now);
     else if(command.type==='retry-analysis') {
         identity(command.retryId);requireValue(item.analysis?.state!=='clarification','ANALYSIS_CLARIFICATION_PENDING');requireValue(item.analysis?.state==='failed'&&!item.owner,'ANALYSIS_NOT_RETRYABLE');
@@ -69,6 +71,7 @@ function edit(state: KanbanState, item: KanbanItem, command: KanbanTaskCommand, 
 function requestControl(state: KanbanState, item: KanbanItem, command: Extract<KanbanTaskCommand, {type: 'request-control'}>): void {
     requireValue(!['completed', 'cancelled'].includes(item.status), 'ITEM_COMPLETED'); identity(command.controlId);
     requireValue(['pause', 'resume', 'cancel'].includes(command.action), 'INVALID_CONTROL_ACTION');
+    requireValue(item.planning?.execution!=='children'||command.action==='cancel','TASK_GROUP_CONTROL_UNSUPPORTED');
     if (item.control?.id === command.controlId) {requireValue(item.control.action === command.action, 'IDEMPOTENCY_CONFLICT'); return;}
     if (command.action === 'cancel' && item.control?.action === 'cancel' && item.control.state !== 'failed') return;
     requireValue(command.action === 'cancel' || !item.control || !['requested', 'unknown'].includes(item.control.state), 'CONTROL_UNSETTLED');

@@ -1,3 +1,4 @@
+import {attentionCounts,recordAttention} from './attention';
 import {boardControlPhase} from './contracts/board-control';
 import {projectKanbanTask} from './contracts/task-projection';
 import {resolveReference} from './references';
@@ -39,7 +40,7 @@ class KanbanModule implements KanbanService {
         const known = suggestions().items.filter(row => !rows.some(entry => entry.id === row.id));
         return suggestionPage(state.board.revision, [...rows, ...known], snapshot);
     });
-    records = (boardId: string, query?: import('./contracts').KanbanRecordQuery) => this.guard(this.id(), boardId, 'records', async () => {const view = await this.readView(boardId); return structuredClone(queryRecords(view.state, query, view.records));});
+    records = (boardId: string, query?: import('./contracts').KanbanRecordQuery) => this.guard(this.id(), boardId, 'records', async () => {const view = await this.readView(boardId); return structuredClone(queryRecords(view.state,query,recordAttention(view.state,view.items,view.records)));});
     record = (boardId: string, recordId: string) => this.guard(this.id(), boardId, 'record', async () => {
         identity(recordId); const record = (await this.readState(boardId)).records?.find(record => record.id === recordId);
         requireValue(record, 'RECORD_NOT_FOUND'); return structuredClone(record);
@@ -61,7 +62,7 @@ class KanbanModule implements KanbanService {
     catalog = () => this.guard(this.id(), undefined, 'catalog', async () => {
         const boards: import('./contracts').KanbanBoardSummary[] = [];
         for (const id of await this.options.store.ids()) {
-            try {const view = await this.readView(id); if (view.state.board.deletedAt !== undefined) continue; boards.push({...view.state.board, executionPhase: boardControlPhase({...view.state.board, items: view.items}), items: view.items.filter(item => item.deletedAt === undefined).map(({id, title, number}) => ({id, title, ...(number === undefined ? {} : {number})}))});}
+            try {const view = await this.readView(id); if (view.state.board.deletedAt !== undefined) continue; boards.push({...view.state.board,attention:attentionCounts(view.state,view.items,view.records), executionPhase: boardControlPhase({...view.state.board, items: view.items}), items: view.items.filter(item => item.deletedAt === undefined).map(({id, title, number}) => ({id, title, ...(number === undefined ? {} : {number})}))});}
             catch (error) {if (!(error instanceof KanbanError) || error.code !== 'FORBIDDEN') throw error;}
         }
         return structuredClone(boards);
@@ -106,7 +107,7 @@ class KanbanModule implements KanbanService {
         return this.options.store.events(boardId, after, limit, state.sequence);
     });
     query = (boardId: string, query?: KanbanItemQuery) => this.guard(this.id(), boardId, 'query', async () => {const view = await this.readView(boardId); return structuredClone(queryItems(view.state, query, [...view.items, ...(view.state.archiveIndex ?? [])], this.now()));});
-    overview = (boardId: string) => this.guard(this.id(), boardId, 'overview', async () => {const view = await this.readView(boardId); return overview(view.state, this.now(), view.items);});
+    overview = (boardId: string) => this.guard(this.id(), boardId, 'overview', async () => {const view = await this.readView(boardId); return {...overview(view.state,this.now(),view.items),attention:attentionCounts(view.state,view.items,view.records)};});
     item = (boardId: string, itemId: string) => this.guard(this.id(), boardId, 'item', async () => {
         identity(itemId); const state = await this.readState(boardId), item = state.board.items.find(i => i.id === itemId);
         if (item) return {item: structuredClone(item),task:projectKanbanTask(item,state.workflow,this.now(),[...state.board.items,...state.archiveIndex??[]])};

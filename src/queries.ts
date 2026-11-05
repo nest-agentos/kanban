@@ -27,7 +27,7 @@ export function queryItems(state: KanbanState, query: KanbanItemQuery = {}, all 
     }
     const progress = progressByParent(state, all);
     const items = matches.slice(start, start + limit).map(item => ({...item, ...(progress.has(item.id) ? {progress: progress.get(item.id)} : {})}));
-    return {revision, total: matches.length, items, ...(start + items.length < matches.length ? {
+    return {revision,total:matches.length,items,...(query.parentId?{progress:childProgress(matches),parentTask:all.find(item=>item.id===query.parentId)?.task}:{}), ...(start + items.length < matches.length ? {
         nextCursor: JSON.stringify({revision, after: items.at(-1)!.id, filter: fingerprint}),
     } : {})};
 }
@@ -35,6 +35,7 @@ function order(a: KanbanItemSummary, b: KanbanItemSummary): number {
     return a.planning.priority - b.planning.priority || a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 }
 function matchesQuery(item: KanbanItemSummary, query: Omit<KanbanItemQuery, 'cursor' | 'limit'>, board: KanbanState['board']): boolean {
+    if(query.excludePlanning&&item.purpose==='planning')return false;
     if(query.excludeArchived&&item.archivedAt!==undefined)return false;
     if (item.deletedAt !== undefined && !query.includeDeleted) return false;
     if (query.restartedFrom !== undefined && item.restartedFrom !== query.restartedFrom) return false;
@@ -55,7 +56,7 @@ function matchesView(item: KanbanItemSummary, view: KanbanItemQuery['view']): bo
     return item.status === ({ready: 'open', backlog: 'backlog', review: 'review', proposed: 'proposed'} as Record<string, string>)[view!];
 }
 export function overview(state: KanbanState, now: number, items = state.board.items.map(summary)): KanbanOverview {
-    items = items.filter(item => item.deletedAt === undefined);
+    items=items.filter(item=>item.deletedAt===undefined&&item.purpose!=='planning');
     const count = (status: string) => items.filter(i => i.status === status).length;
     const age = state.board.policy.backlogReviewMs;
     return {revision: state.board.revision, visible: items.length, active: items.filter(i => !terminal(i)).length, archived: state.archiveIndex?.length ?? 0, ready: count('open'),
@@ -77,4 +78,10 @@ function progressByParent(state: KanbanState, all: KanbanItemSummary[]): Map<str
         }
     }
     return result;
+}
+
+function childProgress(items:KanbanItemSummary[]):import('./contracts/planning').KanbanProgress {
+    const count=(phases:string[])=>items.filter(item=>phases.includes(item.task?.phase??'')).length;
+    return {total:items.length,completed:count(['completed']),cancelled:count(['cancelled']),inProgress:count(['running','preparing','analyzing','queued','resuming']),
+        waitingInput:count(['waiting-input']),errors:count(['error','unknown']),review:count(['review']),paused:count(['paused','pausing']),waiting:count(['waiting-start','waiting-dependency'])};
 }

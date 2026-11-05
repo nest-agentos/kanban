@@ -63,10 +63,10 @@ export function createRecordExecution(options: Options) {
             const runs = (await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? []).filter(run => run.recordId === request.recordId);
             if (['cancel','archive','delete','restart'].includes(request.action) && runs.every(run => ['completed','failed','cancelled'].includes(run.state))) await finishDecisionCancellation(options, boardId, request.recordId, request.operationId);
         },
-        recordSessions: async (boardId: string, recordId: string) => {
+        recordSessions: async(boardId:string,recordId:string,query?:{includeArchived?:boolean})=> {
             await options.service.record(boardId, recordId);
             const runs = await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? [];
-            const targets = new Map(runs.filter(run => run.recordId === recordId).flatMap(run => (run.itemIds ?? []).map(id => [JSON.stringify([run.boardId,id]), {board:run.boardId,id}] as const)));
+            const targets = new Map(runs.filter(run=>run.recordId===recordId&&(query?.includeArchived||run.archivedAt===undefined)).flatMap(run => (run.itemIds ?? []).map(id => [JSON.stringify([run.boardId,id]), {board:run.boardId,id}] as const)));
             const sessions = await Promise.all([...targets.values()].map(row => options.planningSession?.(row.board,row.id)));
             return sessions.filter((row): row is NonNullable<typeof row> => !!row);
         },
@@ -170,13 +170,14 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
         await materialize(options, run);
         const board = await options.service.read(run.boardId);
         const items = run.itemIds ? await Promise.all(run.itemIds.map(async id => board.items.find(item => item.id === id) ?? (await options.service.item(run.boardId, id)).item)) : board.items;
-        const state = runState(items);
+        if(run.rootItemId&&!run.itemIds?.includes(run.rootItemId)&&items.every(item=>item.purpose!=='planning')&&board.items.find(item=>item.id===run.rootItemId)?.purpose==='planning')await once(options,run,'finish-planning',{type:'finish-planning',itemId:run.rootItemId});
+        const stage=items.some(item=>item.purpose==='planning')?'planning' as const:'execution' as const,state=runState(items);
         if (state === 'completed' && run.rootItemId && !run.itemIds?.includes(run.rootItemId) && board.items.find(item => item.id === run.rootItemId)?.status !== 'completed') {
             await once(options, run, 'close-root', {type: 'close-plan', itemId: run.rootItemId, resultRef: 'kanban-run:' + run.id});
         }
         const code = state === 'failed' ? 'DECISION_TASK_CANCELLED' : state === 'blocked' && items.some(item=>projectKanbanTask(item).phase==='waiting-input') ? 'DECISION_INPUT_REQUIRED' : undefined;
-        if (run.state === state && run.code === code) return view(run);
-        const updated = await save(options, {...run, state, code, updatedAt: Date.now()});
+        if (run.state===state&&run.code===code&&run.stage===stage) return view(run);
+        const updated = await save(options, {...run,state,code,stage,updatedAt: Date.now()});
         options.log({operationId: run.id, boardId: run.sourceBoardId, stage: 'record.run', result: state === 'failed' ? 'failure' : 'success', code: updated.code, durationMs: Date.now() - started});
         return view(updated);
     } catch (error) {
@@ -204,7 +205,7 @@ function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: Kanban
     return {id, sourceBoardId: board.id, recordId: record.id, recordRevision: record.revision,
         boardId: placement === 'new-board' ? 'run-' + id : board.id, placement, taskKind: task.id, parentKind: parent?.id,
         rootItemId: refs.length === 1 ? itemIds[0] : 'feature-' + id, itemIds,
-        state: 'preparing', createdAt: Date.now(), updatedAt: Date.now(), record, automation: structuredClone(board.automation!)};
+        state:'preparing',stage:'planning',createdAt: Date.now(), updatedAt: Date.now(), record, automation: structuredClone(board.automation!)};
 }
 function runState(items: KanbanItem[]): KanbanRecordExecution['state'] {
     if (items.some(item => item.status === 'cancelled')) return 'failed';
@@ -223,14 +224,15 @@ async function materialize(options: Options, run: SavedRun): Promise<void> {
     const refs = run.record.externalRefs!.filter(ref => ref.system === options.resources.system);
     const group = !!run.rootItemId && !run.itemIds?.includes(run.rootItemId);
     if (group) await once(options, run, 'root', {type: 'create-item', item: {id: run.rootItemId!, title: run.record.title,
-        responsibility: run.record.content, acceptance: run.record.rationale ?? run.record.content},
+        responsibility: run.record.content, acceptance: run.record.rationale ?? run.record.content,purpose:'planning'},
         planning: {kind: run.parentKind!, priority: 2, dependencies: [], references: []}});
     for (const [index, reference] of refs.entries()) {
         await once(options, run, 'item-' + index, {type: 'create-item', item: {id: run.itemIds?.[index] ?? 'work-' + index,
-            title: run.record.title, responsibility: run.record.content, acceptance: run.record.rationale ?? run.record.content,
+            title: run.record.title, responsibility: run.record.content, acceptance: run.record.rationale ?? run.record.content,purpose:'planning',
             externalRefs: [reference, {system: options.resources.decisionSystem ?? 'kanban-decision', id: run.id}]},
             ...(run.taskKind ? {planning: {kind: run.taskKind, priority: 2, dependencies: [], references: [], ...(group ? {parentId: run.rootItemId} : {})}} : {})});
     }
+    await markPlanning(options,run);
     if (run.boardId !== run.sourceBoardId) await once(options, run, 'automation', {type: 'configure-automation', settings: {...run.automation, enabled: true, autoAccept: false}});
     if (run.rootItemId && run.boardId === run.sourceBoardId) await once(options, run, 'link-root', {type: 'link-record', recordId: run.recordId, itemId: run.rootItemId});
 }
@@ -243,14 +245,14 @@ async function save(options: Options, run: SavedRun): Promise<SavedRun> {
     const rows = await options.journal.update<SavedRun[]>('record-runs:' + run.sourceBoardId, previous => {
         const current = previous ?? [];
         requireValue(current.some(row => row.id === run.id), 'RECORD_EXECUTION_CHECKPOINT_MISSING');
-        return current.map(row => row.id !== run.id || row.state === run.state && row.code === run.code ? row : run);
+        return current.map(row => row.id !== run.id || row.state===run.state&&row.code===run.code&&row.stage===run.stage ? row:run);
     });
     return rows.find(row => row.id === run.id)!;
 }
 
 function view(run: SavedRun): KanbanRecordExecution {
-    const {id, recordId, recordRevision, boardId, rootItemId, itemIds, state, createdAt, updatedAt, archivedAt, code} = run;
-    return {id, recordId, recordRevision, boardId, ...(rootItemId ? {rootItemId, itemIds} : {}), state, createdAt, updatedAt,...(archivedAt!==undefined?{archivedAt}:{}), ...(code ? {code} : {})};
+    const {id, recordId, recordRevision, boardId, rootItemId, itemIds, state, createdAt, updatedAt,archivedAt,stage,code} = run;
+    return {id, recordId, recordRevision, boardId, ...(rootItemId ? {rootItemId, itemIds} : {}), state,createdAt,updatedAt,...(stage?{stage}:{}),...(archivedAt!==undefined?{archivedAt}:{}), ...(code ? {code} : {})};
 }
 
 async function cancelDecision(options: Options, boardId: string, recordId: string, operationId: string): Promise<void> {
@@ -282,4 +284,14 @@ async function restartDecision(options:Options,boardId:string,recordId:string,op
     const record=await options.service.record(boardId,recordId);
     const run=await prepare(options,boardId,{recordId,operationId:'restart-'+operationId,expectedRevision:record.revision});
     await advance(options,run);
+}
+
+async function markPlanning(options:Options,run:SavedRun):Promise<void> {
+    const workflow=await options.service.workflow(run.boardId);
+    for(const id of run.itemIds??[]){
+        if(Object.values(workflow.plans).some(plan=>plan.rootItemId===id||plan.itemIds.includes(id)))continue;
+        const {item}=await options.service.item(run.boardId,id);
+        if(item.purpose==='planning'||item.owner||!['backlog','open'].includes(item.status))continue;
+        await journalCommand(options.journal,options.service,run.boardId,'record-planning-marker:'+run.id+':'+id,{type:'mark-planning',itemId:id});
+    }
 }

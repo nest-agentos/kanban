@@ -226,3 +226,25 @@ it('keeps active executions within the default per-assignee capacity', async () 
     await f.run({type: 'request-run', itemId: 'next'}); await bridge.scan();
     expect(f.executor.start).toHaveBeenCalledTimes(1);
 });
+it('projects task groups from child states and never offers an independent execution',()=>{
+    const group={id:'group',status:'backlog',createdAt:1,launch:{startAt:10000,admittedAt:1},planning:{kind:'task',execution:'children',priority:2,dependencies:[],references:[]}} as KanbanItem;
+    const child={id:'child',status:'backlog',createdAt:1,launch:{startAt:10000},planning:{kind:'subtask',parentId:'group',priority:2,dependencies:[],references:[]}} as KanbanItem;
+    const project=(item:KanbanItem)=>projectKanbanTask(group,undefined,100,[group,item]);
+    expect(project({...child,issues:[{id:'q',attemptId:'a',type:'clarification'}]})).toMatchObject({phase:'waiting-input',reason:'GROUP_INPUT_REQUIRED'});
+    expect(project({...child,status:'review'})).toMatchObject({phase:'review',reason:'GROUP_CHILD_REVIEW'});
+    expect(project({...child,status:'claimed'})).toMatchObject({phase:'running',reason:'GROUP_CHILD_RUNNING'});
+    expect(project({...child,status:'completed'})).toMatchObject({phase:'waiting-dependency',reason:'GROUP_SETTLEMENT_PENDING'});
+    expect(project({...child,status:'cancelled'})).toMatchObject({phase:'error',reason:'GROUP_CHILD_CANCELLED'});
+    expect(project(child).actions).toEqual(['cancel']);
+    expect(project(child).sessionId).toBeUndefined();
+});
+it('returns current parent state and complete child totals with a child page',async()=>{
+    const f=await fixture();await f.run({type:'create-item',item:{id:'group',title:'Group',responsibility:'Scope',acceptance:'All accepted'}});
+    await f.run({type:'create-item',item:{id:'child',title:'Child',responsibility:'Work',acceptance:'Verified'},planning:{kind:'subtask',parentId:'group',priority:2,dependencies:[],references:[]}});
+    await f.run({type:'report-analysis',itemId:'child',operationId:'planning',status:{itemId:'child',state:'clarification',reason:'Clarify'}});
+    const waiting=await f.service.query('board',{view:'all',parentId:'group',limit:1});
+    expect(waiting.progress).toMatchObject({total:1,waitingInput:1,completed:0});expect(waiting.parentTask?.phase).toBe('waiting-input');
+    await f.run({type:'report-analysis',itemId:'child',operationId:'planning-error',status:{itemId:'child',state:'failed',code:'EIO'}});
+    const failed=await f.service.query('board',{view:'all',parentId:'group',limit:1});
+    expect(failed.progress?.errors).toBe(1);expect(failed.parentTask).toMatchObject({phase:'error',reason:'GROUP_CHILD_ERROR'});
+});

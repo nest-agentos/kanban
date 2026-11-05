@@ -71,9 +71,10 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     return state;
 }
 function createItem(state: KanbanState, command: Extract<KanbanCommand, { type: 'create-item' }>, actor: KanbanActor, now: number, token: string): void {
-    const {id: requestedId, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs} = command.item;
+    const {id: requestedId, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose} = command.item;
     const id = requestedId ?? allocateTaskId(state);
-    const input = {id, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs}, board = state.board;
+    const input = {id, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose}, board = state.board;
+    requireValue(purpose===undefined||purpose==='planning','INVALID_ITEM_PURPOSE');
     identity(input.id); text(input.title); text(input.responsibility); text(input.acceptance);
     requireValue(!board.items.some(i => i.id === input.id) && !state.archiveIndex?.some(i => i.id === input.id), 'ITEM_EXISTS');
     const item: KanbanItem = { ...input, origin: {kind: 'direct', principal: principal(actor)}, status: 'backlog', revision: 1, createdAt: now, readyAt: now, updatedAt: now, workUnits: 0, participants: [] };
