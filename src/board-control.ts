@@ -13,7 +13,7 @@ export function setBoardControl(state: KanbanState, command: Command, actor: Kan
     const policy = state.board.executionControl ??= {mode: 'automatic', paused: false, controls: {}};
     if (command.mode) policy.mode = command.mode;
     if (command.paused === undefined || command.paused === policy.paused) return;
-    if (!command.paused) requireValue(!state.board.items.some(item => policy.controls[item.id] === item.control?.id && ['requested', 'unknown'].includes(item.control!.state)), 'CONTROL_UNSETTLED');
+    if (!command.paused) requireValue(!state.board.items.some(item => !!item.control && policy.controls[item.id] === item.control.id && ['requested', 'unknown'].includes(item.control.state)), 'CONTROL_UNSETTLED');
     policy.paused = command.paused;
     if (policy.paused) policy.controls = {};
     state.board.items.forEach((item, index) => {

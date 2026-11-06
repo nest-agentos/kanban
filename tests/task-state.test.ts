@@ -264,3 +264,10 @@ it('starts internal decision planning immediately while retaining the delay for 
     expect(planning.launch?.startAt).toBe(planning.createdAt);
     expect(development.launch!.startAt-development.createdAt).toBe(300000);
 });
+it('resumes a board containing unstarted items without a control record',async()=>{
+    const f=await fixture();await f.run({type:'set-board-control',paused:true},f.human);
+    expect((await f.item()).control).toBeUndefined();
+    await f.run({type:'set-board-control',paused:false},f.human);
+    expect((await f.service.read('board')).executionControl?.paused).toBe(false);
+    expect((await f.item()).control).toBeUndefined();
+});
