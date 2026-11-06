@@ -134,11 +134,17 @@ async function releaseUnstartedSubmission(options: KanbanExecutionBridgeOptions,
 async function prepareRequest(options: KanbanExecutionBridgeOptions, path: string, dispatch: KanbanDispatch, item: KanbanItem): Promise<unknown> {
     if (!dispatch.continuation) return options.executor.prepare(dispatch, item);
     if (!options.executor.prepareContinuation) throw new KanbanError('CONTINUATION_UNSUPPORTED');
-    const previous = (await options.service.workflow(options.boardId)).dispatches[dispatch.continuation.previousDispatchId];
-    if (!previous || previous.itemId !== dispatch.itemId) throw new KanbanError('CONTINUATION_SCOPE_MISMATCH');
-    const record = await loadRecord(options, path, previous);
-    if (!record) throw new KanbanError('EXECUTION_JOURNAL_MISSING');
-    return options.executor.prepareContinuation(dispatch, item, record.request);
+    const workflow=await options.service.workflow(options.boardId),seen=new Set<string>();
+    let previous=workflow.dispatches[dispatch.continuation.previousDispatchId];
+    while(previous&&!seen.has(previous.id)) {
+        seen.add(previous.id);
+        if(previous.itemId!==dispatch.itemId||previous.executionEpoch!==dispatch.executionEpoch)throw new KanbanError('CONTINUATION_SCOPE_MISMATCH');
+        const record=await loadRecord(options,path,previous);
+        if(record)return options.executor.prepareContinuation(dispatch,item,record.request);
+        if(previous.outcome!=='failed'||previous.executionSessionId||!previous.continuation)break;
+        previous=workflow.dispatches[previous.continuation.previousDispatchId];
+    }
+    throw new KanbanError('EXECUTION_JOURNAL_MISSING');
 }
 async function loadRecord(options: KanbanExecutionBridgeOptions, path: string, dispatch: KanbanDispatch): Promise<ExecutionRecord|undefined> {
     const raw=await options.fs.meta.seq!.getEntry(path,dispatch.id); if(!raw) return;

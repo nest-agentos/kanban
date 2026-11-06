@@ -174,3 +174,15 @@ it('backs off thrown observation failures and recovers the original attempt with
         expect(JSON.stringify(f.log.mock.calls)).not.toContain('PRIVATE');
     } finally {clock.mockRestore();}
 });
+
+it('recovers the original frozen Session request after a continuation fails before submission',async()=>{
+ const f=await fixture();await f.prepare();vi.mocked(f.executor.start).mockResolvedValueOnce({outcome:'failed',code:'VERIFICATION_FAILED',executionSessionId:'original-session'});
+ const bridge=await f.bridge();await bridge.scan();
+ f.executor.prepareContinuation=vi.fn().mockRejectedValueOnce(Object.assign(new Error('Blocked'),{code:'WORKTREE_EXECUTION_UNKNOWN'})).mockImplementation(async(dispatch,_item,previous)=>({dispatchId:dispatch.id,previous}));
+ await f.run({type:'continue-execution',previousDispatchId:'d',dispatchId:'failed-preparation'});await bridge.scan();
+ expect((await f.service.workflow('b')).dispatches['failed-preparation'].outcome).toBe('failed');
+ await f.run({type:'continue-execution',previousDispatchId:'failed-preparation',dispatchId:'recovered'});await bridge.scan();
+ expect(f.executor.prepareContinuation).toHaveBeenLastCalledWith(expect.objectContaining({id:'recovered'}),expect.anything(),{dispatchId:'d'});
+ expect(f.executor.start).toHaveBeenCalledTimes(2);expect((await f.service.workflow('b')).dispatches.recovered.attempt).toBe(3);
+ expect((await f.service.workflow('b')).dispatches['failed-preparation'].outcome).toBe('failed');
+});
