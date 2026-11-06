@@ -230,3 +230,16 @@ it('freezes explicit automatic completion with the approved decision',async()=>{
  expect((await f.managerApi.record('b','auto-decision')).completion).toBe('automatic');
  await expect(f.run(f.managerApi,{type:'append-record',record:{id:'bad-auto',kind:'log',title:'Invalid',content:'Scope',itemIds:[],sources:[],completion:'automatic'}})).rejects.toMatchObject({code:'INVALID_COMPLETION_POLICY'});
 });
+it('persists decision preferences, revises them only before execution, and rejects invalid values atomically',async()=>{
+ const f=await fixture(),reviewer=createKanbanModule({store:f.store,actor:{kind:'human',id:'reviewer'},authorize:async()=>{},log(){}});
+ const record={id:'choices',kind:'decision' as const,title:'Choices',content:'Scope',rationale:'Verify',itemIds:[],sources:[],verificationLevel:'quick' as const,deliveryMode:'source' as const};
+ await f.run(f.managerApi,{type:'append-record',record});
+ expect(await reviewer.record('b','choices')).toMatchObject({verificationLevel:'quick',deliveryMode:'source'});
+ await f.run(reviewer,{type:'revise-record',recordId:'choices',title:'Choices',content:'Scope',rationale:'Verify',verificationLevel:'none',deliveryMode:'release'});
+ expect(await reviewer.record('b','choices')).toMatchObject({verificationLevel:'none',deliveryMode:'release'});
+ const before=await f.store.read('b');
+ await expect(f.run(f.managerApi,{type:'append-record',record:{...record,id:'bad',verificationLevel:'invalid' as any}})).rejects.toMatchObject({code:'INVALID_VERIFICATION_LEVEL'});
+ await expect(f.run(f.managerApi,{type:'append-record',record:{...record,id:'bad',deliveryMode:'invalid' as any}})).rejects.toMatchObject({code:'INVALID_DELIVERY_MODE'});
+ await expect(f.run(f.managerApi,{type:'append-record',record:{...record,id:'bad',kind:'log'}})).rejects.toMatchObject({code:'INVALID_VERIFICATION_LEVEL'});
+ expect(await f.store.read('b')).toEqual(before);
+});

@@ -194,7 +194,7 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
 }
 
 function decisionSignature(record: KanbanProjectRecord): string {
-    return sha256HexSync(JSON.stringify([record.title, record.content, record.rationale, record.externalRefs,record.completion,record.executionEpoch]));
+    return sha256HexSync(JSON.stringify([record.title, record.content, record.rationale, record.externalRefs,record.completion,record.verificationLevel,record.deliveryMode,record.executionEpoch]));
 }
 function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: KanbanRecordRunRequest, id: string, resourceSystem: string): SavedRun {
     const placement = request.placement ?? 'current-board';

@@ -1,3 +1,4 @@
+import {validateDecisionOptions} from './decision-options';
 import {archiveItems} from './archives';
 import {sha256HexSync} from './utils';
 import type {KanbanActor, KanbanCommand, KanbanProjectRecord, KanbanRecordPage, KanbanRecordQuery} from './contracts';
@@ -19,6 +20,9 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
         requireValue(record.itemIds.every(id=>{const item=state.board.items.find(row=>row.id===id)??state.archiveIndex?.find(row=>row.id===id);return item&&['completed','cancelled'].includes(item.status);}),'RECORD_EXECUTION_UNSETTLED');
         text(command.title);text(command.content);text(command.rationale);
         requireValue(command.completion===undefined||['manual','automatic'].includes(command.completion),'INVALID_COMPLETION_POLICY');
+        validateDecisionOptions(command, record.kind);
+        if(command.verificationLevel!==undefined)record.verificationLevel=command.verificationLevel;
+        if(command.deliveryMode!==undefined)record.deliveryMode=command.deliveryMode;
         if(command.completion!==undefined)record.completion=command.completion;
         record.title=command.title;record.content=command.content;record.rationale=command.rationale;record.updatedAt=now;record.revision++;return;
     }
@@ -49,10 +53,11 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
 }
 function append(state: KanbanState, command: Extract<RecordCommand, {type: 'append-record'}>, actor: KanbanActor, now: number, forceDraft: boolean): void {
     validateSources(command.record.sources);
-    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,completion} = command.record;
-    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{})}); identity(input.id); text(input.title); text(input.content);
+    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,completion,verificationLevel,deliveryMode} = command.record;
+    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{}), ...(verificationLevel?{verificationLevel}:{}), ...(deliveryMode?{deliveryMode}:{})}); identity(input.id); text(input.title); text(input.content);
     requireValue(completion===undefined||kind==='decision'&&['manual','automatic'].includes(completion),'INVALID_COMPLETION_POLICY');
     if(completion)input.completion=completion;
+    validateDecisionOptions(command.record, kind);
     validateRecordReferences(externalRefs);
     requireValue(input.kind === 'log' || input.kind === 'decision', 'INVALID_RECORD_KIND');
     requireValue(!state.records?.some(record => record.id === input.id), 'RECORD_EXISTS');
@@ -108,7 +113,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
 }
 
 export function recordFingerprint(record: import('./contracts').KanbanRecordInput): string {
-    return sha256HexSync(JSON.stringify({kind: record.kind, title: record.title, content: record.content, rationale: record.rationale ?? null,
+    return sha256HexSync(JSON.stringify({kind: record.kind, title: record.title, content: record.content, rationale: record.rationale ?? null, verificationLevel: record.verificationLevel ?? null, deliveryMode: record.deliveryMode ?? null,
         itemIds: [...record.itemIds].sort(), sources: record.sources.map(source => JSON.stringify([source.sessionId, source.messageId, source.role])).sort(), ...(record.coordination?{coordination:record.coordination}: {}), ...(record.externalRefs ? {externalRefs: record.externalRefs} : {})}));
 }
 

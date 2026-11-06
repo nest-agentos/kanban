@@ -7,7 +7,7 @@ export interface AnalysisSubtask {key:string;title:string;responsibility:string;
 interface Input {id:string;reason:string;dependencies:string[];subtasks:AnalysisSubtask[]}
 export function validateSubtasks(value:unknown):AnalysisSubtask[]|undefined {
     if(value===undefined)return;
-    requireValue(Array.isArray(value)&&value.length>=2&&value.length<=16,'AUTOMATION_SUBTASKS_INVALID');
+    requireValue(Array.isArray(value)&&value.length>=1&&value.length<=16,'AUTOMATION_SUBTASKS_INVALID');
     const tasks=value as AnalysisSubtask[],keys=new Set(tasks.map(task=>task?.key));
     requireValue(keys.size===tasks.length,'AUTOMATION_SUBTASKS_INVALID');
     for(const task of tasks) {
