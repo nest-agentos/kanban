@@ -1,4 +1,5 @@
 import {numberEntities, boardCounterKey, boardNumberKey, counter, allocateBoardNumber, storedBoardNumber} from './numbering';
+import {hydrateEntity, rowKey} from './storage-codec';
 import type {KanbanSeqClient, KanbanSeqChange, KanbanSeqSnapshot} from './storage-ports';
 import type {KanbanEvent, KanbanArchivedItem} from './contracts';
 import {KanbanError, type KanbanState, type KanbanStore} from './ports';
@@ -25,6 +26,10 @@ export class ConditionalKanbanStore implements KanbanStore {
     async read(id: string): Promise<KanbanState | null> {
         const snapshot = await this.select([key(id)]);
         return hydrate(await this.loadRows(entry(snapshot, key(id)), snapshot.revision), this.bodies);
+    }
+    async entity(boardId: string, kind: 'item' | 'record', id: string) {
+        const selected = rowKey(kind, boardId, id), manifest = key(boardId), snapshot = await this.select([manifest, selected]);
+        return hydrateEntity(entry(snapshot, manifest), entry(snapshot, selected), kind, id, this.bodies);
     }
     private async loadRows(raw: string | null, revision: string | null): Promise<StoredBoard> {
         const keys = rowKeys(raw), rows: Record<string, string> = {};

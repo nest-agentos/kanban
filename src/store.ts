@@ -1,4 +1,5 @@
 import {numberEntities, boardCounterKey, boardNumberKey, counter, allocateBoardNumber, patchBoardNumber} from './numbering';
+import {hydrateEntity, rowKey} from './storage-codec';
 import type { KanbanEvent, KanbanArchivedItem } from './contracts';
 import { FSError, type IFileSystem } from '@nestos/vfs-core';
 import { KanbanError, type KanbanState, type KanbanStore } from './ports';
@@ -49,6 +50,11 @@ export class SeqKanbanStore implements KanbanStore {
         const raw = await this.fs.meta.seq!.getEntry(this.path, key(id));
         const indexed = indexedView(raw); if (indexed) return indexed;
         const state = await this.read(id); return state ? viewFromState(state) : null;
+    }
+    async entity(boardId: string, kind: 'item' | 'record', id: string) {
+        const selected = rowKey(kind, boardId, id), manifest = key(boardId);
+        const rows = await this.fs.meta.seq!.getEntries(this.path, [manifest, selected]);
+        return hydrateEntity(rows[manifest] ?? null, rows[selected] ?? null, kind, id, this.bodies);
     }
     async read(id: string): Promise<KanbanState | null> {return hydrate(await this.load(id), this.bodies);}
     async update(id: string, operationId: string, fingerprint: string,

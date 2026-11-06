@@ -42,7 +42,7 @@ class KanbanModule implements KanbanService {
     });
     records = (boardId: string, query?: import('./contracts').KanbanRecordQuery) => this.guard(this.id(), boardId, 'records', async () => {const view = await this.readView(boardId); return structuredClone(queryRecords(view.state,query,recordAttention(view.state,view.items,view.records)));});
     record = (boardId: string, recordId: string) => this.guard(this.id(), boardId, 'record', async () => {
-        identity(recordId); const record = (await this.readState(boardId)).records?.find(record => record.id === recordId);
+        identity(recordId); const record = (await this.readEntity(boardId, 'record', recordId)).value as import('./contracts').KanbanProjectRecord | undefined;
         requireValue(record, 'RECORD_NOT_FOUND'); return structuredClone(record);
     });
     currentPrincipal = async () => structuredClone(principal(this.actor));
@@ -109,8 +109,8 @@ class KanbanModule implements KanbanService {
     query = (boardId: string, query?: KanbanItemQuery) => this.guard(this.id(), boardId, 'query', async () => {const view = await this.readView(boardId); return structuredClone(queryItems(view.state, query, [...view.items, ...(view.state.archiveIndex ?? [])], this.now()));});
     overview = (boardId: string) => this.guard(this.id(), boardId, 'overview', async () => {const view = await this.readView(boardId); return {...overview(view.state,this.now(),view.items),attention:attentionCounts(view.state,view.items,view.records)};});
     item = (boardId: string, itemId: string) => this.guard(this.id(), boardId, 'item', async () => {
-        identity(itemId); const state = await this.readState(boardId), item = state.board.items.find(i => i.id === itemId);
-        if (item) return {item: structuredClone(item),task:projectKanbanTask(item,state.workflow,this.now(),[...state.board.items,...state.archiveIndex??[]])};
+        identity(itemId); const {view, value} = await this.readEntity(boardId, 'item', itemId), state = view.state, item = value as import('./contracts').KanbanItem | undefined;
+        if (item) return {item: structuredClone(item),task:projectKanbanTask(item,state.workflow,this.now(),[...view.items,...state.archiveIndex??[]])};
         requireValue(state.archiveIndex?.some(i => i.id === itemId), 'ITEM_NOT_FOUND');
         const record = await this.options.store.archived(boardId, itemId); requireValue(record, 'REVISION_CONFLICT');
         return {item: structuredClone(record.item), task:projectKanbanTask(record.item,state.workflow,this.now(),state.archiveIndex), archive: {archivedAt: record.archivedAt, reason: record.reason}};
@@ -156,6 +156,15 @@ class KanbanModule implements KanbanService {
         if (!this.options.store.view) return viewFromState(await this.readState(boardId));
         const view = await this.options.store.view(boardId); requireValue(view, 'BOARD_NOT_FOUND');
         await this.authorize(view.state.board, 'read'); return view;
+    }
+    private async readEntity(boardId: string, kind: 'item' | 'record', id: string): Promise<import('./ports').KanbanStoredEntity> {
+        identity(boardId);
+        if (!this.options.store.entity) {
+            const state = await this.readState(boardId);
+            return {view: viewFromState(state), value: (kind === 'item' ? state.board.items : state.records ?? []).find(value => value.id === id)};
+        }
+        const selected = await this.options.store.entity(boardId, kind, id); requireValue(selected, 'BOARD_NOT_FOUND');
+        await this.authorize(selected.view.state.board, 'read'); return selected;
     }
     private async readState(boardId: string): Promise<KanbanState> {
         identity(boardId); const state = await this.options.store.read(boardId); requireValue(state, 'BOARD_NOT_FOUND');

@@ -18,6 +18,7 @@ export interface KanbanReadView {
     records: import('./contracts').KanbanRecordSummary[];
 }
 export interface KanbanStore {
+    entity?(boardId: string, kind: 'item' | 'record', id: string): Promise<KanbanStoredEntity | null>;
     boardId?(number: number): Promise<string | null>;
     view?(id: string): Promise<KanbanReadView | null>;
     ids(): Promise<string[]>;
@@ -26,6 +27,10 @@ export interface KanbanStore {
     read(id: string): Promise<KanbanState | null>;
     update(id: string, operationId: string, fingerprint: string,
         change: (state: KanbanState | null) => KanbanState): Promise<KanbanState>;
+}
+export interface KanbanStoredEntity {
+    view: KanbanReadView;
+    value?: import('./contracts').KanbanItem | import('./contracts').KanbanProjectRecord;
 }
 export interface KanbanModuleOptions {
     /** Select definition references for a fresh successor; never retain execution resources by default. */

@@ -4,6 +4,7 @@
 
 - contracts 为无 I/O 的公开 DTO 与纯函数，包含 KanbanClient、状态投影和引用编解码。应用从公开入口导入，不代转出库 API。
 - module 负责准入、授权、诊断及关停；reducer 不进行 I/O。SeqFile 事务原子提交状态、依赖、派发意图、事件和幂等回执。
+- 单事项/决策读取通过 store.entity 一次批量读取索引和目标行，仅解码目标正文；依赖/任务组状态使用摘要。不要用完整 readState 做存在性检查或单实体详情读取。命令继续读取完整一致状态并按原事务提交。
 - runtime 普通入口只导出 createKanbanRuntime 与数据契约，实例不暴露 store、journal、fs 或 serviceFor。integration 只供受信任宿主自定义装配，不透传为远程工具能力。
 - 执行适配器接收意图、持久句柄和正式回执，不引入 Session、Flow、Kernel、Agent SDK、全局事件或 NestOS 目录约定。
 - prepare 不提交外部执行，提交前冻结绑定与身份；unknown 不释放责任、不自动重派。只有正式未启动回执允许重试原请求。

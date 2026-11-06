@@ -2,7 +2,7 @@ import {randomUUID, sha256HexSync} from './utils';
 import type {KanbanItem, KanbanProjectRecord} from './contracts';
 import {summary} from './planning';
 import {recordSummary} from './project-records';
-import {KanbanError, type KanbanReadView, type KanbanState} from './ports';
+import {KanbanError, type KanbanReadView, type KanbanState, type KanbanStoredEntity} from './ports';
 import {requireValue} from './rules';
 
 export interface KanbanBodyStore {
@@ -14,7 +14,21 @@ interface BodyRef {body: 'kanban-body/v1'; sha256: string; bytes: number}
 export interface StoredBoard {raw: string | null; rows: Record<string, string>}
 export const boardKey = (id: string): string => `board/${encodeURIComponent(id)}`;
 export const archiveKey = (board: string, item: string): string => `archive/${encodeURIComponent(board)}/${encodeURIComponent(item)}`;
-const rowKey = (kind: 'item' | 'record', board: string, id: string): string => `${kind}/${encodeURIComponent(board)}/${encodeURIComponent(id)}`;
+export const rowKey = (kind: 'item' | 'record', board: string, id: string): string => `${kind}/${encodeURIComponent(board)}/${encodeURIComponent(id)}`;
+
+/** Decode only the selected entity; unrelated bodies never enter a detail query. */
+export async function hydrateEntity(raw: string | null, row: string | null, kind: 'item' | 'record', id: string, bodies?: KanbanBodyStore): Promise<KanbanStoredEntity | null> {
+    if (raw === null) return null;
+    const view = indexedView(raw);
+    if (!view) {
+        const state = (await hydrate({raw, rows: {}}, bodies))!;
+        return {view: viewFromState(state), value: (kind === 'item' ? state.board.items : state.records ?? []).find(value => value.id === id)};
+    }
+    if (!(kind === 'item' ? view.items : view.records).some(value => value.id === id)) return {view};
+    requireValue(typeof row === 'string', 'MISSING_STORAGE_ROW');
+    const value = await decodeRow<KanbanItem | KanbanProjectRecord>(row, bodies);
+    requireValue(value.id === id, 'INVALID_STORAGE'); return {view, value};
+}
 
 export function rowKeys(raw: string | null): string[] {
     if (raw === null) return [];

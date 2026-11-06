@@ -86,6 +86,25 @@ it('remote queries never request unrelated boards, events or receipts and send o
     expect(mutations.at(-1)).toEqual(['item/b/two','board/b','receipt/b/edit']);
     expect(selections.flat().some(key=>key.includes('other'))).toBe(false);
     expect((await store.read('b'))!.board.items[1].title).toBe('Changed');
+    selections.length = 0;
+    expect((await store.entity('b', 'item', 'two'))!.value?.title).toBe('Changed');
+    expect(selections).toEqual([['board/b', 'item/b/two']]);
+});
+
+it('reads one item or decision without fetching unrelated large bodies and still checks the selected body', async () => {
+    const {fs, store} = await fixture(), state = initial();
+    state.records = [{id: 'decision', kind: 'decision', title: 'Decision', content: 'Scoped decision', status: 'confirmed', itemIds: [], sources: [],
+        author: {kind: 'human', id: 'user'}, origin: 'manual', revision: 1, createdAt: 1, updatedAt: 1}];
+    await store.update('b', 'seed', 'seed', () => state);
+    const ref = JSON.parse((await fs.meta.seq!.getEntry(path, 'item/b/one'))!);
+    await fs.meta.assets.deleteAsset(path, `${ref.sha256}.json`);
+    const service = createKanbanModule({store, actor: {kind: 'human', id: 'user'}, authorize: async () => {}, log: () => {}});
+    try {
+        expect((await service.item('b', 'two')).item.title).toBe('Two');
+        expect((await service.record('b', 'decision')).content).toBe('Scoped decision');
+        await expect(service.item('b', 'one')).rejects.toMatchObject({code: 'BODY_MISSING'});
+        await expect(service.item('b', 'missing')).rejects.toMatchObject({code: 'ITEM_NOT_FOUND'});
+    } finally {await service.dispose();}
 });
 
 it('serves summary indexes without loading or depending on external bodies', async () => {
