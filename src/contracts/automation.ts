@@ -18,6 +18,7 @@ export interface KanbanAutomationCatalog {
 export interface KanbanAnalysisStatus {
     itemId: string; state: 'analyzing' | 'ready' | 'clarification' | 'failed' | 'unknown';
     reason?: string; code?: string; dependencies?: string[];
+    recovery?: {attempt: number; limit: number; retryAt: number; code: string};
 }
 export function sameAutomationBinding(left?: KanbanAutomationSettings, right?: KanbanAutomationSettings): boolean {
     const signature = (value?: KanbanAutomationSettings) => JSON.stringify([value?.planner?.system, value?.planner?.id, value?.planner?.revision,

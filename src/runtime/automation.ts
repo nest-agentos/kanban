@@ -71,13 +71,14 @@ async function planNext(options:KanbanAutomationOptions,board:KanbanBoard,active
         if(!active())return;if(!await dependenciesComplete(options.service,board,item))continue;
         const service=options.serviceFor(board.automation!.coordinator);
         if(item.launch?.admittedAt===undefined){if(!await admit(options,board,item,service))return;board=await service.read(board.id);Object.assign(item,board.items.find(row=>row.id===item.id));}
+        const started = Date.now();
         try{await options.analyze(board,item,service,active);}
         catch(error){
             const code=safeCode(error,'AUTOMATION_ANALYSIS_PREPARATION_FAILED');
             if(['REVISION_CONFLICT','IDEMPOTENCY_CONFLICT'].includes(code)){options.log({operationId:item.id,boardId:board.id,stage:'automation.analysis.sync',result:'failure',code,durationMs:0});continue;}
             const latest=await service.read(board.id);
             await service.execute(board.id,{operationId:'analysis-prepare-failed:'+item.id+':'+item.revision,expectedRevision:latest.revision,command:{type:'report-analysis',itemId:item.id,operationId:item.id,status:{itemId:item.id,state:'failed',code}}});
-            options.log({operationId:item.id,boardId:board.id,stage:'automation.analysis.prepare',result:'failure',code,durationMs:0});
+            options.log({operationId:item.id,boardId:board.id,stage:'automation.analysis.prepare',result:'failure',code,durationMs:Date.now()-started});
         }
         const status=await analysisStatus(options.journal,board.id,item.id);
         if(status&&['analyzing','unknown','ready'].includes(status.state))return;

@@ -16,6 +16,7 @@ export interface KanbanAnalysisPort<Target = KanbanExternalReference, Input = un
 interface AnalysisJob<Input> extends AnalysisJournalEntry {input:Input;result?:AnalysisResult;signatureVersion?:2}
 export interface KanbanAnalysisOptions<Target = KanbanExternalReference, Input = unknown> {
     journal:KanbanAutomationJournal;port:KanbanAnalysisPort<Target,Input>;active():boolean;
+    retryable?(error:unknown):boolean;
     inheritReferences?(references:readonly KanbanExternalReference[]):KanbanExternalReference[];
     onSettled?(input:{boardId:string;id:string;item:KanbanItem;request:Input;outcome:'succeeded'|'failed'|'cancelled';code?:string}):Promise<void>;
     log(input:{operationId:string;stage:string;result:'success'|'failure';code?:string;durationMs:number}):void;
@@ -58,7 +59,7 @@ async function finalizeAnalysis<Target, Input>(options: KanbanAnalysisOptions<Ta
         await options.onSettled({boardId, id: job.id, item, request: job.input,
             outcome: job.terminalOutcome ?? (job.status.state === 'failed' ? 'failed' : 'succeeded'), code: job.status.code});
         return job;
-    } catch (error) {return options.active() ? saveFailure(options, key, job, safeCode(error, 'AUTOMATION_ANALYSIS_FINALIZATION_FAILED')) : job;}
+    } catch (error) {if(options.retryable?.(error))throw error;return options.active() ? saveFailure(options, key, job, safeCode(error, 'AUTOMATION_ANALYSIS_FINALIZATION_FAILED')) : job;}
 }
 async function loadJob<Target, Input>(options: KanbanAnalysisOptions<Target, Input>, board: KanbanBoard, item: KanbanItem, target?: Target) {
     requireValue(board.items.length <= 200, 'AUTOMATION_CONTEXT_LIMIT');
@@ -84,7 +85,7 @@ async function loadJob<Target, Input>(options: KanbanAnalysisOptions<Target, Inp
 
 async function submitAnalysis<Target,Input>(options:KanbanAnalysisOptions<Target,Input>,key:string,job:AnalysisJob<Input>):Promise<AnalysisJob<Input>> {
     try {await options.port.prepareExecution(job.id,job.input);}
-    catch(error){return options.active()?saveFailure(options,key,job,safeCode(error,'AUTOMATION_ANALYSIS_PREPARE_FAILED')):job;}
+    catch(error){if(options.retryable?.(error))throw error;return options.active()?saveFailure(options,key,job,safeCode(error,'AUTOMATION_ANALYSIS_PREPARE_FAILED')):job;}
     if(!options.active())return job;
     const claimed=await options.journal.claim(key),latest=(await options.journal.get<AnalysisJob<Input>>(key))!;
     if(!claimed||!options.active())return latest;
