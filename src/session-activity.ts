@@ -7,8 +7,9 @@ import {randomUUID} from './utils';
 import {sessionAssociations, projectRelatedSessions} from './session-relations';
 export interface KanbanSessionActivityOptions {source: KanbanSessionSource; now?:()=>number}
 export function executionBindings(refs: KanbanExternalReference[] | undefined, referenceSystem: string) {return (refs ?? []).filter(ref=>ref.system===referenceSystem);}
-function currentBinding(refs: KanbanExternalReference[]|undefined, itemId:string, workflow:KanbanWorkflowState, referenceSystem: string) {
-    const binding=executionBindings(refs, referenceSystem).at(-1),latest=Object.values(workflow.dispatches).filter(dispatch=>dispatch.itemId===itemId).sort((a,b)=>b.attempt-a.attempt)[0];
+function currentBinding(refs: KanbanExternalReference[]|undefined, itemId:string, workflow:KanbanWorkflowState, referenceSystem: string,epoch?:string) {
+    if(epoch&&!Object.values(workflow.dispatches).some(row=>row.itemId===itemId&&row.executionEpoch===epoch))return undefined;
+    const binding=executionBindings(refs, referenceSystem).at(-1),latest=Object.values(workflow.dispatches).filter(dispatch=>dispatch.itemId===itemId&&dispatch.executionEpoch===epoch).sort((a,b)=>b.attempt-a.attempt)[0];
     if(!binding||!latest||binding.revision===latest.id) return binding;
     return ['prepared','running','unknown','succeeded'].includes(latest.outcome)||workflow.dispatches[binding.revision ?? '']?undefined:binding;
 }
@@ -18,7 +19,7 @@ export function createKanbanSessionActivity(core: KanbanService, options: Kanban
     const inspect=createSessionInspector(options,log);
     const project=async(boardId:string,rows:KanbanSessionItemSummary[])=>{
         if(!rows.some(row=>executionBindings(row.externalRefs,referenceSystem).length))return rows;
-        const [board,workflow]=await Promise.all([boardMetadata(core,boardId),core.workflow(boardId)]), bindings=new Map(rows.map(row=>[row.id,currentBinding(row.externalRefs,row.id,workflow,referenceSystem)]));
+        const [board,workflow]=await Promise.all([boardMetadata(core,boardId),core.workflow(boardId)]), bindings=new Map(rows.map(row=>[row.id,currentBinding(row.externalRefs,row.id,workflow,referenceSystem,row.executionEpoch)]));
         const ids=[...new Set([...bindings.values()].flatMap(ref=>ref?[ref.id]:[]))], states=new Map<string,KanbanExecutionSession>();let next=0;
         await Promise.all(Array.from({length:Math.min(ids.length,8)},async()=>{while(next<ids.length) {const id=ids[next++];states.set(id,await inspect(board,id));}}));
         return rows.map(row=>{const binding=bindings.get(row.id);return {...row,...(binding?{execution:states.get(binding.id)}: {})};});
@@ -30,7 +31,7 @@ export function createKanbanSessionActivity(core: KanbanService, options: Kanban
             if (!query || typeof query !== 'object' || Array.isArray(query) || Object.keys(query).some(key => key !== 'includeRelated') || query.includeRelated !== undefined && typeof query.includeRelated !== 'boolean') throw new KanbanError('INVALID_QUERY');
             const {item}=await core.item(boardId,itemId),bindings=executionBindings(item.externalRefs,referenceSystem);
             if(!bindings.length && !query.includeRelated)return {history:[]};
-            const [board,workflow]=await Promise.all([boardMetadata(core,boardId),core.workflow(boardId)]),last=currentBinding(item.externalRefs,itemId,workflow,referenceSystem);
+            const [board,workflow]=await Promise.all([boardMetadata(core,boardId),core.workflow(boardId)]),last=currentBinding(item.externalRefs,itemId,workflow,referenceSystem,item.executionEpoch);
             let sessionsCode: string | undefined;
             const related = query.includeRelated ? await options?.source.related?.(board, item, workflow).catch(error => {
                 const candidate = (error as {code?: string})?.code;

@@ -6,6 +6,7 @@ import {principal} from './identity';
 /** Restart creates a successor; sealed plans and native execution identities remain historical. */
 export function restartItemInput(state: KanbanState, command: Extract<KanbanCommand, {type:'restart-item'}>, actor: KanbanActor, inherit?: import('./ports').KanbanModuleOptions['restartReferences']): Extract<KanbanCommand, {type:'create-item'}> {
     requireValue(principal(actor).kind === 'human', 'FORBIDDEN'); identity(command.replacementId);
+    requireValue(!state.board.items.some(item=>item.planning?.dependencies.includes(command.itemId)),'DEPENDENCY_RESTART_REQUIRED');
     const previous = state.board.items.find(item => item.id === command.itemId);
     requireValue(previous, 'ITEM_NOT_FOUND');
     requireValue(previous.status === 'cancelled', 'TASK_NOT_CANCELLED');

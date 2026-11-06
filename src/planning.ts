@@ -7,7 +7,7 @@ export function plan(item: KanbanItem): KanbanPlanning {
     return item.planning ?? {kind: 'task', priority: 2, dependencies: [], references: []};
 }
 export function summary(item: KanbanItem): KanbanItemSummary {
-    return {purpose:item.purpose,assignee:item.owner?{kind:item.owner.kind,id:item.owner.id??item.owner.agentId??''}:undefined,restartedFrom:item.restartedFrom,deletedAt:item.deletedAt, launch:item.launch, analysis:item.analysis, control:item.control, issues:item.issues, blocked:item.blocked, id: item.id, number: item.number, title: item.title, status: item.status, revision: item.revision, createdAt: item.createdAt,
+    return {repairPending:item.repairPending,executionEpoch:item.executionEpoch,restartPending:item.restartPending,purpose:item.purpose,assignee:item.owner?{kind:item.owner.kind,id:item.owner.id??item.owner.agentId??''}:undefined,restartedFrom:item.restartedFrom,deletedAt:item.deletedAt, launch:item.launch, analysis:item.analysis, control:item.control, issues:item.issues, blocked:item.blocked, id: item.id, number: item.number, title: item.title, status: item.status, revision: item.revision, createdAt: item.createdAt,
         updatedAt: item.updatedAt, discoveryFingerprint: item.origin?.fingerprint, pendingAmendments: item.amendments?.filter(proposal => proposal.status === 'pending').length, externalRefs: item.externalRefs, closedAt: item.closedAt, planning: plan(item), sessionIds: item.participants.map(p => p.sessionId)};
 }
 export function terminal(item: Pick<KanbanItem, 'status'>): boolean {return item.status === 'completed' || item.status === 'cancelled';}
@@ -19,6 +19,7 @@ export function limits(state: KanbanState) {
 export function validatePlan(state: KanbanState, item: KanbanItem, value: KanbanPlanning): void {
     requireValue(typeof value.kind === 'string' && Number.isInteger(value.priority) && value.priority >= 0 && value.priority <= 4, 'INVALID_PLANNING');
     requireValue(Array.isArray(value.dependencies) && value.dependencies.length <= 100 && Array.isArray(value.references) && value.references.length <= 100, 'PLANNING_LIMIT');
+    requireValue(!value.dependencies.some(id=>state.board.items.find(row=>row.id===id)?.restartPending),'DEPENDENCY_RESTART_PENDING');
     value.dependencies.forEach(identity); value.references.forEach(text);
     if (value.area !== undefined) identity(value.area); if (value.milestone !== undefined) identity(value.milestone);
     requireValue(value.coordination===undefined||typeof value.coordination==='boolean','INVALID_EXECUTION_MODE');

@@ -12,6 +12,7 @@ import {requireCoordinator} from './workflow-plans';
 const types = ['mark-planning','finish-planning','reopen-item', 'set-launch-mode', 'retry-analysis', 'begin-edit', 'end-edit', 'save-edit', 'request-run', 'admit-item', 'report-analysis', 'request-control', 'control-receipt', 'report-issue', 'resolve-issue'];
 export function taskCommand(command: KanbanCommand): command is KanbanTaskCommand {return types.includes(command.type);}
 export function assertDefinitionEditable(item: KanbanItem, now: number, editId?: string, actor?: KanbanActor): void {
+    requireValue(!item.restartPending,'DEPENDENCY_RESTART_PENDING');
     requireValue(item.control?.action !== 'cancel', 'TASK_CANCELLING');
     requireValue(['proposed', 'backlog', 'open'].includes(item.status) && !item.owner && item.launch?.admittedAt === undefined, 'TASK_DEFINITION_FROZEN');
     if (taskEditing(item, now)) requireValue(item.launch!.editing!.id === editId && !!actor && principalKey(item.launch!.editing!.principal) === principalKey(principal(actor)), 'EDIT_LEASE_ACTIVE');
@@ -96,7 +97,7 @@ function issues(state: KanbanState, item: KanbanItem, command: KanbanTaskCommand
 
 export function initializeTaskLaunch(state:KanbanState,item:KanbanItem):boolean {
     if(item.launch)return false;
-    const first=Object.values(state.workflow?.dispatches??{}).filter(d=>d.itemId===item.id).sort((a,b)=>a.attempt-b.attempt)[0];
+    const first=Object.values(state.workflow?.dispatches??{}).filter(d=>d.itemId===item.id&&d.executionEpoch===item.executionEpoch).sort((a,b)=>a.attempt-b.attempt)[0];
     const admittedAt=first?.preparedAt??item.owner?.claimedAt;
     item.launch={startAt:taskStartAt(item),...(admittedAt===undefined?{}:{admittedAt})};item.revision++;return true;
 }

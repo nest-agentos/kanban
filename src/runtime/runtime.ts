@@ -1,3 +1,4 @@
+import {createTaskRestart} from './task-restart';
 import {SeqKanbanStore} from '../storage';
 import {createKanbanActivityModule} from '../activity';
 import {KanbanAutomationJournal} from './automation-journal';
@@ -23,7 +24,7 @@ export async function assembleKanbanRuntime(options:KanbanRuntimeOptions) {
     const createService=options.createService??createKanbanActivityModule;
     const serviceFor=(actor:KanbanActor)=>createService({...options,store,actor,
         referenceSystem:options.referenceSystem??defaultReferences.execution,
-        verifyLifecycle:async(board,command)=>{await verifyRuntimeLifecycle(service,journal,board,command);await options.verifyLifecycle?.(board,command);},
+        verifyLifecycle:async(board,command)=>{await verifyRuntimeLifecycle(service,journal,board,command);if(command.type==='commit-task-restart')await options.assertRestartIdle?.(board.id,command.affectedIds);await options.verifyLifecycle?.(board,command);},
         verifyDeletion:async board=>{await verifyDeletion(board.id);await options.verifyDeletion?.(board);},
         onCommitted:async(id,source,now)=>{await workLog.synchronize(id,source);await options.onCommitted?.(id,source,now);}});
     const service=serviceFor(options.actor),context:KanbanRuntimeContext={fs,store,journal,workLog,service,serviceFor};
@@ -32,17 +33,18 @@ export async function assembleKanbanRuntime(options:KanbanRuntimeOptions) {
 }
 function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeContext,extensions:KanbanRuntimeExtension[],setDeletion:(verify:(id:string)=>Promise<void>)=>void) {
     const {service,journal,workLog}=context,directory=options.directory??'/kanban';
+    const restarts=createTaskRestart({service,journal,assertIdle:options.assertRestartIdle});
     const capabilities:Partial<import('../contracts').KanbanClient>=Object.assign({},...extensions.map(extension=>extension.capabilities));
     const records=options.resources?createRecordExecution({service,journal,deliveryReady:async(board,item)=>(await Promise.all(extensions.map(extension=>extension.deliveryReady?.(board,item)??true))).every(Boolean),archiveSession:options.archiveSession,archiveItemResources:async(board,item,operation)=>{for(const extension of extensions)await extension.archiveItemResources?.(board,item,operation);},resources:options.resources,requiresItemResource:options.requiresItemResource,planningSession:capabilities.planningSession,log:options.log??(()=>{})}):undefined;
     const automation=options.automation?createKanbanAutomation({...options.automation,...context,
         directory:directory+'/automation',log:options.log??(()=>{})}):undefined;
-    const client={...service,...capabilities,
+    const client={...service,...capabilities,previewTaskRestart:restarts.previewTaskRestart,restartTask:restarts.restartTask,
         ...(records?{...records,recordExecutions:async(board:string,id:string)=>(await workLog.record(service,board,id)).kind==='decision'?records.recordExecutions(board,id):[]}:{}),
         ...(automation?{automationCatalog:automation.automationCatalog,analysisStatus:automation.analysisStatus}:{}),
         records:(board:string,query?:import('../contracts').KanbanRecordQuery)=>workLog.records(service,board,query),
         record:(board:string,id:string)=>workLog.record(service,board,id)};
     const deletion=createBoardDeletion({service:client,journal});setDeletion(deletion.assertSettled);
-    const participants=[...extensions,...records?[records]:[],...automation?[automation]:[]];
+    const participants=[restarts,...extensions,...records?[records]:[],...automation?[automation]:[]];
     const lifecycle=runtimeLifecycle(service,journal,participants,async()=>{
         await scanBoardStopWork({service,journal,ports:options.control??{control:{control:async()=> 'unknown'}},fixes:capabilities.cancelFix?{cancelFix:capabilities.cancelFix}:undefined,records});
         if(!automation&&options.control)for(const board of await service.list())await scanTaskControls(options.control,journal,board,service);

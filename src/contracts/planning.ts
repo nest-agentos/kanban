@@ -6,6 +6,8 @@ export interface KanbanPlanning {
     priority: number; dependencies: string[]; references: string[];
 }
 export interface KanbanItemSummary {
+    repairPending?:{itemId:string;previousDispatchId:string};
+    executionEpoch?:string;restartPending?:{id:string;rootItemId:string};
     purpose?:'planning';
     deletedAt?: number;
     restartedFrom?: string;

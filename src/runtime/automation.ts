@@ -109,7 +109,8 @@ async function estimateFor(journal: KanbanAutomationJournal, boardId: string, it
 export async function dependencyResults(options: KanbanAutomationOptions, boardId: string, item: KanbanItem): Promise<unknown> {
     const workflow = await options.service.workflow(boardId), results: Array<{itemId: string; outputs: Array<{reference: KanbanArtifactRef; value: unknown}>}> = [];
     for (const itemId of item.planning?.dependencies ?? []) {
-        const dispatch = Object.values(workflow.dispatches).reverse().find(dispatch => dispatch.itemId === itemId && dispatch.outcome === 'accepted');
+        const dispatch = Object.values(workflow.dispatches).filter(dispatch => dispatch.itemId === itemId).sort((a,b)=>b.attempt-a.attempt)[0];
+        requireValue(!dispatch||dispatch.outcome==='accepted','DEPENDENCY_OUTPUT_INVALID');
         const outputs: Array<{reference: KanbanArtifactRef; value: unknown}> = [];
         for (const output of dispatch?.outputs ?? []) {
             requireValue(await options.journal.verify(dispatch?.outputs ?? [], dispatch?.id), 'DEPENDENCY_OUTPUT_INVALID');

@@ -1,3 +1,4 @@
+import {applyRecordRevision} from './record-revision';
 import {validateDecisionOptions} from './decision-options';
 import {archiveItems} from './archives';
 import {sha256HexSync} from './utils';
@@ -6,14 +7,16 @@ import type {KanbanState} from './ports';
 import {identity, requireValue, text} from './rules';
 import {principal, principalKey} from './identity';
 import {requireReviewer, validateSources} from './amendments';
-export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record'}>;
+export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record' | 'begin-record-edit' | 'save-record-edit' | 'end-record-edit'}>;
 export function isRecordCommand(command: KanbanCommand): command is RecordCommand {
-    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record'].includes(command.type);
+    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record', 'begin-record-edit', 'save-record-edit', 'end-record-edit'].includes(command.type);
 }
 export function applyRecord(state: KanbanState, command: RecordCommand, actor: KanbanActor, now: number, forceDraft = false): void {
+    if (['begin-record-edit','save-record-edit','end-record-edit'].includes(command.type)) {applyRecordRevision(state,command as import('./contracts/record-revision').KanbanRecordRevisionCommand,actor,now);return;}
     if (command.type === 'append-record') {append(state, command, actor, now, forceDraft); return;}
     const record = state.records?.find(record => record.id === command.recordId); requireValue(record, 'RECORD_NOT_FOUND');
     requireValue(record.deletedAt === undefined, 'RECORD_DELETED');
+    if(command.type==='begin-record-edit'||command.type==='save-record-edit'||command.type==='end-record-edit')return;
     if(command.type==='revise-record') {
         requireReviewer(state.board,actor);requireValue(principal(actor).kind==='human','FORBIDDEN');
         requireValue(record.kind==='decision'&&['draft','cancelled'].includes(record.status),'RECORD_CANCEL_REQUIRED');
@@ -21,6 +24,8 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
         text(command.title);text(command.content);text(command.rationale);
         requireValue(command.completion===undefined||['manual','automatic'].includes(command.completion),'INVALID_COMPLETION_POLICY');
         validateDecisionOptions(command, record.kind);
+        validateRecordReferences(command.externalRefs);
+        if(command.externalRefs!==undefined)record.externalRefs=structuredClone(command.externalRefs);
         if(command.verificationLevel!==undefined)record.verificationLevel=command.verificationLevel;
         if(command.deliveryMode!==undefined)record.deliveryMode=command.deliveryMode;
         if(command.completion!==undefined)record.completion=command.completion;
@@ -53,10 +58,11 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
 }
 function append(state: KanbanState, command: Extract<RecordCommand, {type: 'append-record'}>, actor: KanbanActor, now: number, forceDraft: boolean): void {
     validateSources(command.record.sources);
-    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,completion,verificationLevel,deliveryMode} = command.record;
-    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{}), ...(verificationLevel?{verificationLevel}:{}), ...(deliveryMode?{deliveryMode}:{})}); identity(input.id); text(input.title); text(input.content);
+    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,discussionSessionId,completion = command.record.completion ?? (command.record.kind === 'decision' ? 'automatic' : undefined),verificationLevel,deliveryMode} = command.record;
+    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(discussionSessionId ? {discussionSessionId} : {}), ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{}), ...(verificationLevel?{verificationLevel}:{}), ...(deliveryMode?{deliveryMode}:{})}); identity(input.id); text(input.title); text(input.content);
     requireValue(completion===undefined||kind==='decision'&&['manual','automatic'].includes(completion),'INVALID_COMPLETION_POLICY');
     if(completion)input.completion=completion;
+    if(discussionSessionId!==undefined)identity(discussionSessionId);
     validateDecisionOptions(command.record, kind);
     validateRecordReferences(externalRefs);
     requireValue(input.kind === 'log' || input.kind === 'decision', 'INVALID_RECORD_KIND');

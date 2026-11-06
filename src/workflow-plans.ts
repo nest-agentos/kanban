@@ -75,6 +75,7 @@ function orderWork(items: KanbanWorkDefinition[], state: KanbanState): KanbanWor
             const producer=items.find(other=>other.id===binding.fromItemId), existing=Object.values(state.workflow!.dispatches).some(dispatch=>dispatch.itemId===binding.fromItemId&&dispatch.outcome==='accepted'&&dispatch.outputs?.some(output=>output.name===binding.output));
             requireValue(producer ? producer.outputs?.includes(binding.output) : existing, 'OUTPUT_NOT_DECLARED');
         }
+        requireValue(!item.dependsOn.some(id=>state.board.items.find(row=>row.id===id)?.restartPending),'DEPENDENCY_RESTART_PENDING');
         for (const dependency of item.dependsOn) requireValue(ids.has(dependency) || [...state.board.items,...(state.archiveIndex ?? [])].some(old => old.id === dependency), 'DEPENDENCY_NOT_FOUND');
     }
     const ordered: KanbanWorkDefinition[] = [], remaining = [...items], done = new Set<string>();

@@ -232,14 +232,37 @@ it('freezes explicit automatic completion with the approved decision',async()=>{
 });
 it('persists decision preferences, revises them only before execution, and rejects invalid values atomically',async()=>{
  const f=await fixture(),reviewer=createKanbanModule({store:f.store,actor:{kind:'human',id:'reviewer'},authorize:async()=>{},log(){}});
- const record={id:'choices',kind:'decision' as const,title:'Choices',content:'Scope',rationale:'Verify',itemIds:[],sources:[],verificationLevel:'quick' as const,deliveryMode:'source' as const};
+ const record={id:'choices',kind:'decision' as const,title:'Choices',content:'Scope',rationale:'Verify',itemIds:[],sources:[],verificationLevel:'quick' as const,deliveryMode:'release' as const};
  await f.run(f.managerApi,{type:'append-record',record});
- expect(await reviewer.record('b','choices')).toMatchObject({verificationLevel:'quick',deliveryMode:'source'});
- await f.run(reviewer,{type:'revise-record',recordId:'choices',title:'Choices',content:'Scope',rationale:'Verify',verificationLevel:'none',deliveryMode:'release'});
- expect(await reviewer.record('b','choices')).toMatchObject({verificationLevel:'none',deliveryMode:'release'});
+ expect(await reviewer.record('b','choices')).toMatchObject({verificationLevel:'quick',deliveryMode:'release'});
+ await f.run(reviewer,{type:'revise-record',recordId:'choices',title:'Choices',content:'Scope',rationale:'Verify',verificationLevel:'none',deliveryMode:'build'});
+ expect(await reviewer.record('b','choices')).toMatchObject({verificationLevel:'none',deliveryMode:'build'});
  const before=await f.store.read('b');
  await expect(f.run(f.managerApi,{type:'append-record',record:{...record,id:'bad',verificationLevel:'invalid' as any}})).rejects.toMatchObject({code:'INVALID_VERIFICATION_LEVEL'});
  await expect(f.run(f.managerApi,{type:'append-record',record:{...record,id:'bad',deliveryMode:'invalid' as any}})).rejects.toMatchObject({code:'INVALID_DELIVERY_MODE'});
  await expect(f.run(f.managerApi,{type:'append-record',record:{...record,id:'bad',kind:'log'}})).rejects.toMatchObject({code:'INVALID_VERIFICATION_LEVEL'});
+ expect(await f.store.read('b')).toEqual(before);
+});
+it('holds related unstarted tasks durably and atomically applies only the confirmed revisions',async()=>{
+ const f=await fixture(),reviewer=createKanbanModule({store:f.store,actor:{kind:'human',id:'reviewer'},authorize:async()=>{},log(){}});
+ for(const id of ['a','b'])await f.run(f.managerApi,{type:'create-item',item:{id,title:id,responsibility:'Before',acceptance:'Evidence'},planning:{kind:'task',priority:2,dependencies:[],references:[]}});
+ await f.run(f.managerApi,{type:'append-record',record:{id:'d',kind:'decision',title:'Decision',content:'Before',rationale:'Evidence',itemIds:['a','b'],sources:[]}});
+ expect((await reviewer.record('b','d')).completion).toBe('automatic');
+ const revision=(await reviewer.record('b','d')).revision,items=(await reviewer.read('b')).items;
+ await f.run(reviewer,{type:'begin-record-edit',recordId:'d',recordRevision:revision,editId:'discussion-edit',items:items.map(item=>({id:item.id,revision:item.revision}))});
+ const held=(await reviewer.read('b')).items;expect(held.every(item=>item.launch?.editing?.persistent)).toBe(true);
+ await expect(f.run(f.worker,{type:'claim',itemId:'a'})).rejects.toMatchObject({code:'EDIT_LEASE_ACTIVE'});
+ await expect(f.run(reviewer,{type:'save-record-edit',recordId:'d',recordRevision:revision,editId:'discussion-edit',title:'Decision',content:'Changed',rationale:'Evidence',items:items.map(item=>({id:item.id,revision:item.revision,title:item.title,responsibility:'Changed',acceptance:item.acceptance}))})).rejects.toMatchObject({code:'ITEM_REVISION_CONFLICT'});
+ expect((await reviewer.read('b')).items.every(item=>item.launch?.editing?.persistent)).toBe(true);
+ await f.run(reviewer,{type:'save-record-edit',recordId:'d',recordRevision:revision,editId:'discussion-edit',title:'Decision',content:'Changed',rationale:'Evidence',items:held.map(item=>({id:item.id,revision:item.revision,title:item.title,responsibility:'Changed',acceptance:item.acceptance}))});
+ expect((await reviewer.read('b')).items.every(item=>item.responsibility==='Changed'&&!item.launch?.editing)).toBe(true);
+});
+it('rolls back every hold when a selected task has already started',async()=>{
+ const f=await fixture(),reviewer=createKanbanModule({store:f.store,actor:{kind:'human',id:'reviewer'},authorize:async()=>{},log(){}});
+ for(const id of ['a','b'])await f.run(f.managerApi,{type:'create-item',item:{id,title:id,responsibility:'Before',acceptance:'Evidence'}});
+ await f.run(f.managerApi,{type:'set-stage',itemId:'b',stage:'open'});await f.run(f.worker,{type:'claim',itemId:'b'});
+ await f.run(f.managerApi,{type:'append-record',record:{id:'d',kind:'decision',title:'Decision',content:'Before',rationale:'Evidence',itemIds:['a','b'],sources:[]}});
+ const before=await f.store.read('b'),record=await reviewer.record('b','d');
+ await expect(f.run(reviewer,{type:'begin-record-edit',recordId:'d',recordRevision:record.revision,editId:'discussion-edit',items:(await reviewer.read('b')).items.map(item=>({id:item.id,revision:item.revision}))})).rejects.toMatchObject({code:'TASK_DEFINITION_FROZEN'});
  expect(await f.store.read('b')).toEqual(before);
 });

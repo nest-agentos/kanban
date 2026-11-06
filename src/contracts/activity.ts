@@ -35,6 +35,8 @@ export interface KanbanExecutionSessionDetail {
 
 /** Transport-facing service with optional authorized resource activity. */
 export interface KanbanClient extends KanbanService {
+    previewTaskRestart?(boardId:string,itemId:string):Promise<import('./task-restart').KanbanRestartPreview>;
+    restartTask?(boardId:string,request:import('./task-restart').KanbanRestartRequest):Promise<import('./task-restart').KanbanRestartResult>;
     cancelBoard?(boardId: string, request: {operationId:string; expectedRevision:number}): Promise<void>;
     requestBoardDeletion?(boardId:string, request:import('./deletion').KanbanDeletionRequest & {mode:'drain'|'cancel'}):Promise<void>;
     previewDeletion?(boardId: string): Promise<import('./deletion').KanbanDeletionPreview>;
@@ -50,6 +52,11 @@ export interface KanbanClient extends KanbanService {
     controlRecord?(boardId: string, request: {recordId: string; operationId: string; action: 'pause' | 'resume' | 'cancel' | 'archive' | 'delete' | 'restart'; expectedRevision?:number}): Promise<void>;
     fixTask?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./task-state').KanbanFixSession>;
     itemResources?(boardId:string,parentId?:string):Promise<import('./record-execution').KanbanItemResourceCatalog>;
+    taskRecovery?(boardId:string,itemId:string):Promise<import('./recovery').KanbanTaskRecovery>;
+    openTaskRecovery?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./recovery').KanbanTaskRecoveryResult>;
+    recoverTask?(boardId:string,request:import('./recovery').KanbanTaskRecoveryRequest):Promise<import('./recovery').KanbanTaskRecoveryResult>;
+    startRecordConversation?(boardId:string,request:{operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
+    recordConversations?(boardId:string):Promise<import('./record-conversation').KanbanRecordConversation[]>;
     recordResources?(): Promise<import('./record-execution').KanbanRecordResource[]>;
     runRecord?(boardId: string, request: import('./record-execution').KanbanRecordRunRequest): Promise<import('./record-execution').KanbanRecordExecution>;
     planningSession?(boardId: string, itemId: string): Promise<KanbanPlanningSession | undefined>;

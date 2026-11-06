@@ -12,6 +12,7 @@ export interface KanbanWorkPlan {
 }
 export interface KanbanPublishedPlan extends Omit<KanbanWorkPlan, 'items'> {itemIds: string[]; definitions: Record<string, {digest: string; inputs: KanbanWorkDefinition['inputs']; outputs: string[]}>}
 export interface KanbanDispatch {
+    executionEpoch?:string;
     continuation?: {previousDispatchId: string; instruction?: string};
     controlCapabilities?: {pause:'boundary'|'none';resume:boolean};
     executionSessionId?: string;

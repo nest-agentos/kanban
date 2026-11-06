@@ -54,11 +54,11 @@ function prepare(state: KanbanState, command: Extract<KanbanWorkflowCommand,{typ
     apply({type:'claim',itemId:item.id,estimate:command.estimate});
     const inputs: Record<string,KanbanArtifactRef>={};
     for(const [name,binding] of Object.entries(plan.definitions[item.id].inputs ?? {})) {
-        const producer=Object.values(workflow.dispatches).reverse().find(dispatch=>dispatch.itemId===binding.fromItemId&&dispatch.outcome==='accepted');
+        const producer=Object.values(workflow.dispatches).reverse().find(dispatch=>dispatch.itemId===binding.fromItemId&&dispatch.executionEpoch===state.board.items.find(row=>row.id===binding.fromItemId)?.executionEpoch&&dispatch.outcome==='accepted');
         const output=producer?.outputs?.find(output=>output.name===binding.output);requireValue(output,'DEPENDENCY_OUTPUT_MISSING');inputs[name]=structuredClone(output);
     }
     const attempt=Math.max(0,...Object.values(workflow.dispatches).filter(dispatch=>dispatch.itemId===item.id).map(dispatch=>dispatch.attempt))+1;
-    workflow.dispatches[command.dispatchId]={id:command.dispatchId,itemId:item.id,itemRevision:item.revision,planId:plan.id,planRevision:plan.revision,principal:principal(actor),definitionDigest:plan.definitions[item.id].digest,attempt,fence:item.owner!.token,preparedAt:now,outcome:'prepared',inputs};
+    workflow.dispatches[command.dispatchId]={executionEpoch:item.executionEpoch,id:command.dispatchId,itemId:item.id,itemRevision:item.revision,planId:plan.id,planRevision:plan.revision,principal:principal(actor),definitionDigest:plan.definitions[item.id].digest,attempt,fence:item.owner!.token,preparedAt:now,outcome:'prepared',inputs};
 }
 function observe(state: KanbanState, command: Extract<KanbanWorkflowCommand,{type:'observe-execution'}>, actor: KanbanActor, now: number): boolean {
     requireCoordinator(state,actor); const dispatch=activeDispatch(state,command.dispatchId);
@@ -80,6 +80,7 @@ function observe(state: KanbanState, command: Extract<KanbanWorkflowCommand,{typ
         item.status=state.board.policy.review==='assignee'?'completed':'review';if(item.status==='completed') item.closedAt=now;item.resultRef=`kanban:dispatch:${dispatch.id}`;dispatch.outputs=structuredClone(outputs);
     } else if(command.outcome==='failed'||command.outcome==='cancelled') {
         item.status='backlog';item.blocked={reason:command.code ?? 'EXECUTION_FAILED',at:now};delete item.owner;
+        if(item.control?.dispatchId===dispatch.id&&item.control.action!=='cancel'){const controlId=item.control.id;delete item.control;if(state.board.executionControl?.controls[item.id]===controlId)delete state.board.executionControl.controls[item.id];}
     }
     dispatch.outcome=command.outcome==='succeeded'&&state.board.policy.review==='assignee'?'accepted':command.outcome;dispatch.code=command.code;item.updatedAt=now;item.revision++;dispatch.itemRevision=item.revision;
     return true;
@@ -105,6 +106,6 @@ export function validateOutputs(outputs: KanbanArtifactRef[]): void {
 export function refreshReady(state: KanbanState): void {
     if(!state.workflow) return; const all=catalog(state), included=new Set(Object.values(state.workflow.plans).filter(plan=>plan.sealed).flatMap(plan=>plan.itemIds));
     state.workflow.completedPlans=Object.values(state.workflow.plans).filter(plan=>plan.sealed&&plan.itemIds.every(id=>all.find(item=>item.id===id)?.status==='completed')).map(plan=>plan.id);
-    state.workflow.ready=state.board.items.filter(item=>included.has(item.id)&&executableWorkItem(state.board,item)&&['backlog','open'].includes(item.status)&&!item.owner&&!item.blocked&&(!item.control || item.control.action==='resume' && item.control.state==='resumed')
+    state.workflow.ready=state.board.items.filter(item=>included.has(item.id)&&!item.restartPending&&executableWorkItem(state.board,item)&&['backlog','open'].includes(item.status)&&!item.owner&&!item.blocked&&(!item.control || item.control.action==='resume' && item.control.state==='resumed')
         &&(item.planning?.dependencies ?? []).every(id=>all.find(other=>other.id===id)?.status==='completed')).map(item=>item.id);
 }

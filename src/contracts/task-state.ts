@@ -5,7 +5,7 @@ import type {KanbanExternalReference, KanbanPrincipal} from './configuration';
 export interface KanbanLaunch {
     mode?: 'automatic' | 'manual';
     startAt: number; analysisEpoch?: string; requestedAt?: number; admittedAt?: number;
-    editing?: {id: string; principal: KanbanPrincipal; expiresAt: number};
+    editing?: {persistent?: boolean; id: string; principal: KanbanPrincipal; expiresAt: number};
 }
 export interface KanbanTaskControl {
     id: string; dispatchId?: string; action: 'pause' | 'resume' | 'cancel';

@@ -1,3 +1,5 @@
+import {insertRepairDependency} from './repair-dependency';
+import {applyDependencyRestart} from './dependency-restart';
 import {restartItemInput} from './task-restart';
 import {stopBoard, protectStoppedBoard} from './board-stop';
 import {setBoardControl} from './board-control';
@@ -36,10 +38,13 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     else if (command.type === 'delete-item') {
         const item = itemFor(board, command.itemId);
         requireValue(principal(actor).kind === 'human', 'FORBIDDEN');
+        requireValue(!item.restartPending,'DEPENDENCY_RESTART_PENDING');
         requireValue(terminal(item), 'ITEM_DELETE_REQUIRES_CLOSED');
         delete item.owner; delete item.transfer;
         item.deletedAt = now; item.updatedAt = now; item.revision++;
     }
+    else if(command.type==='insert-repair-dependency')insertRepairDependency(state,command,actor,now,inner=>{reduce(state,inner,actor,operationId,now,token,true,restartReferences);});
+    else if(command.type==='prepare-task-restart'||command.type==='commit-task-restart')applyDependencyRestart(state,command,actor,now);
     else if (command.type === 'restart-item') {
         createItem(state, restartItemInput(state, command, actor, restartReferences), actor, now, token);
         state.board.items.find(item => item.id === command.replacementId)!.restartedFrom = command.itemId;

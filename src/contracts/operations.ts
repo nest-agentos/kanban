@@ -11,7 +11,7 @@ export interface KanbanItemOperation {
     openSessionOnRun?: boolean;
 }
 export interface KanbanItemOperations {
-    automatic?:{state:'running'|'blocked'|'completed';stage:string;code?:string;waitingForTarget?:boolean};
+    automatic?:{state:'running'|'blocked'|'completed'|'waiting-confirmation';stage:string;code?:string;waitingForTarget?:boolean;waitingForUser?:boolean};
     revision: string; operations: KanbanItemOperation[];
     targets?: Array<{label: string; reference: KanbanExternalReference}>;
 }

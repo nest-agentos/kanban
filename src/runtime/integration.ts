@@ -32,3 +32,8 @@ export type {KanbanOperationRecord,KanbanOperationObservation,KanbanOperationFai
 export {KanbanCollaboration,collaborationRelations,type KanbanFixPreparation} from './collaboration';
 
 export {createTaskCoordinator,currentCoordination,type CoordinationSnapshot,type CoordinationOperation} from './task-coordinator';
+
+export {createRecordConversations} from './record-conversations';
+export type {SavedRecordConversation,RecordConversationPort,KanbanRecordConversations} from './record-conversations';
+
+export {createTaskRestart} from './task-restart';

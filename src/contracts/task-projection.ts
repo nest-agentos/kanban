@@ -1,19 +1,19 @@
 import type {KanbanDispatch,KanbanItem,KanbanItemSummary,KanbanWorkflowState,KanbanTaskProjection,KanbanTaskPhase} from './index';
 
-type Item=Pick<KanbanItem,'deletedAt'|'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>;
+type Item=Pick<KanbanItem,'repairPending'|'executionEpoch'|'restartPending'|'deletedAt'|'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>;
 type Related=Pick<KanbanItemSummary,'id'|'status'>&Partial<KanbanItemSummary>;
 type Fact={phase:KanbanTaskPhase;reason?:string;actions?:KanbanTaskProjection['actions']};
 export const TASK_START_DELAY_MS=300000;
 export function taskStartAt(item:Pick<Item,'createdAt'|'launch'>):number {return item.launch?.startAt??item.createdAt+TASK_START_DELAY_MS;}
-export function taskEditing(item:Pick<Item,'launch'>,now:number):boolean {return (item.launch?.editing?.expiresAt??0)>now;}
+export function taskEditing(item:Pick<Item,'launch'>,now:number):boolean {return item.launch?.editing?.persistent===true||(item.launch?.editing?.expiresAt??0)>now;}
 export function taskDue(item:Item,now:number):boolean {
-    return !taskEditing(item,now)&&!item.blocked&&(!item.control || item.control.action === 'resume' && item.control.state === 'resumed')
+    return !item.restartPending&&!taskEditing(item,now)&&!item.blocked&&(!item.control || item.control.action === 'resume' && item.control.state === 'resumed')
         &&(item.launch?.requestedAt!==undefined||item.launch?.mode!=='manual'&&taskStartAt(item)<=now);
 }
 /** Ordered evidence projection shared by storage queries, CLI and UI. Session idle never proves acceptance. */
 export function projectKanbanTask(item:Item,workflow?:KanbanWorkflowState,now=Date.now(),all:Related[]=[]):KanbanTaskProjection {
-    const dispatch=Object.values(workflow?.dispatches??{}).filter(d=>d.itemId===item.id).sort((a,b)=>b.attempt-a.attempt)[0];
-    const fact=terminalFact(item)??controlFact(item)??issueFact(item,dispatch)??groupFact(item,workflow,now,all)??failureFact(item,dispatch)??executionFact(item,dispatch)??waitingFact(item,now,all);
+    const dispatch=Object.values(workflow?.dispatches??{}).filter(d=>d.itemId===item.id&&d.executionEpoch===item.executionEpoch).sort((a,b)=>b.attempt-a.attempt)[0];
+    const fact=(item.restartPending?{phase:'cancelling' as const,reason:'DEPENDENCY_RESTART_PENDING',actions:[]}:undefined)??terminalFact(item)??controlFact(item)??repairFact(item,all)??issueFact(item,dispatch)??groupFact(item,workflow,now,all)??failureFact(item,dispatch)??executionFact(item,dispatch)??waitingFact(item,now,all);
     const extra: KanbanTaskProjection['actions'] = [];
     if (!['completed','cancelled'].includes(item.status) && item.control?.action !== 'cancel') {
         if (!fact.actions?.includes('cancel')) extra.push('cancel');
@@ -28,7 +28,7 @@ function terminalFact(item:Item):Fact|undefined {
     if(item.status==='review')return {phase:'review',actions:['review']};
 }
 function issueFact(item:Item,dispatch?:KanbanDispatch):Fact|undefined {
-    const issue=item.issues?.find(i=>!i.resolvedBy&&(!dispatch||i.attemptId===dispatch.id));
+    const issue=item.issues?.find(i=>(!item.executionEpoch||!!dispatch)&&!i.resolvedBy&&(!dispatch||i.attemptId===dispatch.id));
     if(issue)return {phase:issue.type==='clarification'?'waiting-input':'error',reason:issue.id,actions:['resolve']};
 }
 function controlFact(item:Item):Fact|undefined {
@@ -76,4 +76,8 @@ function groupFact(item:Item,workflow:KanbanWorkflowState|undefined,now:number,a
     if(phases.some(phase=>phase==='paused')&&phases.every(phase=>phase==='paused'||phase==='completed'))return {phase:'paused',reason:'GROUP_CHILD_PAUSED'};
     if(phases.some(phase=>phase==='cancelled'))return {phase:'error',reason:'GROUP_CHILD_CANCELLED'};
     return {phase:'waiting-dependency',reason:phases.every(phase=>phase==='completed')?'GROUP_SETTLEMENT_PENDING':'CHILDREN_UNFINISHED'};
+}
+
+function repairFact(item:Item,all:Related[]):Fact|undefined {
+    if(item.repairPending&&all.find(row=>row.id===item.repairPending!.itemId)?.status!=='completed')return {phase:'waiting-dependency',reason:'DEPENDENCY_UNFINISHED:'+item.repairPending.itemId};
 }

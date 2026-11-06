@@ -23,6 +23,7 @@ export interface KanbanRuntimeOptions extends Omit<KanbanActivityModuleOptions,'
     journal?:KanbanJournalOptions | KanbanAutomationJournal;workLog?:KanbanWorkLogOptions;
     archiveSession?(sessionId:string,operationId:string):Promise<void>;
     resources?:KanbanResourceCatalog;requiresItemResource?: (board:import('../contracts').KanbanBoard)=>boolean;
+    assertRestartIdle?(boardId:string,itemIds:string[]):Promise<void>;
     control?:KanbanTaskControlOptions;
     automation?:Omit<KanbanAutomationOptions,'fs'|'directory'|'service'|'serviceFor'|'journal'|'workLog'|'log'>;
     extensions?(context:KanbanRuntimeContext):KanbanRuntimeExtension[];

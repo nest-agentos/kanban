@@ -45,7 +45,8 @@ export class KanbanCollaboration {
         const board=await this.service.read(fix.boardId);
         requireValue(!!snapshot.definition.children||!board.workTypes?.length||board.workTypes.some(type=>type.id===policy.kind&&type.executable),'FIX_WORK_TYPE_REQUIRED');
         await this.publishFix(fix);
-        if(snapshot.definition.children)await journalCommand(this.journal,this.service,fix.boardId,'fix-create:'+fix.id,{type:'publish-plan',plan:{
+        if(snapshot.definition.repair)await journalCommand(this.journal,this.service,fix.boardId,'fix-create:'+fix.id,{type:'insert-repair-dependency',itemId:snapshot.definition.repair.itemId,expectedItemRevision:snapshot.definition.repair.revision,plan:{schema:'kanban.plan/1',id:snapshot.operationId,revision:1,sealed:true,mode:'append',rootItemId:fix.itemId,items:snapshot.definition.children!}});
+        else if(snapshot.definition.children)await journalCommand(this.journal,this.service,fix.boardId,'fix-create:'+fix.id,{type:'publish-plan',plan:{
             schema:'kanban.plan/1',id:snapshot.operationId,revision:1,sealed:true,mode:'append',rootItemId:fix.itemId,items:snapshot.definition.children}});
         else await journalCommand(this.journal,this.service,fix.boardId,'fix-create:'+fix.id,{type:'create-item',item:{id:snapshot.operationId,
             title:snapshot.definition.title,responsibility:snapshot.definition.responsibility,acceptance:snapshot.definition.acceptance,

@@ -176,7 +176,7 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
         let state=runState(items);
         if(state==='completed'&&options.deliveryReady&&!(await Promise.all(items.map(item=>options.deliveryReady!(run.boardId,item)))).every(Boolean))state='review';
         if (state === 'completed' && run.rootItemId && !run.itemIds?.includes(run.rootItemId) && board.items.find(item => item.id === run.rootItemId)?.status !== 'completed') {
-            await once(options, run, 'close-root', {type: 'close-plan', itemId: run.rootItemId, resultRef: 'kanban-run:' + run.id});
+            await once(options, run, 'close-root'+(board.items.find(item=>item.id===run.rootItemId)?.executionEpoch??''), {type: 'close-plan', itemId: run.rootItemId, resultRef: 'kanban-run:' + run.id});
         }
         if(state==='completed'&&run.rootItemId&&!run.itemIds?.includes(run.rootItemId)&&options.deliveryReady&&!await options.deliveryReady(run.boardId,(await options.service.item(run.boardId,run.rootItemId)).item))state='review';
         const code = state === 'failed' ? 'DECISION_TASK_CANCELLED' : state === 'blocked' && items.some(item=>projectKanbanTask(item).phase==='waiting-input') ? 'DECISION_INPUT_REQUIRED' : undefined;

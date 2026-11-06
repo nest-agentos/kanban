@@ -18,6 +18,8 @@ export interface KanbanParticipant {
 }
 export interface KanbanAssignment extends KanbanActor { principalId?: string; token: string; leaseUntil: number; claimedAt: number; }
 export interface KanbanItem {
+    repairPending?:{itemId:string;previousDispatchId:string};
+    executionEpoch?:string;restartPending?:{id:string;rootItemId:string};
     purpose?:'planning';
     launch?: import('./task-state').KanbanLaunch; analysis?: import('./automation').KanbanAnalysisStatus;
     control?: import('./task-state').KanbanTaskControl; issues?: import('./task-state').KanbanTaskIssue[];
@@ -53,14 +55,14 @@ export interface KanbanEvent {
     kind: string; actor: KanbanActor; recipients: string[];
     data: { status?: KanbanItem['status']; reference?: KanbanExternalReference; code?: string; itemTitle?: string; dispatchId?: string; readyItemIds?: string[]; planId?: string; recordId?: string; recordIds?: string[]; itemIds?: string[]; planning?: KanbanPlanning; message?: string; reason?: string; resultRef?: string; estimate?: KanbanEstimate; workUnits?: number };
 }
-export type KanbanCommand = import('./task-state').KanbanTaskCommand | import('./workflow').KanbanWorkflowCommand
+export type KanbanCommand = import('./task-restart').RepairDependencyCommand | import('./task-restart').KanbanRestartCommand | import('./record-revision').KanbanRecordRevisionCommand | import('./task-state').KanbanTaskCommand | import('./workflow').KanbanWorkflowCommand
     | {type: 'restart-item'; itemId: string; replacementId: string}
     | {type: 'delete-item'; itemId: string}
     | {type: 'request-record-cancellation'; recordId: string}
     | {type: 'cancel-record'; recordId: string}
     | {type: 'delete-record'; recordId: string}
     | {type:'archive-record';recordId:string}
-    | {type:'revise-record';recordId:string;title:string;content:string;rationale:string;completion?:'manual'|'automatic';verificationLevel?:'full'|'quick'|'none';deliveryMode?:'release'|'source'}
+    | {type:'revise-record';recordId:string;title:string;content:string;rationale:string;externalRefs?:import('./configuration').KanbanExternalReference[];completion?:'manual'|'automatic';verificationLevel?:'full'|'quick'|'none';deliveryMode?:'release'|'source'|'build'}
     | {type:'restart-record';recordId:string;epoch:string}
     | {type:'request-board-stop'; controlId:string; intent:'cancel'|'delete'; mode:'drain'|'cancel'}
     | {type:'observe-board-stop'; controlId:string; phase:'waiting'|'ready'|'blocked'; code?:string}

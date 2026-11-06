@@ -11,7 +11,7 @@ export async function completeCompositePlans(service:KanbanService,journal:Kanba
         if(!board.automation||!parent||parent.control?.action==='cancel'||parent.owner||parent.blocked||parent.planning?.execution!=='children'||!['backlog','open'].includes(parent.status))continue;
         if(!await childrenCompleted(service,boardId,id))continue;
         if(ready){const children=board.items.filter(item=>item.planning?.parentId===id);if(!(await Promise.all(children.map(item=>ready(boardId,item)))).every(Boolean))continue;}
-        await journalCommand(journal,serviceFor(board.automation.coordinator),boardId,'aggregate-complete:'+id,
+        await journalCommand(journal,serviceFor(board.automation.coordinator),boardId,'aggregate-complete:'+id+':'+(parent.executionEpoch??Object.values(workflow.plans).filter(plan=>plan.rootItemId===id).map(plan=>plan.id+':'+plan.revision).sort().join(',')),
             {type:'close-plan',itemId:id,resultRef:'kanban:plans:'+JSON.stringify(Object.values(workflow.plans).filter(plan=>plan.rootItemId===id).map(plan=>plan.id))});
     }
 }

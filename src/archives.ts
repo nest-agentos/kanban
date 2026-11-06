@@ -6,6 +6,7 @@ import {summary, terminal} from './planning';
 export function archiveItems(state: KanbanState, ids: string[], reason: string, now: number): void {
     text(reason); requireValue(ids.length > 0 && ids.length <= 50 && new Set(ids).size === ids.length, 'ARCHIVE_BATCH_LIMIT');
     const items = ids.map(id => state.board.items.find(i => i.id === id));
+    requireValue(items.every(item=>!item?.restartPending),'DEPENDENCY_RESTART_PENDING');
     requireValue(items.every(item => item && terminal(item)), 'ARCHIVE_REQUIRES_CLOSED_ITEM');
     for (const item of items) {
         const archived: KanbanArchivedItem = {item: item!, archivedAt: now, reason};
@@ -25,7 +26,7 @@ export function restoreItem(state: KanbanState, id: string, now: number): void {
 export function archiveExpired(state: KanbanState, now: number): string[] {
     const age = state.board.policy.archiveAfterMs;
     if (age === undefined) return [];
-    const ids = state.board.items.filter(i => terminal(i) && now - Math.max(i.closedAt ?? i.updatedAt, i.restoredAt ?? 0) >= age).slice(0, 50).map(i => i.id);
+    const ids = state.board.items.filter(i => !i.restartPending && terminal(i) && now - Math.max(i.closedAt ?? i.updatedAt, i.restoredAt ?? 0) >= age).slice(0, 50).map(i => i.id);
     if (ids.length) archiveItems(state, ids, 'retention-policy', now);
     return ids;
 }
