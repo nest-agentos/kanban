@@ -237,6 +237,8 @@ it('persists decision preferences, revises them only before execution, and rejec
  expect(await reviewer.record('b','choices')).toMatchObject({verificationLevel:'quick',deliveryMode:'release'});
  await f.run(reviewer,{type:'revise-record',recordId:'choices',title:'Choices',content:'Scope',rationale:'Verify',verificationLevel:'none',deliveryMode:'build'});
  expect(await reviewer.record('b','choices')).toMatchObject({verificationLevel:'none',deliveryMode:'build'});
+ await f.run(reviewer,{type:'revise-record',recordId:'choices',title:'Choices',content:'Scope',rationale:'Verify',verificationLevel:'none',deliveryMode:'release'});
+ expect(await reviewer.record('b','choices')).toMatchObject({verificationLevel:'none',deliveryMode:'release'});
  const before=await f.store.read('b');
  await expect(f.run(f.managerApi,{type:'append-record',record:{...record,id:'bad',verificationLevel:'invalid' as any}})).rejects.toMatchObject({code:'INVALID_VERIFICATION_LEVEL'});
  await expect(f.run(f.managerApi,{type:'append-record',record:{...record,id:'bad',deliveryMode:'invalid' as any}})).rejects.toMatchObject({code:'INVALID_DELIVERY_MODE'});
