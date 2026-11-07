@@ -85,7 +85,7 @@ export class KanbanWorkLog {
 }
 async function allItems(source: KanbanService, board: string): Promise<KanbanItemSummary[]> {
     const items: KanbanItemSummary[] = []; let cursor: string | undefined;
-    do {const page = await source.query(board, {view: 'all', limit: 200, ...(cursor ? {cursor} : {})}); items.push(...page.items); cursor = page.nextCursor;} while (cursor);
+    do {const page = await source.query(board, {view: 'all', includeDeleted: true, limit: 200, ...(cursor ? {cursor} : {})}); items.push(...page.items); cursor = page.nextCursor;} while (cursor);
     return items;
 }
 function parseCursor(cursor: string | undefined, board: string, query: string): Cursor | undefined {
