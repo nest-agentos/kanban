@@ -26,7 +26,7 @@ export interface KanbanItemSummary {
 }
 export interface KanbanArchivedItem {item: KanbanItem; archivedAt: number; reason: string}
 export interface KanbanItemQuery {
-    includeDeleted?: boolean; excludeArchived?:boolean; excludePlanning?:boolean;
+    ids?:string[];includeDeleted?: boolean; excludeArchived?:boolean; excludePlanning?:boolean;
     restartedFrom?: string;
     phase?: import('./task-state').KanbanTaskPhase;
     view?: 'ready' | 'backlog' | 'in-progress' | 'review' | 'closed' | 'proposed' | 'archive' | 'all';

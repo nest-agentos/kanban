@@ -11,6 +11,7 @@ export function queryItems(state: KanbanState, query: KanbanItemQuery = {}, all 
     requireValue(Number.isSafeInteger(limit) && limit >= 1 && limit <= 200, 'INVALID_PAGE_SIZE');
     requireValue(['ready', 'backlog', 'in-progress', 'review', 'closed', 'proposed', 'archive', 'all'].includes(query.view ?? 'ready'), 'INVALID_VIEW');
     for (const field of ['area', 'milestone', 'parentId', 'kind', 'sessionId', 'search', 'restartedFrom'] as const) if (filters[field] !== undefined) requireValue(typeof filters[field] === 'string' && filters[field]!.length <= 256, 'INVALID_FILTER');
+    if(filters.ids!==undefined)requireValue(Array.isArray(filters.ids)&&filters.ids.length<=200&&filters.ids.every(id=>typeof id==='string'&&id.length>0&&id.length<=256),'INVALID_FILTER');
     if (filters.reference) requireValue(typeof filters.reference.system === 'string' && typeof filters.reference.id === 'string' && filters.reference.system.length <= 256 && filters.reference.id.length <= 256, 'INVALID_REFERENCE_FILTER');
     const fingerprint = JSON.stringify(Object.fromEntries(Object.entries({...filters, view: filters.view ?? 'ready'}).sort(([a], [b]) => a.localeCompare(b)))), revision = state.board.revision;
     all = all.map(item => ({...item, task: projectKanbanTask(item, state.workflow, now, all)}));
@@ -35,6 +36,7 @@ function order(a: KanbanItemSummary, b: KanbanItemSummary): number {
     return a.planning.priority - b.planning.priority || a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 }
 function matchesQuery(item: KanbanItemSummary, query: Omit<KanbanItemQuery, 'cursor' | 'limit'>, board: KanbanState['board']): boolean {
+    if(query.ids&&!query.ids.includes(item.id))return false;
     if(query.excludePlanning&&item.purpose==='planning')return false;
     if(query.excludeArchived&&item.archivedAt!==undefined)return false;
     if (item.deletedAt !== undefined && !query.includeDeleted) return false;

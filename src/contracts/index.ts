@@ -42,3 +42,5 @@ export {taskCleanupAllowed} from './task-cleanup';
 
 export {kanbanTaskType} from './task-type';
 export type {KanbanTaskType} from './task-type';
+
+export type {KanbanBoardWorkResource,KanbanBoardWorkResourceQuery,KanbanBoardWorkResourcePage,KanbanWorkResourceTask} from './work-resources';

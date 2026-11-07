@@ -44,6 +44,7 @@ export interface KanbanClient extends KanbanService {
     itemOperations?(boardId: string, itemId: string): Promise<import('./operations').KanbanItemOperations>;
     runItemOperation?(boardId: string, request: import('./operations').KanbanItemOperationRequest): Promise<import('./operations').KanbanItemOperations>;
     bindItemOperation?(boardId: string, request: import('./operations').KanbanItemOperationBinding): Promise<import('./operations').KanbanItemOperations>;
+    boardWorkResources?(boardId:string,query?:import('./work-resources').KanbanBoardWorkResourceQuery):Promise<import('./work-resources').KanbanBoardWorkResourcePage>;
     workResources?(boardId: string, itemId: string, query?: import('./work-resources').KanbanWorkResourceQuery): Promise<import('./work-resources').KanbanWorkResource[]>;
     cleanupWorkResource?(boardId: string, request: import('./work-resources').KanbanWorkResourceCleanup): Promise<import('./work-resources').KanbanWorkResource>;
     replyTask?(boardId:string,request:{itemId:string;attemptId:string;replyTo:string;operationId:string;content:string}):Promise<void>;
