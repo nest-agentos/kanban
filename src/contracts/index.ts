@@ -37,3 +37,8 @@ export type {KanbanRecordConversation} from './record-conversation';
 export type {KanbanTaskRecovery,KanbanTaskRecoveryRequest,KanbanTaskRecoveryResult} from './recovery';
 
 export type {KanbanRestartPreview,KanbanRestartRequest,KanbanRestartResult} from './task-restart';
+
+export {taskCleanupAllowed} from './task-cleanup';
+
+export {kanbanTaskType} from './task-type';
+export type {KanbanTaskType} from './task-type';

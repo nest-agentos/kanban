@@ -1,3 +1,4 @@
+import {kanbanTaskType} from './contracts';
 import {attentionCounts,recordAttention} from './attention';
 import {boardControlPhase} from './contracts/board-control';
 import {projectKanbanTask} from './contracts/task-projection';
@@ -62,7 +63,7 @@ class KanbanModule implements KanbanService {
     catalog = () => this.guard(this.id(), undefined, 'catalog', async () => {
         const boards: import('./contracts').KanbanBoardSummary[] = [];
         for (const id of await this.options.store.ids()) {
-            try {const view = await this.readView(id); if (view.state.board.deletedAt !== undefined) continue; boards.push({...view.state.board,attention:attentionCounts(view.state,view.items,view.records), executionPhase: boardControlPhase({...view.state.board, items: view.items}), items: view.items.filter(item => item.deletedAt === undefined).map(({id, title, number}) => ({id, title, ...(number === undefined ? {} : {number})}))});}
+            try {const view = await this.readView(id); if (view.state.board.deletedAt !== undefined) continue; boards.push({...view.state.board,attention:attentionCounts(view.state,view.items,view.records), executionPhase: boardControlPhase({...view.state.board, items: view.items}), items: view.items.filter(item => item.deletedAt === undefined).map(item => ({id:item.id,title:item.title,number:item.number,taskType:kanbanTaskType(item)}))});}
             catch (error) {if (!(error instanceof KanbanError) || error.code !== 'FORBIDDEN') throw error;}
         }
         return structuredClone(boards);
@@ -101,10 +102,10 @@ class KanbanModule implements KanbanService {
         await this.publishNotifications(boardId, request.operationId);
         return structuredClone(result.board);
     });
-    events = (boardId: string, after = 0, limit = 100) => this.guard(this.id(), boardId, 'events', async () => {
-        requireValue(Number.isSafeInteger(after) && after >= 0 && Number.isSafeInteger(limit) && limit > 0 && limit <= 500, 'INVALID_CURSOR');
+    events = (boardId: string, after: number | 'latest' = 0, limit = 100) => this.guard(this.id(), boardId, 'events', async () => {
+        requireValue((after === 'latest' || typeof after === 'number' && Number.isSafeInteger(after) && after >= 0) && Number.isSafeInteger(limit) && limit > 0 && limit <= 500, 'INVALID_CURSOR');
         const {state} = await this.readView(boardId);
-        return this.options.store.events(boardId, after, limit, state.sequence);
+        return this.options.store.events(boardId, after==='latest'?Math.max(0,state.sequence-limit):after, limit, state.sequence);
     });
     query = (boardId: string, query?: KanbanItemQuery) => this.guard(this.id(), boardId, 'query', async () => {const view = await this.readView(boardId); return structuredClone(queryItems(view.state, query, [...view.items, ...(view.state.archiveIndex ?? [])], this.now()));});
     overview = (boardId: string) => this.guard(this.id(), boardId, 'overview', async () => {const view = await this.readView(boardId); return {...overview(view.state,this.now(),view.items),attention:attentionCounts(view.state,view.items,view.records)};});

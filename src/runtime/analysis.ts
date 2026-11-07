@@ -1,3 +1,4 @@
+import {kanbanTaskType} from '../contracts';
 import {sha256HexSync, randomUUID} from '../utils';
 import type {KanbanAnalysisStatus,KanbanBoard,KanbanItem,KanbanService,KanbanEstimate,KanbanExternalReference} from '../contracts';
 import {requireValue} from '../rules';
@@ -121,6 +122,9 @@ export function parseAnalysis(output: unknown): AnalysisResult {
     requireValue(board.automation?.enabled && current && analysisSignature(board,job.signatureVersion===2?item.id:undefined) === job.signature, 'AUTOMATION_ANALYSIS_STALE');
     requireValue(board.policy.requireEstimate === false || job.result?.estimate, 'ESTIMATE_REQUIRED');
     const dependencies = [...new Set([...(item.planning?.dependencies ?? []), ...job.result!.dependencies])];
+    if(kanbanTaskType(item)==='coordination'&&!job.result?.subtasks?.length){
+        return adoptDecomposition(journal,board,item,{id:job.id,reason:job.result!.reason,dependencies,subtasks:[{key:'execute',title:item.title,responsibility:item.responsibility,acceptance:item.acceptance,dependsOn:[],estimate:job.result?.estimate}]},service,inherited);
+    }
     if(job.result?.subtasks?.length) return adoptDecomposition(journal,board,item,{id:job.id,reason:job.result.reason,dependencies,subtasks:job.result.subtasks},service,inherited);
     await service.execute(board.id, {operationId: 'analysis-plan:' + job.id, expectedRevision: board.revision, command: {type: 'publish-plan', plan: {
         schema: 'kanban.plan/1', id: job.id, revision: 1, sealed: true,

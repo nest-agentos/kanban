@@ -30,7 +30,7 @@ export function publishPlan(state: KanbanState, plan: KanbanWorkPlan, actor: Kan
             requireValue(plan.items.every(item=>!state.board.items.some(existing=>existing.id===item.id)&&!state.archiveIndex?.some(existing=>existing.id===item.id)),'APPEND_REQUIRES_NEW_ITEMS');
             if(root.status==='completed'){root.status='backlog';delete root.closedAt;delete root.resultRef;root.revision++;}
         }else requireValue(['backlog','open'].includes(root.status),'PLAN_ROOT_UNAVAILABLE');
-        delete root.purpose;
+        delete root.purpose;root.taskType='coordination';
         if(plan.coordination===true)root.planning={...planning(root),coordination:true};
         if(root.planning?.execution!=='children')apply({type:'plan-item',itemId:root.id,planning:{...planning(root),execution:'children'}});
     }

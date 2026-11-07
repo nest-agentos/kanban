@@ -11,7 +11,7 @@ export function workTypes(board: KanbanBoard): readonly KanbanWorkType[] {return
 export function workType(board: KanbanBoard, id: string): KanbanWorkType {
     const found = workTypes(board).find(type => type.id === id); requireValue(found, 'UNKNOWN_WORK_TYPE'); return found;
 }
-export function executable(board: KanbanBoard, item: {planning?: {kind: string; execution?: 'direct'|'children'}}): boolean {
+export function executable(board: KanbanBoard, item: {taskType?:import('./contracts').KanbanTaskType;purpose?:string;planning?: {kind: string; execution?: 'direct'|'children'}}): boolean {
     workType(board, item.planning?.kind ?? board.defaultWorkType ?? 'task');
     return executableWorkItem(board,item);
 }

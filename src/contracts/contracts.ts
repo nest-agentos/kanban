@@ -18,6 +18,7 @@ export interface KanbanParticipant {
 }
 export interface KanbanAssignment extends KanbanActor { principalId?: string; token: string; leaseUntil: number; claimedAt: number; }
 export interface KanbanItem {
+    taskType?:import('./task-type').KanbanTaskType;
     repairPending?:{itemId:string;previousDispatchId:string};
     executionEpoch?:string;restartPending?:{id:string;rootItemId:string};
     purpose?:'planning';
@@ -74,7 +75,7 @@ export type KanbanCommand = import('./task-restart').RepairDependencyCommand | i
     | {type: 'append-record'; record: KanbanRecordInput}
     | {type: 'review-record'; recordId: string; accept: boolean}
     | {type: 'link-record'; recordId: string; itemId: string}
-    | { type: 'create-item'; item: Pick<KanbanItem, 'title' | 'responsibility' | 'acceptance' | 'eligibleAgentIds' | 'eligiblePrincipals' | 'externalRefs' | 'purpose'> & {id?: string}; planning?: KanbanPlanning; stage?: 'backlog' | 'open'; launch?: {mode?: 'automatic' | 'manual'; paused?: boolean} }
+    | { type: 'create-item'; item: Pick<KanbanItem, 'title' | 'responsibility' | 'acceptance' | 'eligibleAgentIds' | 'eligiblePrincipals' | 'externalRefs' | 'purpose' | 'taskType'> & {id?: string}; planning?: KanbanPlanning; stage?: 'backlog' | 'open'; launch?: {mode?: 'automatic' | 'manual'; paused?: boolean} }
     | { type: 'register-session'; itemId?: string; sessionId: string; agentId?: string; role: KanbanParticipant['roles'][number]; subscribed: boolean }
     | { type: 'claim'; itemId: string; estimate?: KanbanEstimate }
     | { type: 'renew'; itemId: string; token: string }
@@ -99,7 +100,7 @@ export type KanbanCommand = import('./task-restart').RepairDependencyCommand | i
     | {type: 'unblock-item'; itemId: string; token?: string};
 export interface KanbanRequest { operationId: string; expectedRevision: number; command: KanbanCommand; }
 /** Board directory metadata with item labels; coordination bodies require read()/item(). */
-export type KanbanBoardSummary = Omit<KanbanBoard, 'items'> & {attention?:{board:number;decision:number;log:number};executionPhase?: ReturnType<typeof import('./board-control').boardControlPhase>; items: Array<Pick<KanbanItem, 'id' | 'title' | 'number'>>};
+export type KanbanBoardSummary = Omit<KanbanBoard, 'items'> & {attention?:{board:number;decision:number;log:number};executionPhase?: ReturnType<typeof import('./board-control').boardControlPhase>; items: Array<Pick<KanbanItem, 'id' | 'title' | 'number' | 'taskType'>>};
 export interface KanbanService {
     workflow(boardId: string): Promise<import('./workflow').KanbanWorkflowState>;
 
@@ -114,7 +115,7 @@ export interface KanbanService {
     list(): Promise<KanbanBoard[]>;
     catalog(): Promise<KanbanBoardSummary[]>;
     execute(boardId: string, request: KanbanRequest): Promise<KanbanBoard>;
-    events(boardId: string, afterSequence?: number, limit?: number): Promise<KanbanEvent[]>;
+    events(boardId: string, afterSequence?: number | 'latest', limit?: number): Promise<KanbanEvent[]>;
     related(sessionId: string): Promise<KanbanBoard[]>;
     query(boardId: string, query?: KanbanItemQuery): Promise<KanbanItemPage>;
     item(boardId: string, itemId: string): Promise<{item: KanbanItem; task?: import('./task-state').KanbanTaskProjection; archive?: Omit<KanbanArchivedItem, 'item'>}>;

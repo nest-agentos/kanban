@@ -1,3 +1,4 @@
+import {prepareItemCleanup} from './item-cleanup';
 import {insertRepairDependency} from './repair-dependency';
 import {applyDependencyRestart} from './dependency-restart';
 import {restartItemInput} from './task-restart';
@@ -27,7 +28,11 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     requireValue(state.board.deletedAt === undefined, 'BOARD_DELETED');
     numberEntities(state);
     protectStoppedBoard(state,command);
-    if ('itemId' in command && command.itemId) requireValue(state.board.items.find(i => i.id === command.itemId)?.deletedAt === undefined, 'ITEM_DELETED');
+    const targetId='itemId' in command?command.itemId:undefined;
+    if(targetId)requireValue(state.board.items.find(i=>i.id===targetId)?.deletedAt===undefined,'ITEM_DELETED');
+    const cleanupIds=command.type==='delete-item'?prepareItemCleanup(state,[command.itemId],actor,now,true):undefined;
+    if(command.type==='archive-items')command={...command,itemIds:prepareItemCleanup(state,command.itemIds,actor,now)};
+    for(const itemId of cleanupIds??[])if(!workflowInternal)protectWorkflowItem(state,{type:'delete-item',itemId});
     if (!workflowInternal) protectWorkflowItem(state, command);
     const board = state.board;
     if (command.type === 'delete-board') return deleteBoard(state, actor, operationId, now);
@@ -36,12 +41,11 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     if (command.type === 'request-board-stop' || command.type === 'observe-board-stop') stopBoard(state,command,actor,now);
     else if (command.type === 'set-board-control') setBoardControl(state, command, actor, now, token);
     else if (command.type === 'delete-item') {
-        const item = itemFor(board, command.itemId);
         requireValue(principal(actor).kind === 'human', 'FORBIDDEN');
-        requireValue(!item.restartPending,'DEPENDENCY_RESTART_PENDING');
-        requireValue(terminal(item), 'ITEM_DELETE_REQUIRES_CLOSED');
-        delete item.owner; delete item.transfer;
-        item.deletedAt = now; item.updatedAt = now; item.revision++;
+        for(const id of cleanupIds??[command.itemId]){
+            const item=itemFor(board,id);requireValue(!item.restartPending,'DEPENDENCY_RESTART_PENDING');requireValue(terminal(item),'ITEM_DELETE_REQUIRES_CLOSED');
+            delete item.owner;delete item.transfer;item.deletedAt=now;item.updatedAt=now;item.revision++;
+        }
     }
     else if(command.type==='insert-repair-dependency')insertRepairDependency(state,command,actor,now,inner=>{reduce(state,inner,actor,operationId,now,token,true,restartReferences);});
     else if(command.type==='prepare-task-restart'||command.type==='commit-task-restart')applyDependencyRestart(state,command,actor,now);
@@ -70,15 +74,16 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     numberEntities(state); refreshReady(state);
     board.revision++;
     if (recordEvent) append(state, actor, operationId, now, command.type, command.type === 'restart-item' ? command.replacementId : 'itemId' in command ? command.itemId : command.type === 'create-item' ? command.item.id ?? state.board.items.at(-1)?.id : 'dispatchId' in command ? state.workflow?.dispatches[command.dispatchId]?.itemId : undefined,
-        eventData(command, state),
+        {...eventData(command,state),...(cleanupIds?{itemIds:cleanupIds,reason:'manual-cleanup'}:{})},
         command.type === 'message' ? command.recipientSessionIds : undefined);
     scan(state, actor, operationId, now);
     return state;
 }
 function createItem(state: KanbanState, command: Extract<KanbanCommand, { type: 'create-item' }>, actor: KanbanActor, now: number, token: string): void {
-    const {id: requestedId, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose} = command.item;
+    const {id: requestedId, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose,taskType} = command.item;
     const id = requestedId ?? allocateTaskId(state);
-    const input = {id, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose}, board = state.board;
+    const input = {id, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose,taskType:taskType??(purpose==='planning'||command.planning?.execution==='children'?'coordination' as const:'execution' as const)}, board = state.board;
+    requireValue(taskType===undefined||['coordination','execution'].includes(taskType),'INVALID_TASK_TYPE');
     requireValue(purpose===undefined||purpose==='planning','INVALID_ITEM_PURPOSE');
     identity(input.id); text(input.title); text(input.responsibility); text(input.acceptance);
     requireValue(!board.items.some(i => i.id === input.id) && !state.archiveIndex?.some(i => i.id === input.id), 'ITEM_EXISTS');
@@ -94,7 +99,7 @@ function createItem(state: KanbanState, command: Extract<KanbanCommand, { type: 
     validateCandidates(board, item, executable(board, item)); validatePlan(state, item, item.planning);
     if(item.planning.parentId) {
         const parent=board.items.find(parent=>parent.id===item.planning!.parentId)!;
-        if(parent.planning?.execution!=='children') {parent.planning={...plan(parent),execution:'children'};parent.updatedAt=now;parent.revision++;}
+        if(parent.planning?.execution!=='children') {parent.taskType='coordination';parent.planning={...plan(parent),execution:'children'};parent.updatedAt=now;parent.revision++;}
     }
     if (actor.sessionId) participant(item.participants, actor.sessionId, actor.agentId, 'creator', true, now); board.items.push(item);
     if (command.stage === 'open') setStage(state, item, 'open', now);

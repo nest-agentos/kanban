@@ -18,7 +18,7 @@ async function fixture(policy: Partial<KanbanBoard['policy']> = {}) {
     const executor={prepare:vi.fn(async()=>({id:'original'})),start:vi.fn(async()=>({outcome:'running' as const,executionSessionId:'original-session'})),inspect:vi.fn(async()=>({outcome:'running' as const,executionSessionId:'original-session'}))};
     const bridge=async()=>{const b=await createKanbanExecutionBridge({fs,directory:'/executions',boardId:'board',service,worker:async()=>worker,autoDispatch:true,executor,authorize:async()=>{},log(){}});closes.push(()=>b.quiesce());return b;};
     const human=createKanbanModule({store,actor:{kind:"human",id:"admin"},restartReferences:refs=>refs.filter(ref=>ref.system==='project'),authorize:async()=>{},now:()=>now,log(){}});
-    return {store,service,api,human,run,bridge,executor,clock:(elapsed:number)=>{now=1000000+elapsed;},item:async()=>(await service.item('board','task')).item};
+    return {fs,store,service,api,human,run,bridge,executor,clock:(elapsed:number)=>{now=1000000+elapsed;},item:async()=>(await service.item('board','task')).item};
 }
 it('persists the five-minute deadline and admits exactly once at 300000ms across competing/restarted bridges',async()=>{
     const f=await fixture(),first=await f.bridge(),second=await f.bridge();
@@ -75,7 +75,7 @@ it('projects unresolved issues, concrete analysis errors and observation unknown
     expect(phase({analysis:{itemId:'task',state:'unknown'}})).toBe('unknown');
     expect(phase({issues:[{id:'q',attemptId:'a',type:'clarification'}]})).toBe('waiting-input');
     expect(phase({issues:[{id:'q',attemptId:'a',type:'clarification',resolvedBy:'resolved'}]})).toBe('waiting-start');
-    expect(projectKanbanTask({...item,planning:{...item.planning!,dependencies:['cancelled']}},undefined,1000000,[{id:'cancelled',status:'cancelled'}])).toMatchObject({phase:'waiting-dependency',reason:'DEPENDENCY_UNFINISHED:cancelled'});
+    expect(projectKanbanTask({...item,planning:{...item.planning!,dependencies:['cancelled']}},undefined,1000000,[{id:'cancelled',status:'cancelled'}])).toMatchObject({phase:'waiting-dependency',reason:'DEPENDENCY_CANCELLED:cancelled'});
 });
 
 it('persists legacy deadlines from the original creation time during the shared startup scan',async()=>{
@@ -270,4 +270,60 @@ it('resumes a board containing unstarted items without a control record',async()
     await f.run({type:'set-board-control',paused:false},f.human);
     expect((await f.service.read('board')).executionControl?.paused).toBe(false);
     expect((await f.item()).control).toBeUndefined();
+});
+
+it('archives a stopped failed task without completing dependents and blocks deletion of a live prerequisite',async()=>{
+    const f=await fixture(),bridge=await f.bridge();f.clock(300000);await bridge.scan();
+    const dispatch=Object.values((await f.service.workflow('board')).dispatches)[0];
+    await expect(f.run({type:'delete-item',itemId:'task'},f.human)).rejects.toMatchObject({code:'TASK_CLEANUP_EXECUTION_UNSETTLED'});
+    await f.run({type:'observe-execution',dispatchId:dispatch.id,fence:dispatch.fence,outcome:'failed',code:'BUILD_FAILED'});
+    await f.run({type:'create-item',item:{id:'followup',title:'Follow up',responsibility:'Integrate',acceptance:'Works'},planning:{kind:'task',priority:2,dependencies:['task'],references:[]}});
+    const failed=await f.service.item('board','task');expect(failed.task?.cleanupAllowed).toBe(true);
+    const waiting=(await f.service.query('board',{view:'all'})).items.find(row=>row.id==='followup')!;
+    expect(waiting.task).toMatchObject({phase:'waiting-dependency',reason:'DEPENDENCY_FAILED:task'});
+    await expect(f.run({type:'delete-item',itemId:'task'},f.human)).rejects.toMatchObject({code:'TASK_HAS_DEPENDENTS'});
+    await f.run({type:'archive-items',itemIds:['task'],reason:'Stopped failed work'},f.human);
+    expect((await f.service.item('board','task')).item.status).toBe('cancelled');
+    expect((await f.service.item('board','followup')).item.status).not.toBe('cancelled');
+    expect((await f.service.query('board',{view:'all'})).items.find(row=>row.id==='followup')?.task).toMatchObject({phase:'waiting-dependency',reason:'DEPENDENCY_CANCELLED:task'});
+});
+it('reads a bounded latest event page without walking the complete board history',async()=>{
+    const f=await fixture();for(let n=0;n<12;n++)await f.run({type:'message',itemId:'task',message:'Comment '+n,recipientSessionIds:[]});
+    const latest=await f.service.events('board','latest',3);expect(latest).toHaveLength(3);
+    expect(latest.map(row=>row.data.message)).toEqual(['Comment 9','Comment 10','Comment 11']);
+    const older=await f.service.events('board',latest[0].sequence-4,3);expect(older.at(-1)?.sequence).toBe(latest[0].sequence-1);
+});
+
+it.each(['archive','delete'])('restricts child %s to atomic group cleanup and preserves unrelated tasks',async action=>{
+ const f=await fixture();
+ await f.run({type:'create-item',item:{id:'group',title:'Coordinate',responsibility:'Coordinate work',acceptance:'All children done'},planning:{kind:'feature',execution:'children',priority:2,dependencies:[],references:[]}});
+ await f.run({type:'create-item',item:{id:'child',title:'Execute',responsibility:'Implement',acceptance:'Works'},planning:{kind:'task',parentId:'group',priority:2,dependencies:[],references:[]}});
+ const command=action==='archive'?{type:'archive-items' as const,itemIds:['child'],reason:'manual'}:{type:'delete-item' as const,itemId:'child'};
+ await expect(f.run(command,f.human)).rejects.toMatchObject({code:'SUBTASK_CLEANUP_VIA_GROUP'});
+ await f.run(action==='archive'?{type:'archive-items',itemIds:['group'],reason:'manual'}:{type:'delete-item',itemId:'group'},f.human);
+ for(const id of ['group','child']){
+  const value=await f.service.item('board',id);expect(value.item.status).toBe('cancelled');
+  if(action==='archive')expect(value.archive).toBeDefined();else expect(value.item.deletedAt).toBeTypeOf('number');
+ }
+ expect((await f.item()).deletedAt).toBeUndefined();
+});
+it('distinguishes stable coordination and execution references without changing underlying IDs',async()=>{
+ const f=await fixture();await f.run({type:'create-item',item:{id:'coordinate',title:'Coordinate',responsibility:'Coordinate',acceptance:'Accepted'},planning:{kind:'feature',execution:'children',priority:2,dependencies:[],references:[]}});
+ const task=await f.item(),group=(await f.service.item('board','coordinate')).item;
+ expect(task.taskType).toBe('execution');expect(group.taskType).toBe('coordination');
+ expect(await f.service.resolve(`KBT-1-${task.number}`)).toMatchObject({itemId:task.id,reference:`KBT-1-${task.number}`});
+ expect(await f.service.resolve(`KBC-1-${group.number}`)).toMatchObject({itemId:group.id,reference:`KBC-1-${group.number}`});
+ await expect(f.service.resolve(`KBC-1-${task.number}`)).rejects.toMatchObject({code:'REFERENCE_NOT_FOUND'});
+});
+
+it('turns a confirmed coordination plan into execution children without dispatching its parent',async()=>{
+ const f=await fixture();await f.run({type:'configure-automation',settings:{enabled:true,autoAccept:false,planner:{system:'test',id:'planner',revision:'1'},executor:{system:'test',id:'executor',revision:'1'},coordinator:{kind:'service',id:'manager'},worker:{kind:'service',id:'worker'}}});
+ await f.run({type:'create-item',item:{id:'coordinate',purpose:'planning',title:'Coordinate',responsibility:'Build one outcome',acceptance:'Verified'},planning:{kind:'coordination',priority:2,dependencies:[],references:[]}});
+ const {KanbanAutomationJournal}=await import('../src/runtime/automation-journal'),{analyzeItem}=await import('../src/runtime/analysis');
+ const journal=new KanbanAutomationJournal(f.fs);await journal.open();const board=await f.service.read('board'),item=board.items.find(row=>row.id==='coordinate')!;
+ await analyzeItem({journal,active:()=>true,log(){},port:{prepare:async()=>({}),prepareExecution:async()=>{},submit:async()=>{},inspect:async()=>({state:'succeeded',output:{ready:true,dependencies:[],reason:'One independent implementation'}})}},board,item,{},f.service);
+ const parent=(await f.service.item('board','coordinate')).item,children=await f.service.query('board',{view:'all',parentId:'coordinate'}),workflow=await f.service.workflow('board');
+ expect(parent).toMatchObject({taskType:'coordination',planning:{execution:'children'}});expect(children.items).toHaveLength(1);expect(children.items[0].taskType).toBe('execution');
+ expect(Object.values(workflow.plans).filter(plan=>plan.rootItemId===parent.id).flatMap(plan=>plan.itemIds)).toEqual([children.items[0].id]);
+ expect(Object.values(workflow.dispatches).some(dispatch=>dispatch.itemId===parent.id)).toBe(false);
 });

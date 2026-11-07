@@ -203,12 +203,12 @@ function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: Kanban
     const refs = record.externalRefs!.filter(ref => ref.system === resourceSystem);
     const types = board.workTypes ?? DEFAULT_KANBAN_WORK_TYPES;
     const task = types.find(type => type.id === (board.defaultWorkType ?? 'task') && type.executable) ?? types.find(type => type.executable);
-    const parent = types.filter(type => !type.executable && type.rank < (task?.rank ?? 0)).sort((a, b) => b.rank - a.rank)[0];
-    requireValue(task && (refs.length === 1 || parent), 'DECISION_WORK_TYPES_REQUIRED');
+    const parent = types.find(type=>type.id==='coordination'&&!type.executable)??types.filter(type => !type.executable && type.rank < (task?.rank ?? 0)).sort((a, b) => b.rank - a.rank)[0];
+    requireValue(task&&parent,'DECISION_WORK_TYPES_REQUIRED');
     const itemIds = refs.map((_, index) => 'work-' + id + '-' + index);
     return {id, sourceBoardId: board.id, recordId: record.id, recordRevision: record.revision,
-        boardId: placement === 'new-board' ? 'run-' + id : board.id, placement, taskKind: task.id, parentKind: parent?.id,
-        rootItemId: refs.length === 1 ? itemIds[0] : 'feature-' + id, itemIds,
+        boardId: placement === 'new-board' ? 'run-' + id : board.id, placement, taskKind: parent.id, parentKind: parent.id,
+        rootItemId: refs.length === 1 ? itemIds[0] : undefined, itemIds,
         state:'preparing',stage:'planning',createdAt: Date.now(), updatedAt: Date.now(), record, automation: structuredClone(board.automation!)};
 }
 function runState(items: KanbanItem[]): KanbanRecordExecution['state'] {
@@ -238,7 +238,7 @@ async function materialize(options: Options, run: SavedRun): Promise<void> {
     }
     await markPlanning(options,run);
     if (run.boardId !== run.sourceBoardId) await once(options, run, 'automation', {type: 'configure-automation', settings: {...run.automation, enabled: true, autoAccept: false}});
-    if (run.rootItemId && run.boardId === run.sourceBoardId) await once(options, run, 'link-root', {type: 'link-record', recordId: run.recordId, itemId: run.rootItemId});
+    if(run.boardId===run.sourceBoardId)for(const itemId of run.rootItemId?[run.rootItemId]:run.itemIds??[])await once(options,run,'link-'+itemId,{type:'link-record',recordId:run.recordId,itemId});
 }
 
 async function once(options: Options, run: SavedRun, stage: string, command: KanbanCommand): Promise<void> {
@@ -256,7 +256,7 @@ async function save(options: Options, run: SavedRun): Promise<SavedRun> {
 
 function view(run: SavedRun): KanbanRecordExecution {
     const {id, recordId, recordRevision, boardId, rootItemId, itemIds, state, createdAt, updatedAt,archivedAt,stage,code} = run;
-    return {id, recordId, recordRevision, boardId, ...(rootItemId ? {rootItemId, itemIds} : {}), state,createdAt,updatedAt,...(stage?{stage}:{}),...(archivedAt!==undefined?{archivedAt}:{}), ...(code ? {code} : {})};
+    return {id, recordId, recordRevision, boardId, ...(rootItemId?{rootItemId}:{}),...(itemIds?{itemIds}:{}), state,createdAt,updatedAt,...(stage?{stage}:{}),...(archivedAt!==undefined?{archivedAt}:{}), ...(code ? {code} : {})};
 }
 
 async function cancelDecision(options: Options, boardId: string, recordId: string, operationId: string): Promise<void> {
@@ -276,7 +276,7 @@ async function finishDecisionCancellation(options: Options, boardId: string, rec
         if(state!=='cancelled')return;
         await cancelDecision(options,boardId,recordId,operationId);
     }
-    if(control.after)await cleanupRecordTasks(options.service,options.journal,runs.filter(run=>run.archivedAt===undefined),control.after==='delete'?'delete':'archive',operationId,options.archiveSession,options.planningSession,options.archiveItemResources);
+    if(control.after)await cleanupRecordTasks(options.service,options.journal,runs.filter(run=>control.after==='delete'||run.archivedAt===undefined),control.after==='delete'?'delete':'archive',operationId,options.archiveSession,options.planningSession,options.archiveItemResources);
     if(control.after)await options.journal.update<SavedRun[]>('record-runs:'+boardId,old=>(old??[]).map(row=>runs.some(run=>run.id===row.id)?{...row,archivedAt:row.archivedAt??Date.now()}:row));
     if(control.after==='restart')await restartDecision(options,boardId,recordId,operationId);
     else if(control.after)await journalCommand(options.journal,options.service,boardId,'record-dispose:'+operationId,{type:control.after==='delete'?'delete-record':'archive-record',recordId});

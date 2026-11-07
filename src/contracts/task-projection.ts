@@ -1,3 +1,4 @@
+import {taskCleanupAllowed} from './task-cleanup';
 import type {KanbanDispatch,KanbanItem,KanbanItemSummary,KanbanWorkflowState,KanbanTaskProjection,KanbanTaskPhase} from './index';
 
 type Item=Pick<KanbanItem,'repairPending'|'executionEpoch'|'restartPending'|'deletedAt'|'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>;
@@ -13,13 +14,13 @@ export function taskDue(item:Item,now:number):boolean {
 /** Ordered evidence projection shared by storage queries, CLI and UI. Session idle never proves acceptance. */
 export function projectKanbanTask(item:Item,workflow?:KanbanWorkflowState,now=Date.now(),all:Related[]=[]):KanbanTaskProjection {
     const dispatch=Object.values(workflow?.dispatches??{}).filter(d=>d.itemId===item.id&&d.executionEpoch===item.executionEpoch).sort((a,b)=>b.attempt-a.attempt)[0];
-    const fact=(item.restartPending?{phase:'cancelling' as const,reason:'DEPENDENCY_RESTART_PENDING',actions:[]}:undefined)??terminalFact(item)??controlFact(item)??repairFact(item,all)??issueFact(item,dispatch)??groupFact(item,workflow,now,all)??failureFact(item,dispatch)??executionFact(item,dispatch)??waitingFact(item,now,all);
+    const fact=(item.restartPending?{phase:'cancelling' as const,reason:'DEPENDENCY_RESTART_PENDING',actions:[]}:undefined)??terminalFact(item)??controlFact(item)??repairFact(item,all)??issueFact(item,dispatch)??groupFact(item,workflow,now,all)??failureFact(item,dispatch)??executionFact(item,dispatch)??waitingFact(item,now,all,workflow);
     const extra: KanbanTaskProjection['actions'] = [];
     if (!['completed','cancelled'].includes(item.status) && item.control?.action !== 'cancel') {
         if (!fact.actions?.includes('cancel')) extra.push('cancel');
         if (item.status !== 'review' && !fact.actions?.includes('pause') && !fact.actions?.includes('resume') && (dispatch?.controlCapabilities?.pause === 'boundary' || !dispatch)) extra.push('pause');
     }
-    return {...fact,startAt:taskStartAt(item),dispatchId:dispatch?.id,sessionId:dispatch?.executionSessionId,
+    return {...fact,cleanupAllowed:taskCleanupAllowed(item,workflow,all as KanbanItemSummary[]),startAt:taskStartAt(item),dispatchId:dispatch?.id,sessionId:dispatch?.executionSessionId,
         actions:item.deletedAt === undefined ? [...fact.actions??[],...extra,...(item.planning?.execution==='children'||dispatch||item.launch?.admittedAt!==undefined||['claimed','review','completed'].includes(item.status)?['fix' as const]:[]),...(dispatch?.executionSessionId?['open-session' as const]:[])].filter(action=>item.planning?.execution!=='children'||['cancel','delete','fix',...(item.planning?.coordination?['pause','resume']:[])].includes(action)) : []};
 }
 function terminalFact(item:Item):Fact|undefined {
@@ -49,10 +50,10 @@ function executionFact(item:Item,dispatch?:KanbanDispatch):Fact|undefined {
     if(dispatch?.outcome==='prepared')return {phase:'preparing'};
     if(dispatch?.outcome==='running'||item.status==='claimed')return {phase:'running',actions:dispatch?.controlCapabilities?.pause==='boundary'?['pause']:[]};
 }
-function waitingFact(item:Item,now:number,all:Array<Pick<KanbanItemSummary,'id'|'status'>>):Fact {
+function waitingFact(item:Item,now:number,all:Related[],workflow?:KanbanWorkflowState):Fact {
     const analysis=analysisFact(item);if(analysis)return analysis;
     const dependency=item.planning?.dependencies.find(id=>all.find(i=>i.id===id)?.status!=='completed');
-    if(dependency)return {phase:'waiting-dependency',reason:'DEPENDENCY_UNFINISHED:'+dependency,actions:item.launch?.admittedAt===undefined?['edit','cancel']:[]};
+    if(dependency)return {phase:'waiting-dependency',reason:dependencyReason(dependency,all,workflow)+':'+dependency,actions:item.launch?.admittedAt===undefined?['edit','cancel']:[]};
     if(item.planning?.execution==='children')return {phase:'waiting-dependency',reason:'CHILDREN_UNFINISHED',actions:[]};
     if(taskEditing(item,now))return {phase:'waiting-start',reason:'EDIT_LEASE_ACTIVE'};
     if(item.launch?.admittedAt!==undefined)return {phase:'queued'};
@@ -80,4 +81,11 @@ function groupFact(item:Item,workflow:KanbanWorkflowState|undefined,now:number,a
 
 function repairFact(item:Item,all:Related[]):Fact|undefined {
     if(item.repairPending&&all.find(row=>row.id===item.repairPending!.itemId)?.status!=='completed')return {phase:'waiting-dependency',reason:'DEPENDENCY_UNFINISHED:'+item.repairPending.itemId};
+}
+
+function dependencyReason(id:string,all:Related[],workflow?:KanbanWorkflowState):string {
+    const item=all.find(row=>row.id===id);if(!item||item.deletedAt!==undefined)return 'DEPENDENCY_MISSING';
+    if(item.status==='cancelled')return 'DEPENDENCY_CANCELLED';
+    const dispatch=Object.values(workflow?.dispatches??{}).filter(row=>row.itemId===id).sort((a,b)=>b.attempt-a.attempt)[0];
+    return dispatch&&['failed','rejected'].includes(dispatch.outcome)?'DEPENDENCY_FAILED':'DEPENDENCY_UNFINISHED';
 }

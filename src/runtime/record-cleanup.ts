@@ -12,10 +12,12 @@ export async function cleanupRecordTasks(service:KanbanClient,journal:KanbanAuto
         for(const id of roots)await collect(service,run.boardId,id,items);
         if(archiveSession)for(const id of items.keys())await archiveItemSessions(service,planningSession,run.boardId,id,operationId,archiveSession);
         if(archiveResources)for(const id of items.keys())await archiveResources(run.boardId,id,sha256HexSync(JSON.stringify([operationId,id])));
-        for(const {item,archived} of [...items.values()].reverse()){
+        for(const {item,archived} of items.values()){
             requireValue(['completed','cancelled'].includes(item.status),'RECORD_EXECUTION_UNSETTLED');
-            if(item.deletedAt!==undefined||action==='archive'&&archived)continue;
-            if(action==='delete'&&archived)await journalCommand(journal,service,run.boardId,'record-cleanup-restore:'+operationId+':'+item.id,{type:'restore-item',itemId:item.id});
+            if(action==='delete'&&archived&&!item.deletedAt)await journalCommand(journal,service,run.boardId,'record-cleanup-restore:'+operationId+':'+item.id,{type:'restore-item',itemId:item.id});
+        }
+        for(const {item,archived} of items.values()){
+            if(item.deletedAt!==undefined||action==='archive'&&archived||item.planning?.parentId&&items.has(item.planning.parentId))continue;
             await journalCommand(journal,service,run.boardId,'record-cleanup:'+JSON.stringify([operationId,action,item.id]),action==='archive'
                 ?{type:'archive-items',itemIds:[item.id],reason:'decision-'+operationId}:{type:'delete-item',itemId:item.id});
         }
