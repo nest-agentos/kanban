@@ -23,8 +23,9 @@ export interface KanbanDispatch {
 }
 export interface KanbanWorkflowState {plans: Record<string, KanbanPublishedPlan>; dispatches: Record<string, KanbanDispatch>; ready: string[]; completedPlans: string[]}
 export type KanbanWorkflowCommand =
+    | {type:'waive-operations';itemId:string;dispatchId:string;expectedItemRevision:number;waiver:Omit<import('./operation-waiver').KanbanOperationWaiver,'actor'|'at'|'dispatchId'>}
     | {type: 'continue-execution'; previousDispatchId: string; dispatchId: string; instruction?: string}
     | {type: 'publish-plan'; plan: KanbanWorkPlan}
     | {type: 'prepare-dispatch'; itemId: string; dispatchId: string; trigger?: 'manual' | 'automatic'; estimate?: KanbanEstimate}
     | {type: 'observe-execution'; dispatchId: string; fence: string; outcome: 'running' | 'unknown' | 'succeeded' | 'failed' | 'cancelled'; outputs?: KanbanArtifactRef[]; code?: string; executionSessionId?: string; controlCapabilities?: {pause:'boundary'|'none';resume:boolean}}
-    | {type: 'accept-execution'; dispatchId: string; accept: boolean};
+    | {type: 'accept-execution'; dispatchId: string; accept: boolean; waiverId?: string};

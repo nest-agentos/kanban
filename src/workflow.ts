@@ -1,3 +1,4 @@
+import {waiveOperations} from './operation-waiver';
 import {boardAllowsStart} from './contracts/board-control';
 import {taskDue, taskEditing, taskStartAt} from './contracts/task-projection';
 import type {KanbanActor, KanbanCommand, KanbanWorkflowCommand, KanbanDispatch, KanbanArtifactRef} from './contracts';
@@ -10,7 +11,7 @@ import {catalog} from './planning';
 import {executionObservationChanged} from './execution-observation';
 import {continueExecution} from './workflow-continuation';
 export function isWorkflowCommand(command: KanbanCommand): command is KanbanWorkflowCommand {
-    return ['publish-plan','prepare-dispatch','continue-execution','observe-execution','accept-execution'].includes(command.type);
+    return ['publish-plan','prepare-dispatch','continue-execution','observe-execution','accept-execution','waive-operations'].includes(command.type);
 }
 /** Plan definitions and live admissions cannot be bypassed by ordinary board commands. */
 export function protectWorkflowItem(state: KanbanState, command: KanbanCommand): void {
@@ -33,7 +34,8 @@ export function applyWorkflow(state: KanbanState, command: KanbanWorkflowCommand
     else if (command.type === 'prepare-dispatch') prepare(state,command,actor,now,apply);
     else if (command.type === 'continue-execution') {requireValue(!state.board.executionControl?.paused, 'BOARD_EXECUTION_PAUSED'); continueExecution(state, command, actor, now, apply);}
     else if (command.type === 'observe-execution') changed = observe(state,command,actor,now);
-    else accept(state,command,actor,apply);
+    else if(command.type==='waive-operations')waiveOperations(state,command,actor,now);
+    else accept(state,command,actor,now,apply);
     refreshReady(state);
     return changed;
 }
@@ -85,12 +87,16 @@ function observe(state: KanbanState, command: Extract<KanbanWorkflowCommand,{typ
     dispatch.outcome=command.outcome==='succeeded'&&state.board.policy.review==='assignee'?'accepted':command.outcome;dispatch.code=command.code;item.updatedAt=now;item.revision++;dispatch.itemRevision=item.revision;
     return true;
 }
-function accept(state: KanbanState, command: Extract<KanbanWorkflowCommand,{type:'accept-execution'}>, actor: KanbanActor, apply: ApplyWorkCommand): void {
+function accept(state: KanbanState, command: Extract<KanbanWorkflowCommand,{type:'accept-execution'}>, actor: KanbanActor, now:number, apply: ApplyWorkCommand): void {
     requireCoordinator(state,actor);const dispatch=activeDispatch(state,command.dispatchId);
     requireValue(state.board.items.find(item => item.id === dispatch.itemId)?.control?.action !== 'cancel', 'TASK_CANCELLING');
     requireValue(dispatch.outcome==='succeeded','EXECUTION_NOT_SUCCEEDED');
+    const item=state.board.items.find(row=>row.id===dispatch.itemId)!,waiver=item.operationWaivers?.find(row=>row.dispatchId===dispatch.id&&row.acceptanceWaived);
+    requireValue(!waiver||command.waiverId===waiver.id,'OPERATION_ACCEPTANCE_WAIVER_REQUIRED');
+    requireValue(!command.waiverId||waiver?.id===command.waiverId,'OPERATION_SKIP_INVALID');
     apply({type:'review',itemId:dispatch.itemId,accept:command.accept},actor);
     dispatch.outcome=command.accept?'accepted':'rejected';
+    if(command.accept)state.board.items.find(item=>item.id===dispatch.itemId)!.acceptanceResult={dispatchId:dispatch.id,outcome:waiver?'waived':'passed',at:now,actor:{...actor},...(waiver?{waiverId:waiver.id}:{})};
     if(!command.accept) {const item=state.board.items.find(item=>item.id===dispatch.itemId)!;item.status='backlog';item.blocked={reason:'EXECUTION_REJECTED',at:item.updatedAt};}
 }
 function activeDispatch(state: KanbanState, id: string): KanbanDispatch {

@@ -46,3 +46,5 @@ export type {KanbanTaskType} from './task-type';
 export type {KanbanBoardWorkResource,KanbanBoardWorkResourceQuery,KanbanBoardWorkResourcePage,KanbanWorkResourceTask} from './work-resources';
 
 export type {KanbanBoardSetting,KanbanBoardSettingsCatalog} from './settings';
+
+export type {KanbanOperationWaiver, KanbanAcceptanceResult} from './operation-waiver';
