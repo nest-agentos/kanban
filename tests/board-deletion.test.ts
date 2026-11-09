@@ -1,3 +1,4 @@
+import {withBoardDeletion} from '../src/runtime/board-deletion';
 import {afterEach, expect, it, vi} from 'vitest';
 import {createVFS, MemoryBackend} from '@nestos/vfs-core';
 import {createKanbanModule, SeqKanbanStore, type KanbanCommand} from '../src';
@@ -40,4 +41,16 @@ it('rechecks revision after host verification and requires a human coordinator',
     await expect(f.run({type: 'delete-board'})).rejects.toMatchObject({code: 'REVISION_CONFLICT'});
     const other = createKanbanModule({...f.options, actor: {kind: 'human', id: 'other'}});
     await expect(other.execute('board', {operationId: 'other-delete', expectedRevision: (await other.read('board')).revision, command: {type: 'delete-board'}})).rejects.toMatchObject({code: 'COORDINATOR_REQUIRED'});
+});
+
+it('allows exact operation cancellation through the public wrapper while its original submission is suspended',async()=>{
+ const f=await fixture();await f.run({type:'create-item',item:{id:'task',title:'Task',responsibility:'Work',acceptance:'Done'}});
+ let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
+ const runItemOperation=vi.fn(async(_board:string,request:import('../src/contracts').KanbanItemOperationRequest)=>{if(request.action!=='cancel')await held;return {revision:'r',operations:[]};});
+ const wrapped=withBoardDeletion({...f.service,runItemOperation},{} as never);
+ const original=wrapped.runItemOperation('board',{itemId:'task',operationId:'start',action:'build',expectedRevision:'r'});
+ try {await vi.waitFor(()=>expect(runItemOperation).toHaveBeenCalledOnce());
+  const cancel=wrapped.runItemOperation('board',{itemId:'task',operationId:'stop',action:'cancel',expectedRevision:'r',cancel:{runId:'start'}});
+  await vi.waitFor(()=>expect(runItemOperation).toHaveBeenCalledTimes(2));await cancel;
+ } finally {release();await original;}
 });

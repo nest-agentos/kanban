@@ -91,6 +91,10 @@ export function withBoardDeletion<T extends KanbanClient & {quiesce?(): Promise<
         if (stopping) return Promise.reject(new KanbanError('SERVICE_STOPPING'));
         const next = barrier.then(run); pending.add(next); void next.finally(() => pending.delete(next)).catch(() => {}); return next;
     };
+    const admitControl = <R>(run: () => Promise<R>): Promise<R> => {
+        if(stopping)return Promise.reject(new KanbanError('SERVICE_STOPPING'));
+        const next=Promise.resolve().then(run);pending.add(next);void next.finally(()=>pending.delete(next)).catch(()=>{});return next;
+    };
     const exclusive = <R>(run: () => Promise<R>): Promise<R> => {
         if (stopping) return Promise.reject(new KanbanError('SERVICE_STOPPING'));
         const admitted = [...pending], next = barrier.then(async () => {await Promise.allSettled(admitted); return run();});
@@ -107,7 +111,7 @@ export function withBoardDeletion<T extends KanbanClient & {quiesce?(): Promise<
         ...(service.fixTask ? {fixTask: (id: string, request: Parameters<NonNullable<T['fixTask']>>[1]) => admit(() => active(id, () => itemMutation(id,request.itemId,() => service.fixTask!(id, request))))} : {}),
         ...(service.replyTask ? {replyTask: (id: string, request: Parameters<NonNullable<T['replyTask']>>[1]) => admit(() => active(id, () => itemMutation(id,request.itemId,() => service.replyTask!(id, request))))} : {}),
         ...(service.runRecord ? {runRecord: (id: string, request: Parameters<NonNullable<T['runRecord']>>[1]) => admit(() => active(id, () => service.runRecord!(id, request)))} : {}),
-        ...(service.runItemOperation ? {runItemOperation: (id: string, request: Parameters<NonNullable<T['runItemOperation']>>[1]) => admit(() => active(id, () => itemMutation(id,request.itemId,() => service.runItemOperation!(id, request))))} : {}),
+        ...(service.runItemOperation ? {runItemOperation: (id: string, request: Parameters<NonNullable<T['runItemOperation']>>[1]) => request.action==='cancel'?admitControl(()=>active(id,()=>service.runItemOperation!(id,request))):admit(() => active(id, () => itemMutation(id,request.itemId,() => service.runItemOperation!(id, request))))} : {}),
         ...(service.bindItemOperation ? {bindItemOperation: (id: string, request: Parameters<NonNullable<T['bindItemOperation']>>[1]) => admit(() => active(id, () => itemMutation(id,request.itemId,() => service.bindItemOperation!(id, request))))} : {}),
         ...(service.cleanupWorkResource ? {cleanupWorkResource: (id: string, request: Parameters<NonNullable<T['cleanupWorkResource']>>[1]) => admit(() => service.cleanupWorkResource!(id, request))} : {}),
     };
