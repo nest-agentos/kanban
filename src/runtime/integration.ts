@@ -37,3 +37,8 @@ export {createRecordConversations} from './record-conversations';
 export type {SavedRecordConversation,RecordConversationPort,KanbanRecordConversations} from './record-conversations';
 
 export {createTaskRestart} from './task-restart';
+export {validateCoordinationResult,compileCoordinationProposal,itemWithinRoots,itemsWithinRoots,type CoordinationResult,type CoordinationProposalPolicy} from './coordination-rules';
+export {commitCollaboration,resumeCollaborationRepairs,type RepairResumption,type CollaborationCommit} from './collaboration-commit';
+export {reserveJournalResource,releaseJournalResource} from './resource-reservation';
+export {confirmRecordExecution,advanceRecordCancellation} from './record-confirmation';
+export {findRetainedExecution,validateDecisionSource,taskRecoveryEligibility,activeRecoveryIssueIds,type KanbanRecoveryEvidence} from './task-recovery-policy';

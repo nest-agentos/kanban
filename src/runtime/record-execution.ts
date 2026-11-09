@@ -10,6 +10,7 @@ import {requireValue} from '../rules';
 import {safeCode} from './diagnostics';
 
 interface SavedRun extends KanbanRecordExecution {
+    settings?:Record<string,string>;
     previousRunId?:string;
     placement?: KanbanRecordRunRequest['placement']; requestRevision?: number; taskKind?: string; parentKind?: string;
     sourceBoardId: string; record: KanbanProjectRecord; automation: NonNullable<KanbanBoard['automation']>}
@@ -179,10 +180,10 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
             await once(options, run, 'close-root'+(board.items.find(item=>item.id===run.rootItemId)?.executionEpoch??''), {type: 'close-plan', itemId: run.rootItemId, resultRef: 'kanban-run:' + run.id});
         }
         if(state==='completed'&&run.rootItemId&&!run.itemIds?.includes(run.rootItemId)&&options.deliveryReady&&!await options.deliveryReady(run.boardId,(await options.service.item(run.boardId,run.rootItemId)).item))state='review';
-        const code = state === 'failed' ? 'DECISION_TASK_CANCELLED' : state === 'blocked' && items.some(item=>projectKanbanTask(item).phase==='waiting-input') ? 'DECISION_INPUT_REQUIRED' : undefined;
+        const code = state === 'failed' ? 'DECISION_TASK_CANCELLED' : state === 'blocked' ? blockedCode(items) : undefined;
         if (run.state===state&&run.code===code&&run.stage===stage) return view(run);
         const updated = await save(options, {...run,state,code,stage,updatedAt: Date.now()});
-        options.log({operationId: run.id, boardId: run.sourceBoardId, stage: 'record.run', result: state === 'failed' ? 'failure' : 'success', code: updated.code, durationMs: Date.now() - started});
+        options.log({operationId: run.id, boardId: run.sourceBoardId, stage: 'record.run', result: ['failed','blocked','unknown'].includes(state) ? 'failure' : 'success', code: updated.code, durationMs: Date.now() - started});
         return view(updated);
     } catch (error) {
         const code = safeCode(error, 'RECORD_EXECUTION_FAILED');
@@ -209,13 +210,19 @@ function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: Kanban
     return {id, sourceBoardId: board.id, recordId: record.id, recordRevision: record.revision,
         boardId: placement === 'new-board' ? 'run-' + id : board.id, placement, taskKind: parent.id, parentKind: parent.id,
         rootItemId: refs.length === 1 ? itemIds[0] : undefined, itemIds,
-        state:'preparing',stage:'planning',createdAt: Date.now(), updatedAt: Date.now(), record, automation: structuredClone(board.automation!)};
+        state:'preparing',stage:'planning',createdAt: Date.now(), updatedAt: Date.now(), record, settings:structuredClone(board.settings), automation: structuredClone(board.automation!)};
 }
 function runState(items: KanbanItem[]): KanbanRecordExecution['state'] {
     if (items.some(item => item.status === 'cancelled')) return 'failed';
     if (items.length && items.every(item => item.status === 'completed')) return 'completed';
-    if (items.some(item => item.blocked || projectKanbanTask(item).phase === 'waiting-input')) return 'blocked';
+    if (items.some(item => item.blocked || ['waiting-input','error','unknown'].includes(projectKanbanTask(item).phase))) return 'blocked';
     return items.length && items.every(item => ['completed', 'review'].includes(item.status)) ? 'review' : 'running';
+}
+function blockedCode(items:KanbanItem[]):string|undefined {
+    const tasks=items.map(item=>projectKanbanTask(item));
+    if(tasks.some(task=>task.phase==='waiting-input'))return 'DECISION_INPUT_REQUIRED';
+    const failed=tasks.find(task=>task.phase==='error'||task.phase==='unknown');
+    return failed?failed.reason&&/^[A-Z][A-Z0-9_]{0,79}$/.test(failed.reason)?failed.reason:'DECISION_PLANNING_FAILED':undefined;
 }
 async function materialize(options: Options, run: SavedRun): Promise<void> {
     if (run.boardId !== run.sourceBoardId) {
@@ -237,6 +244,7 @@ async function materialize(options: Options, run: SavedRun): Promise<void> {
             ...(run.taskKind ? {planning: {kind: run.taskKind, priority: 2, dependencies: [], references: [], ...(group ? {parentId: run.rootItemId} : {})}} : {})});
     }
     await markPlanning(options,run);
+    if(run.boardId!==run.sourceBoardId && run.settings)await once(options,run,'settings',{type:'configure-board-settings',settings:run.settings});
     if (run.boardId !== run.sourceBoardId) await once(options, run, 'automation', {type: 'configure-automation', settings: {...run.automation, enabled: true, autoAccept: false}});
     if(run.boardId===run.sourceBoardId)for(const itemId of run.rootItemId?[run.rootItemId]:run.itemIds??[])await once(options,run,'link-'+itemId,{type:'link-record',recordId:run.recordId,itemId});
 }

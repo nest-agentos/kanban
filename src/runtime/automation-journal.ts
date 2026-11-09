@@ -56,6 +56,20 @@ export class KanbanAutomationJournal {
         const pending = this.commit(key, change).finally(() => {this.writes.delete(pending);});
         this.writes.add(pending); return pending;
     }
+    /** Commit related checkpoints together; callbacks are synchronous and cannot perform I/O. */
+    updateMany(changes:Array<{key:string;change(previous:unknown):unknown}>):Promise<void> {
+        requireValue(changes.length<=128&&new Set(changes.map(row=>row.key)).size===changes.length,'INVALID_JOURNAL_BATCH');
+        const pending=this.fs.meta.seq!.transaction!(async tx=>{
+            for(const {key,change}of changes){
+                const raw=await tx.getEntry(this.path,key),previous=raw?JSON.parse(raw):undefined,value=change(previous),encoded=JSON.stringify(value);
+                requireValue(encoded!==undefined,'INVALID_JOURNAL_VALUE');
+                if(raw===encoded)continue;
+                await updateBoardIndex(tx,key,boardIndexKeys(key,previous),value,this.indexPath);
+                await tx.setEntry(this.path,key,encoded);
+            }
+        }).finally(()=>{this.writes.delete(pending);});
+        this.writes.add(pending);return pending;
+    }
     async drain(): Promise<void> {await Promise.allSettled([...this.writes]);}
     claim(key: string): Promise<boolean> {
         const pending = this.fs.meta.seq!.transaction!(async tx => {

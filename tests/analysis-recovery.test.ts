@@ -1,7 +1,7 @@
 import {afterEach, expect, it, vi} from 'vitest';
 import {createVFS, MemoryBackend} from '@nestos/vfs-core';
 import {KanbanAutomationJournal} from '../src/runtime/automation-journal';
-import {analyzeItem} from '../src/runtime/analysis';
+import {analyzeItem,analysisStatus} from '../src/runtime/analysis';
 const closes: Array<() => Promise<void>> = [];
 afterEach(async () => {for (const close of closes.splice(0)) await close();});
 async function fixture() {
@@ -24,4 +24,12 @@ it('never resubmits an unknown admission when later observations recover', async
     const f = await fixture(); f.port.submit.mockRejectedValueOnce(Object.assign(new Error('response lost'), {code: 'EIO'}));
     await f.run(); await f.run(); await f.run();
     expect(f.port.submit).toHaveBeenCalledOnce(); expect(f.port.prepare).toHaveBeenCalledOnce(); expect(f.port.inspect).toHaveBeenCalledTimes(3);
+});
+it('preserves the admitted planning identity through a recoverable error and resolution',async()=>{
+ const f=await fixture();f.port.inspect.mockResolvedValue({state:'blocked',code:'PLANNING_ERROR_REPORTED'} as never);
+ await f.run();expect(await analysisStatus(f.journal,'board','task')).toMatchObject({state:'blocked',code:'PLANNING_ERROR_REPORTED'});
+ await f.run();expect(await analysisStatus(f.journal,'board','task')).toMatchObject({state:'blocked'});
+ f.port.inspect.mockResolvedValue({state:'running'});
+ await f.run();expect(await analysisStatus(f.journal,'board','task')).toMatchObject({state:'analyzing'});
+ expect(f.port.prepare).toHaveBeenCalledOnce();expect(f.port.submit).toHaveBeenCalledOnce();
 });

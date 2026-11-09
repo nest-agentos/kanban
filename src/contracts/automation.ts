@@ -16,7 +16,7 @@ export interface KanbanAutomationCatalog {
     targets: KanbanAutomationTarget[]; coordinator: KanbanPrincipal; worker: KanbanPrincipal;
 }
 export interface KanbanAnalysisStatus {
-    itemId: string; state: 'analyzing' | 'ready' | 'clarification' | 'failed' | 'unknown';
+    itemId: string; handler?:'self'|'parent'; state: 'analyzing' | 'ready' | 'clarification' | 'blocked' | 'failed' | 'unknown';
     reason?: string; code?: string; dependencies?: string[];
     recovery?: {attempt: number; limit: number; retryAt: number; code: string};
 }

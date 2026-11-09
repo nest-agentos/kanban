@@ -1,7 +1,7 @@
 import {FSError, type IFileSystem} from '@nestos/vfs-core';
 import {sha256HexSync} from './utils';
 export interface WorkMessageScope {runId:string;itemId:string;attemptId:string}
-export interface WorkMessage extends WorkMessageScope {schema:'work-message/1'|'work-message/2';id:string;type:'progress'|'clarification'|'error'|'result'|'resolved';content:string;replyTo?:string}
+export interface WorkMessage extends WorkMessageScope {schema:'work-message/1'|'work-message/2';id:string;type:'progress'|'clarification'|'error'|'result'|'resolved';content:string;replyTo?:string;handler?:'self'|'parent'}
 interface Journal {get<T>(key:string):Promise<T|undefined>;update<T>(key:string,change:(old:T|undefined)=>T):Promise<T>}
 interface Receipt {digest:string;message:WorkMessage;delivered:boolean}
 /** Directory events are wakeups; immutable files plus durable receipts are authoritative. */
@@ -53,11 +53,12 @@ export function parseWorkMessage(text:string,scope:WorkMessageScope,decode:(text
         if(Object.hasOwn(value,'content'))throw protocolError('WORK_MESSAGE_FIELDS_INVALID','Workspace message must not contain both body and content');
         value={...value,content:(value as WorkMessage&{body:string}).body};
     }
-    if(Object.keys(value).some(key=>!['schema','runId','itemId','attemptId','id','type','content','body','replyTo'].includes(key)))
+    if(Object.keys(value).some(key=>!['schema','runId','itemId','attemptId','id','type','content','body','replyTo','handler'].includes(key)))
         throw protocolError('WORK_MESSAGE_FIELDS_INVALID','Workspace message contains undeclared fields');
     validateEnvelope(value,scope);return value;
 }
 function validateEnvelope(value:WorkMessage,scope:WorkMessageScope):void {
+    if(value.handler!==undefined&&(!['self','parent'].includes(value.handler)||!['error','clarification'].includes(value.type)))throw protocolError('WORK_MESSAGE_HANDLER_INVALID','Workspace issue handler is invalid');
     if(!['work-message/1','work-message/2'].includes(value.schema))throw protocolError('WORK_MESSAGE_SCHEMA_INVALID','Workspace message schema is unsupported');
     if(!['progress','clarification','error','result',...(value.schema==='work-message/2'?['resolved']:[])].includes(value.type))
         throw protocolError('WORK_MESSAGE_TYPE_INVALID','Workspace message schema does not permit this type');

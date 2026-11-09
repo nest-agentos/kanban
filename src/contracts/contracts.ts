@@ -40,6 +40,7 @@ export interface KanbanItem {
     planning?: KanbanPlanning; closedAt?: number; restoredAt?: number; closureReason?: string;
 }
 export interface KanbanBoard {
+    settings?:Record<string,string>;
     lifecycle?: {operationId: string; intent: 'cancel' | 'delete'; mode: 'drain' | 'cancel'; phase: 'waiting' | 'ready' | 'blocked'; code?: string};
     /** Logical deletion retains audit, Session and resource associations. */
     deletedAt?: number;
@@ -70,6 +71,7 @@ export type KanbanCommand = import('./task-restart').RepairDependencyCommand | i
     | {type: 'delete-board'}
     | {type: 'set-board-control'; mode?: 'automatic' | 'manual'; paused?: boolean}
     | {type: 'edit-item'; itemId: string; title: string; responsibility: string; acceptance: string}
+    | {type:'configure-board-settings';settings:Record<string,string>}
     | {type: 'configure-automation'; settings: import('./automation').KanbanAutomationSettings}
     | {type: 'review-amendment'; itemId: string; amendmentId: string; accept: boolean; reason?: string}
     | {type: 'append-record'; record: KanbanRecordInput}

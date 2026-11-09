@@ -22,7 +22,7 @@ it('cancels the original dispatch through a control receipt, deletes logically a
     expect((await f.service.item('b','t')).task?.phase).toBe('cancelling');
     await f.run({type:'control-receipt',itemId:'t',controlId:'cancel',state:'accepted'});
     expect((await f.service.item('b','t')).item.owner).toBeDefined();
-    await expect(f.run({type:'delete-item',itemId:'t'})).rejects.toMatchObject({code:'EXECUTION_UNSETTLED'});
+    await expect(f.run({type:'delete-item',itemId:'t'})).rejects.toMatchObject({code:'TASK_CLEANUP_EXECUTION_UNSETTLED'});
     await f.run({type:'control-receipt',itemId:'t',controlId:'cancel',state:'cancelled'});
     expect((await f.service.item('b','t')).item).toMatchObject({status:'cancelled',control:{state:'cancelled'}});
     expect((await f.service.item('b','t')).item.owner).toBeUndefined();

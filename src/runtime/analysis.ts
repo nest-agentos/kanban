@@ -7,7 +7,7 @@ import type {KanbanAutomationJournal} from './automation-journal';
 import type {AnalysisJournalEntry} from './analysis-history';
 import {safeCode} from './diagnostics';
 export interface AnalysisResult {ready:boolean;dependencies:string[];reason:string;estimate?:KanbanEstimate;subtasks?:AnalysisSubtask[]}
-export interface KanbanAnalysisObservation {state:'running'|'unknown'|'clarification'|'succeeded'|'failed'|'cancelled';output?:unknown;code?:string;reason?:string}
+export interface KanbanAnalysisObservation {state:'running'|'unknown'|'clarification'|'blocked'|'succeeded'|'failed'|'cancelled';output?:unknown;code?:string;reason?:string;handler?:'self'|'parent'}
 export interface KanbanAnalysisPort<Target = KanbanExternalReference, Input = unknown> {
     prepare(input:{id:string;board:KanbanBoard;item:KanbanItem;target:Target}):Promise<Input>;
     prepareExecution(id:string,input:Input):Promise<void>;
@@ -52,7 +52,7 @@ export async function analyzeItem<Target, Input>(options: KanbanAnalysisOptions<
         if (currentItem.control?.action === 'cancel' || ['completed','cancelled'].includes(currentItem.status)) return;
         if (JSON.stringify(currentItem.analysis) !== JSON.stringify(status)) {changed=true;await service.execute(board.id, {operationId:'analysis-status:'+job.id+':'+currentBoard.revision+':'+sha256HexSync(JSON.stringify(status)), expectedRevision:currentBoard.revision, command:{type:'report-analysis',itemId:item.id,operationId:job.id,status}});}
     }
-    if(changed)options.log({operationId: job.id, stage: 'automation.analysis', result: status?.state === 'failed' || status?.state === 'unknown' ? 'failure' : 'success', code: status?.code, durationMs: Date.now() - started});
+    if(changed)options.log({operationId: job.id, stage: 'automation.analysis', result: status?.state === 'failed' || status?.state === 'unknown' || status?.state === 'blocked' ? 'failure' : 'success', code: status?.code, durationMs: Date.now() - started});
 }
 async function finalizeAnalysis<Target, Input>(options: KanbanAnalysisOptions<Target, Input>, boardId: string, item: KanbanItem, key: string, job: AnalysisJob<Input>): Promise<AnalysisJob<Input>> {
     if (!options.active() || job.phase !== 'settled' || !options.onSettled) return job;
@@ -96,8 +96,9 @@ async function submitAnalysis<Target,Input>(options:KanbanAnalysisOptions<Target
 }
 async function observeAnalysis<Target,Input>(options:KanbanAnalysisOptions<Target,Input>,key:string,job:AnalysisJob<Input>):Promise<AnalysisJob<Input>> {
     const observation=await options.port.inspect(job.id,job.input);
-    if(!options.active()||observation.state==='running')return job;
-    if(observation.state==='clarification')return options.journal.update<AnalysisJob<Input>>(key,current=>({...current!,phase:'waiting-input',status:{itemId:job.status.itemId,state:'clarification',reason:observation.reason??'PLANNING_INPUT_REQUIRED',code:observation.code}}));
+    if(!options.active())return job;
+    if(observation.state==='running')return ['clarification','blocked'].includes(job.status.state)?options.journal.update<AnalysisJob<Input>>(key,current=>({...current!,status:{itemId:job.status.itemId,state:'analyzing'}})):job;
+    if(observation.state==='clarification'||observation.state==='blocked'){const state=observation.state;return options.journal.update<AnalysisJob<Input>>(key,current=>({...current!,phase:'waiting-input',status:{itemId:job.status.itemId,state,reason:observation.reason??'PLANNING_INPUT_REQUIRED',code:observation.code,...(observation.handler?{handler:observation.handler}:{})}}));}
     if(observation.state==='unknown')return options.journal.update<AnalysisJob<Input>>(key,current=>current!.phase==='submitting'?{...current!,status:{...job.status,state:'unknown',code:observation.code??'AUTOMATION_ADMISSION_UNKNOWN'}}:current!);
     if(observation.state==='failed'||observation.state==='cancelled')return saveFailure(options,key,job,observation.code??'AUTOMATION_ANALYSIS_FAILED',observation.state);
     try {

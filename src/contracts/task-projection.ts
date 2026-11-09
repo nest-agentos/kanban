@@ -60,6 +60,7 @@ function waitingFact(item:Item,now:number,all:Related[],workflow?:KanbanWorkflow
     return {phase:taskDue(item,now)?'queued':'waiting-start',reason:item.launch?.mode==='manual'?'MANUAL_START_REQUIRED':taskDue(item,now)?'ADMISSION_PENDING':'START_AT_PENDING',actions:['run','edit','pause','cancel']};
 }
 function analysisFact(item:Item):Fact|undefined {
+    if(item.analysis?.state==='blocked')return {phase:'error',reason:item.analysis.code,actions:['resolve']};
     if(item.analysis?.state==='clarification')return {phase:'waiting-input',reason:item.analysis.reason};
     if(item.analysis?.state==='analyzing')return {phase:'analyzing'};
 }

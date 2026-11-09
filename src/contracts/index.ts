@@ -32,7 +32,7 @@ export {projectKanbanTask,taskStartAt,taskDue,taskEditing,TASK_START_DELAY_MS} f
 export {kanbanVerificationOptions, kanbanVerificationMode} from './verification';
 export type {KanbanVerificationMode, KanbanVerificationOptions} from './verification';
 
-export type {KanbanRecordConversation} from './record-conversation';
+export type {KanbanRecordConversation,KanbanRecordConversationRequest} from './record-conversation';
 
 export type {KanbanTaskRecovery,KanbanTaskRecoveryRequest,KanbanTaskRecoveryResult} from './recovery';
 
@@ -44,3 +44,5 @@ export {kanbanTaskType} from './task-type';
 export type {KanbanTaskType} from './task-type';
 
 export type {KanbanBoardWorkResource,KanbanBoardWorkResourceQuery,KanbanBoardWorkResourcePage,KanbanWorkResourceTask} from './work-resources';
+
+export type {KanbanBoardSetting,KanbanBoardSettingsCatalog} from './settings';

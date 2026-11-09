@@ -1,7 +1,8 @@
+import {commitCollaboration} from './collaboration-commit';
 import type {KanbanClient,KanbanBoard,KanbanItem,KanbanDispatch,KanbanProjectRecord} from '../contracts';
 import type {KanbanAutomationJournal} from './automation-journal';
 import type {SavedFix,Snapshot} from './task-fix-ports';
-import {journalCommand} from './journal-command';
+import type {KanbanCommand} from '../contracts';
 import {analysisHistory,type AnalysisJournalEntry} from './analysis-history';
 import {randomUUID,sha256HexSync} from '../utils';
 import {requireValue} from '../rules';
@@ -41,18 +42,13 @@ export class KanbanCollaboration {
     }
     async acceptFix(id:string,policy:{kind:string;inheritSystems:string[]},deliver:(fix:SavedFix)=>Promise<void>):Promise<void> {
         const fix=await this.fix(id),snapshot=fix.snapshot;requireValue(snapshot,'FIX_PROPOSAL_REQUIRED');
+        if(fix.accepted)return;
         requireValue(!['cancelling','cancelled'].includes(fix.state),'FIX_INPUT_CLOSED');
         const board=await this.service.read(fix.boardId);
         requireValue(!!snapshot.definition.children||!board.workTypes?.length||board.workTypes.some(type=>type.id===policy.kind&&type.executable),'FIX_WORK_TYPE_REQUIRED');
         await this.publishFix(fix);
-        if(snapshot.definition.repair)await journalCommand(this.journal,this.service,fix.boardId,'fix-create:'+fix.id,{type:'insert-repair-dependency',itemId:snapshot.definition.repair.itemId,expectedItemRevision:snapshot.definition.repair.revision,plan:{schema:'kanban.plan/1',id:snapshot.operationId,revision:1,sealed:true,mode:'append',rootItemId:fix.itemId,items:snapshot.definition.children!}});
-        else if(snapshot.definition.children)await journalCommand(this.journal,this.service,fix.boardId,'fix-create:'+fix.id,{type:'publish-plan',plan:{
-            schema:'kanban.plan/1',id:snapshot.operationId,revision:1,sealed:true,mode:'append',rootItemId:fix.itemId,items:snapshot.definition.children}});
-        else await journalCommand(this.journal,this.service,fix.boardId,'fix-create:'+fix.id,{type:'create-item',item:{id:snapshot.operationId,
-            title:snapshot.definition.title,responsibility:snapshot.definition.responsibility,acceptance:snapshot.definition.acceptance,
-            externalRefs:fix.item.externalRefs?.filter(ref=>policy.inheritSystems.includes(ref.system))},
-            planning:{kind:policy.kind,priority:fix.item.planning?.priority??2,dependencies:snapshot.definition.dependencies,references:[]}});
-        await deliver(fix);
+        const command=fixCommand(fix,policy);
+        await commitCollaboration(this.service,this.journal,{id:fix.id,boardId:fix.boardId,itemId:fix.itemId,commandKey:'fix-create:'+fix.id,command,children:snapshot.definition.children,repairItemId:snapshot.definition.repair?.itemId},()=>deliver(fix));
         await this.journal.update<SavedFix>('fix:'+id,old=>({...old!,accepted:true,state:'accepted',createdItemId:snapshot.definition.children?fix.itemId:snapshot.operationId}));
     }
     private async publishFix(fix:SavedFix):Promise<void> {
@@ -75,4 +71,12 @@ export async function collaborationRelations<Input=unknown>(journal:KanbanAutoma
     const activeReplies:Array<{operationId:string;executionId:string}>=[];
     for(const {value} of replies)if(!await journal.get('task-reply-cancelled:'+value.request.operationId))activeReplies.push({operationId:value.request.operationId,executionId:value.sessionId});
     return {planning:analyses.map(job=>({id:job.id,request:job.input})),replies:activeReplies};
+}
+
+function fixCommand(fix:SavedFix,policy:{kind:string;inheritSystems:string[]}):KanbanCommand{
+    const snapshot=fix.snapshot!,definition=snapshot.definition;
+    const plan={schema:'kanban.plan/1' as const,id:snapshot.operationId,revision:1,sealed:true,mode:'append' as const,rootItemId:fix.itemId,items:definition.children!};
+    if(definition.repair)return {type:'insert-repair-dependency',itemId:definition.repair.itemId,expectedItemRevision:definition.repair.revision,plan};
+    if(definition.children)return {type:'publish-plan',plan};
+    return {type:'create-item',item:{id:snapshot.operationId,title:definition.title,responsibility:definition.responsibility,acceptance:definition.acceptance,externalRefs:fix.item.externalRefs?.filter(ref=>policy.inheritSystems.includes(ref.system))},planning:{kind:policy.kind,priority:fix.item.planning?.priority??2,dependencies:definition.dependencies,references:[]}};
 }

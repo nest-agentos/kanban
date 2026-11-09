@@ -1,19 +1,19 @@
-import type {KanbanClient,KanbanRecordConversation} from '../contracts';
+import type {KanbanClient,KanbanRecordConversation,KanbanRecordConversationRequest} from '../contracts';
 import type {KanbanAutomationJournal} from './automation-journal';
 import {requireValue} from '../rules';
 import {safeCode} from './diagnostics';
 export interface SavedRecordConversation extends KanbanRecordConversation {binding?:unknown;submitted?:boolean;phase:'prepared'|'submitting'}
 export interface RecordConversationPort {
-    prepare(id:string,boardId:string):Promise<unknown>;
+    prepare(id:string,boardId:string,resources?:KanbanRecordConversation['resources'],primaryResource?:KanbanRecordConversation['primaryResource']):Promise<unknown>;
     start(binding:unknown,first:boolean,active:()=>boolean):Promise<{sessionId:string;resourceId:string}>;
-    advance(conversation:SavedRecordConversation,active:()=>boolean):Promise<Partial<Pick<SavedRecordConversation,'recordId'|'state'|'code'>>>;
+    advance(conversation:SavedRecordConversation,active:()=>boolean):Promise<Partial<Pick<SavedRecordConversation,'recordId'|'state'|'code'|'pendingReports'|'purpose'>>>;
     watch(conversation:SavedRecordConversation,wake:()=>void):Promise<()=>Promise<void>>;
     close():Promise<void>;
 }
 interface Options {service:KanbanClient;journal:KanbanAutomationJournal;port:RecordConversationPort;log(event:{operationId:string;boardId:string;stage:string;result:'success'|'failure';code?:string;durationMs:number}):void}
 const key=(id:string)=>'record-conversation:'+id;
 export interface KanbanRecordConversations {
-    startRecordConversation(board:string,request:{operationId:string}):Promise<KanbanRecordConversation>;
+    startRecordConversation(board:string,request:KanbanRecordConversationRequest):Promise<KanbanRecordConversation>;
     recordConversations(board:string):Promise<KanbanRecordConversation[]>;
     scan():Promise<void>;quiesce():Promise<void>;
 }
@@ -46,12 +46,19 @@ class RecordConversations {
         const opened=this.options.port.watch(saved,()=>{if(this.active())void this.serial(saved.id,()=>this.advance(saved.id)).catch(()=>{});});this.watches.set(saved.id,opened);
         try{await opened;}catch(error){this.watches.delete(saved.id);throw error;}
     }
-    startRecordConversation=(boardId:string,request:{operationId:string}):Promise<KanbanRecordConversation>=>this.serial(request.operationId,()=>this.start(boardId,request.operationId));
-    private async start(boardId:string,id:string):Promise<KanbanRecordConversation> {
+    startRecordConversation=(boardId:string,request:KanbanRecordConversationRequest):Promise<KanbanRecordConversation>=>this.serial(request.operationId,()=>this.start(boardId,request));
+    private async start(boardId:string,request:KanbanRecordConversationRequest):Promise<KanbanRecordConversation> {
+        const {operationId:id}=request;
         requireValue(/^[a-zA-Z0-9_-]{1,128}$/.test(id),'INVALID_OPERATION_ID');await this.options.service.read(boardId);
-        let saved=await this.options.journal.update<SavedRecordConversation>(key(id),old=>{requireValue(!old||old.boardId===boardId,'IDEMPOTENCY_CONFLICT');return old??{id,boardId,state:'preparing',phase:'prepared',createdAt:Date.now()};});
+        let saved=await this.options.journal.update<SavedRecordConversation>(key(id),old=>{
+            requireValue(!old||old.boardId===boardId,'IDEMPOTENCY_CONFLICT');
+            const select=old&&old.resources===undefined&&!old.binding&&old.phase==='prepared'&&request.resources!==undefined;
+            requireValue(select||!old||request.resources===undefined||JSON.stringify(old.resources)===JSON.stringify(request.resources),'IDEMPOTENCY_CONFLICT');
+            requireValue(select||!old||request.primaryResource===undefined||JSON.stringify(old.primaryResource)===JSON.stringify(request.primaryResource),'IDEMPOTENCY_CONFLICT');
+            if(select)return {...old,resources:structuredClone(request.resources!),primaryResource:request.primaryResource?structuredClone(request.primaryResource):undefined};
+            return old??{id,boardId,state:'preparing',phase:'prepared',createdAt:Date.now(),...(request.resources?{resources:structuredClone(request.resources)}:{}),...(request.primaryResource?{primaryResource:structuredClone(request.primaryResource)}:{})};});
         try {
-            if(!saved.binding){const binding=await this.options.port.prepare(id,boardId);saved=await this.options.journal.update<SavedRecordConversation>(key(id),old=>({...old!,binding:old!.binding??binding}));}
+            if(!saved.binding){const binding=await this.options.port.prepare(id,boardId,saved.resources,saved.primaryResource);saved=await this.options.journal.update<SavedRecordConversation>(key(id),old=>({...old!,binding:old!.binding??binding}));}
             requireValue(this.active(),'SERVICE_STOPPING');
             if(!saved.sessionId){const result=await this.options.port.start(saved.binding,await this.options.journal.claim(key(id)),this.active);saved=await this.options.journal.update<SavedRecordConversation>(key(id),old=>({...old!,...result,state:'clarifying',code:undefined}));}
             requireValue(this.active(),'SERVICE_STOPPING');await this.watch(saved);await this.advance(id);
@@ -68,5 +75,5 @@ class RecordConversations {
     quiesce=async()=>{this.stopped=true;await Promise.allSettled([...this.pending.values()]);await Promise.allSettled([...this.watches.values()].map(async opened=>(await opened)()));await this.options.port.close();};
 }
 function publicView(value:SavedRecordConversation):KanbanRecordConversation {
-    const {binding:_binding,submitted:_submitted,phase:_phase,...view}=value;return view;
+    const {binding:_binding,submitted:_submitted,phase:_phase,...view}=value;return {...view,scopeSelectionRequired:!value.resources&&!value.binding&&value.phase==='prepared'};
 }

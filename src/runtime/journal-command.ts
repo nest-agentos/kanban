@@ -17,7 +17,7 @@ export async function journalCommand(journal: KanbanAutomationJournal, service: 
         if (error instanceof KanbanError && error.code === 'REVISION_CONFLICT') {
             const latest = await service.read(boardId);
             await journal.update<Entry>(key, old => old?.request.operationId !== entry.request.operationId || old.done ? old! : {
-                request: {...entry.request, operationId: randomUUID(), expectedRevision: latest.revision}});
+                ...old, request: {...entry.request, operationId: randomUUID(), expectedRevision: latest.revision}});
         }
         throw error;
     }

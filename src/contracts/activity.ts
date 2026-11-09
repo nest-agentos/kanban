@@ -35,6 +35,7 @@ export interface KanbanExecutionSessionDetail {
 
 /** Transport-facing service with optional authorized resource activity. */
 export interface KanbanClient extends KanbanService {
+    boardSettings?(boardId:string):Promise<import('./settings').KanbanBoardSettingsCatalog>;
     previewTaskRestart?(boardId:string,itemId:string):Promise<import('./task-restart').KanbanRestartPreview>;
     restartTask?(boardId:string,request:import('./task-restart').KanbanRestartRequest):Promise<import('./task-restart').KanbanRestartResult>;
     cancelBoard?(boardId: string, request: {operationId:string; expectedRevision:number}): Promise<void>;
@@ -56,7 +57,10 @@ export interface KanbanClient extends KanbanService {
     taskRecovery?(boardId:string,itemId:string):Promise<import('./recovery').KanbanTaskRecovery>;
     openTaskRecovery?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./recovery').KanbanTaskRecoveryResult>;
     recoverTask?(boardId:string,request:import('./recovery').KanbanTaskRecoveryRequest):Promise<import('./recovery').KanbanTaskRecoveryResult>;
-    startRecordConversation?(boardId:string,request:{operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
+    startRecordConversation?(boardId:string,request:import('./record-conversation').KanbanRecordConversationRequest):Promise<import('./record-conversation').KanbanRecordConversation>;
+    openTaskCommunication?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
+    openTaskCoordination?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
+    openRecordCoordination?(boardId:string,request:{recordId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
     recordConversations?(boardId:string):Promise<import('./record-conversation').KanbanRecordConversation[]>;
     recordResources?(): Promise<import('./record-execution').KanbanRecordResource[]>;
     runRecord?(boardId: string, request: import('./record-execution').KanbanRecordRunRequest): Promise<import('./record-execution').KanbanRecordExecution>;

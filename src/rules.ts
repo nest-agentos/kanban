@@ -1,3 +1,4 @@
+import {validateBoardSettings} from './board-settings';
 import type { KanbanActor, KanbanBoard, KanbanEstimate, KanbanItem, KanbanParticipant } from './contracts';
 import {validateConfiguration} from './configuration';
 import {sameOwner} from './identity';
@@ -18,7 +19,7 @@ export function validateBoard(board: KanbanBoard): void {
     requireValue(['system', 'project', 'collection'].includes(board.scope.kind), 'INVALID_SCOPE');
     if (board.scope.kind === 'project') identity(board.scope.projectId);
     if (board.scope.kind === 'collection') {identity(board.scope.namespace); identity(board.scope.id);}
-    validateConfiguration(board);
+    validateConfiguration(board);validateBoardSettings(board.settings);
     for (const agent of board.agents ?? []) { identity(agent.agentId); text(agent.responsibility); }
     requireValue(new Set((board.agents ?? []).map(a => a.agentId)).size === (board.agents ?? []).length, 'DUPLICATE_AGENT');
     const p = board.policy;

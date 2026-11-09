@@ -27,6 +27,6 @@ export interface KanbanProjectRecord {
     supersedes?: string; supersededBy?: string;
 }
 export type KanbanRecordInput = Pick<KanbanProjectRecord, 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs' | 'completion' | 'verificationLevel' | 'deliveryMode' | 'discussionSessionId'>;
-export type KanbanRecordSummary = Omit<KanbanProjectRecord, 'content' | 'rationale' | 'sources'> & {sessionIds:string[];attention?:'waiting-input'|'error'|'review'};
-export interface KanbanRecordQuery {includeDeleted?: boolean; includeArchived?:boolean; kind?: KanbanProjectRecord['kind']; itemId?: string; status?: KanbanProjectRecord['status']; limit?: number; cursor?: string}
+export type KanbanRecordSummary = Omit<KanbanProjectRecord, 'content' | 'rationale' | 'sources'> & {sessionIds:string[];attention?:'waiting-input'|'error'|'review';attentionCode?:string;attentionItemId?:string;attentionTasks?:Array<{itemId:string;title:string;phase:'waiting-input'|'error'|'unknown';purpose:'planning'|'execution';sessionId?:string}>};
+export interface KanbanRecordQuery {resource?:import('./configuration').KanbanExternalReference;includeDeleted?: boolean; includeArchived?:boolean; kind?: KanbanProjectRecord['kind']; itemId?: string; status?: KanbanProjectRecord['status']; limit?: number; cursor?: string}
 export interface KanbanRecordPage {revision: number; total: number; items: KanbanRecordSummary[]; nextCursor?: string}

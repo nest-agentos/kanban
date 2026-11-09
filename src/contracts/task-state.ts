@@ -11,7 +11,7 @@ export interface KanbanTaskControl {
     id: string; dispatchId?: string; action: 'pause' | 'resume' | 'cancel';
     state: 'requested' | 'accepted' | 'paused' | 'resumed' | 'cancelled' | 'failed' | 'unknown'; code?: string;
 }
-export interface KanbanTaskIssue {id: string; attemptId: string; type: 'clarification' | 'error'; resolvedBy?: string}
+export interface KanbanTaskIssue {id: string; attemptId: string; type: 'clarification' | 'error'; handler?:'self'|'parent'; resolvedBy?: string}
 export type KanbanTaskPhase = 'waiting-start' | 'analyzing' | 'queued' | 'waiting-dependency' | 'preparing' | 'running'
     | 'cancelling' | 'pausing' | 'paused' | 'resuming' | 'waiting-input' | 'error' | 'review' | 'completed' | 'cancelled' | 'unknown';
 export interface KanbanTaskProjection {

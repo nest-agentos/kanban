@@ -1,3 +1,4 @@
+import {configureBoardSettings} from './board-settings';
 import {prepareItemCleanup} from './item-cleanup';
 import {insertRepairDependency} from './repair-dependency';
 import {applyDependencyRestart} from './dependency-restart';
@@ -60,6 +61,7 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     else if (command.type === 'review-amendment') {if(command.accept)assertDefinitionEditable(itemFor(board,command.itemId),now);reviewAmendment(board, command, actor, now);}
     else if (planningCommand(command)) applyPlanningCommand(state, command, now, actor, workflowInternal);
     else if (command.type === 'create-item') createItem(state, command, actor, now, token);
+    else if(command.type==='configure-board-settings')configureBoardSettings(board,command.settings,actor);
     else if (command.type === 'configure-automation') configureAutomation(board, command.settings, actor);
     else if (command.type === 'register-session') {
         const item = command.itemId ? itemFor(board, command.itemId) : undefined;

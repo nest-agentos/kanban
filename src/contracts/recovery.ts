@@ -1,4 +1,5 @@
 export interface KanbanTaskRecovery {
+    state?:'blocked';pendingIssueIds?:string[];
     revision:string;itemId:string;code?:string;expectedVersion?:string;actualVersion?:string;
     sessionId?:string;resourceId?:string;canRetry:boolean;canSelectCurrentVersion:boolean;
     deliveryOperationId?:string;deliveryItemId?:string;blockingItems?:Array<{id:string;title:string}>;

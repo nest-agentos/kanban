@@ -115,7 +115,7 @@ it('serves summary indexes without loading or depending on external bodies', asy
     expect(view!.items.map(item=>item.title)).toEqual(['One','Two']);
     expect(view!.state.board.items).toEqual([]); expect(JSON.stringify(view)).not.toContain('xxxx');
     const service = createKanbanModule({store, actor:{kind:'human',id:'user'},authorize:async()=>{},log:()=>{}});
-    expect((await service.catalog())[0].items).toEqual([{id:'one',title:'One',number:1},{id:'two',title:'Two',number:2}]);
+    expect((await service.catalog())[0].items).toEqual([{id:'one',title:'One',number:1,taskType:'execution'},{id:'two',title:'Two',number:2,taskType:'execution'}]);
     expect(await service.events('b')).toEqual([]);
     await expect(store.read('b')).rejects.toMatchObject({code:'BODY_MISSING'});
 });

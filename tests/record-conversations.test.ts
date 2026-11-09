@@ -20,3 +20,24 @@ it('inspects the original unknown creation after restart rather than issuing ano
  const recovered=createRecordConversations(f.options);closes.push(()=>recovered.quiesce());await recovered.startRecordConversation('board',{operationId:'conversation'});
  expect(f.port.prepare).toHaveBeenCalledTimes(1);expect(f.port.start.mock.calls.map(call=>call[1])).toEqual([true,false]);
 });
+it('freezes both the primary resource and affected resources before preparation and preserves them on recovery',async()=>{
+ const f=await fixture(),runtime=createRecordConversations(f.options);closes.push(()=>runtime.quiesce());
+ const resources=[{system:'projects',id:'primary'},{system:'projects',id:'secondary'}],primaryResource=resources[0];
+ f.port.prepare.mockRejectedValueOnce(Object.assign(Error('Grant changed'),{code:'ECONFLICT'}));
+ await expect(runtime.startRecordConversation('board',{operationId:'scope',resources,primaryResource})).rejects.toMatchObject({code:'ECONFLICT'});
+ await expect(runtime.startRecordConversation('board',{operationId:'scope',resources,primaryResource:resources[1]})).rejects.toMatchObject({code:'IDEMPOTENCY_CONFLICT'});
+ const recovered=await runtime.startRecordConversation('board',{operationId:'scope'});
+ expect(recovered).toMatchObject({resources,primaryResource});
+ expect(f.port.prepare).toHaveBeenLastCalledWith('scope','board',resources,primaryResource);
+ expect(f.port.start).toHaveBeenCalledTimes(1);
+});
+it('lets an unsubmitted legacy creation select its missing scope once, but never changes an unknown submitted binding',async()=>{
+ const f=await fixture(),runtime=createRecordConversations(f.options);closes.push(()=>runtime.quiesce());
+ await f.journal.update('record-conversation:legacy',()=>({id:'legacy',boardId:'board',state:'error',code:'ECONFLICT',phase:'prepared',createdAt:1}));
+ expect((await runtime.recordConversations('board'))[0].scopeSelectionRequired).toBe(true);
+ const resources=[{system:'projects',id:'main'}];
+ expect(await runtime.startRecordConversation('board',{operationId:'legacy',resources,primaryResource:resources[0]})).toMatchObject({id:'legacy',resources,scopeSelectionRequired:false,sessionId:'native'});
+ await f.journal.update('record-conversation:unknown',()=>({id:'unknown',boardId:'board',state:'error',phase:'submitting',createdAt:1,binding:{private:'original'}}));
+ expect((await runtime.recordConversations('board')).find(row=>row.id==='unknown')?.scopeSelectionRequired).toBe(false);
+ await expect(runtime.startRecordConversation('board',{operationId:'unknown',resources,primaryResource:resources[0]})).rejects.toMatchObject({code:'IDEMPOTENCY_CONFLICT'});
+});
