@@ -166,3 +166,5 @@ const executionAdapter = {
 `KanbanOperationRecord` 与 `coordinateOperation` 提供自定义业务操作的统一持久协调；执行请求和结果保持不透明，业务插件负责结果约束。只有正式“未启动”回执允许重试提交，连接中断只核对原身份。
 
 A human may issue `restart-item` with a cancelled `itemId` and a distinct `replacementId` after control and execution settlement. It creates fresh manual work linked through `restartedFrom`, retaining the original task, sealed plans and execution history. Workspace cleanup and starting the successor are separate host operations.
+
+任务投影的 `phase=completed` 表示事项已结算。可选 `completion` 区分 `accepted`、`waived`、`mixed` 和 `children`，任务摘要透传已有 `acceptanceResult`；缺少历史验收依据时不补造通过记录。豁免与任务组结算不证明构建、部署、Git 合并或资源清理成功，各交付步骤仍需自己的回执。

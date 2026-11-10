@@ -6,6 +6,7 @@ export interface KanbanPlanning {
     priority: number; dependencies: string[]; references: string[];
 }
 export interface KanbanItemSummary {
+    acceptanceResult?: import('./operation-waiver').KanbanAcceptanceResult;
     taskType?:import('./task-type').KanbanTaskType;
     repairPending?:{itemId:string;previousDispatchId:string};
     executionEpoch?:string;restartPending?:{id:string;rootItemId:string};

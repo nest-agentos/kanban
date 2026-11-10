@@ -327,3 +327,20 @@ it('turns a confirmed coordination plan into execution children without dispatch
  expect(Object.values(workflow.plans).filter(plan=>plan.rootItemId===parent.id).flatMap(plan=>plan.itemIds)).toEqual([children.items[0].id]);
  expect(Object.values(workflow.dispatches).some(dispatch=>dispatch.itemId===parent.id)).toBe(false);
 });
+
+it('keeps accepted completion distinct from waived completion and never derives acceptance from Session state', () => {
+    const base = {id: 'done', status: 'completed', createdAt: 1, planning: {kind: 'task', priority: 1, dependencies: [], references: []}} as KanbanItem;
+    expect(projectKanbanTask(base)).toMatchObject({phase: 'completed'});
+    expect(projectKanbanTask({...base, acceptanceResult: {dispatchId: 'd', outcome: 'passed', at: 1, actor: {kind: 'human', id: 'admin'}}})).toMatchObject({phase: 'completed', completion: 'accepted'});
+    const waived = {...base, acceptanceResult: {dispatchId: 'd', outcome: 'waived' as const, at: 1, actor: {kind: 'human' as const, id: 'admin'}}};
+    expect(projectKanbanTask(waived)).toMatchObject({phase: 'completed', completion: 'waived'});
+    const group = {...base, id: 'group', planning: {...base.planning!, execution: 'children' as const}};
+    expect(projectKanbanTask(group, undefined, 1, [{...waived, planning: {...waived.planning!, parentId: 'group'}}] as never)).toMatchObject({phase: 'completed', completion: 'waived'});
+    expect(projectKanbanTask(group, undefined, 1, [{...waived, planning: {...waived.planning!, parentId: 'group'}}, {...base, id: 'passed', planning: {...base.planning!, parentId: 'group'}}] as never)).toMatchObject({phase: 'completed', completion: 'mixed'});
+});
+
+it.each(['failed', 'cancelled', 'unknown'] as const)('never projects a nonaccepted %s execution as completed', outcome => {
+    const item = {id: 'task', status: 'claimed', createdAt: 1} as KanbanItem;
+    const workflow = {dispatches: {d: {id: 'd', itemId: 'task', attempt: 1, outcome, code: 'ORIGINAL_FAILURE'}}} as never;
+    expect(projectKanbanTask(item, workflow).phase).toBe(outcome === 'unknown' ? 'unknown' : 'error');
+});

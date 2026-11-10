@@ -1,7 +1,7 @@
 import {taskCleanupAllowed} from './task-cleanup';
 import type {KanbanDispatch,KanbanItem,KanbanItemSummary,KanbanWorkflowState,KanbanTaskProjection,KanbanTaskPhase} from './index';
 
-type Item=Pick<KanbanItem,'repairPending'|'executionEpoch'|'restartPending'|'deletedAt'|'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>;
+type Item=Pick<KanbanItem,'acceptanceResult'|'repairPending'|'executionEpoch'|'restartPending'|'deletedAt'|'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>;
 type Related=Pick<KanbanItemSummary,'id'|'status'>&Partial<KanbanItemSummary>;
 type Fact={phase:KanbanTaskPhase;reason?:string;actions?:KanbanTaskProjection['actions']};
 export const TASK_START_DELAY_MS=300000;
@@ -20,7 +20,7 @@ export function projectKanbanTask(item:Item,workflow?:KanbanWorkflowState,now=Da
         if (!fact.actions?.includes('cancel')) extra.push('cancel');
         if (item.status !== 'review' && !fact.actions?.includes('pause') && !fact.actions?.includes('resume') && (dispatch?.controlCapabilities?.pause === 'boundary' || !dispatch)) extra.push('pause');
     }
-    return {...fact,cleanupAllowed:taskCleanupAllowed(item,workflow,all as KanbanItemSummary[]),startAt:taskStartAt(item),dispatchId:dispatch?.id,sessionId:dispatch?.executionSessionId,
+    return {...fact,...(fact.phase==='completed'?{completion:completionOutcome(item,all)}:{}),cleanupAllowed:taskCleanupAllowed(item,workflow,all as KanbanItemSummary[]),startAt:taskStartAt(item),dispatchId:dispatch?.id,sessionId:dispatch?.executionSessionId,
         actions:item.deletedAt === undefined ? [...fact.actions??[],...extra,...(item.planning?.execution==='children'||dispatch||item.launch?.admittedAt!==undefined||['claimed','review','completed'].includes(item.status)?['fix' as const]:[]),...(dispatch?.executionSessionId?['open-session' as const]:[])].filter(action=>item.planning?.execution!=='children'||['cancel','delete','fix',...(item.planning?.coordination?['pause','resume']:[])].includes(action)) : []};
 }
 function terminalFact(item:Item):Fact|undefined {
@@ -89,4 +89,20 @@ function dependencyReason(id:string,all:Related[],workflow?:KanbanWorkflowState)
     if(item.status==='cancelled')return 'DEPENDENCY_CANCELLED';
     const dispatch=Object.values(workflow?.dispatches??{}).filter(row=>row.itemId===id).sort((a,b)=>b.attempt-a.attempt)[0];
     return dispatch&&['failed','rejected'].includes(dispatch.outcome)?'DEPENDENCY_FAILED':'DEPENDENCY_UNFINISHED';
+}
+
+/** Completion is task settlement; waived requirements never become passed checks. */
+function completionOutcome(item: Item, all: Related[], seen = new Set<string>()): KanbanTaskProjection['completion'] {
+    if (seen.has(item.id)) return;
+    seen = new Set(seen).add(item.id);
+    if (item.acceptanceResult?.outcome === 'waived') return 'waived';
+    if (item.planning?.execution === 'children') {
+        const children = all.filter(row => row.planning?.parentId === item.id && row.deletedAt === undefined);
+        const outcomes = children.map(row => completionOutcome(row as Item, all, seen));
+        if (outcomes.includes('mixed')) return 'mixed';
+        const waived = outcomes.filter(outcome => outcome === 'waived').length;
+        if (waived) return waived === children.length ? 'waived' : 'mixed';
+        return 'children';
+    }
+    return item.acceptanceResult?.outcome === 'passed' ? 'accepted' : undefined;
 }
