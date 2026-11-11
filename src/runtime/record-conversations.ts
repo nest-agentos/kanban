@@ -32,14 +32,14 @@ class RecordConversations {
     private async advance(id:string):Promise<void> {
         const old=await this.options.journal.get<SavedRecordConversation>(key(id));requireValue(old,'CONVERSATION_NOT_FOUND');
         if(!this.active())return;
-        try {const update=await this.options.port.advance(old,this.active);if(Object.keys(update).length)await this.options.journal.update<SavedRecordConversation>(key(id),value=>({...value!,...update}));}
+        try {const update=await this.options.port.advance(old,this.active);if(Object.keys(update).some(field=>JSON.stringify(old[field as keyof SavedRecordConversation])!==JSON.stringify(update[field as keyof typeof update])))await this.options.journal.update<SavedRecordConversation>(key(id),value=>({...value!,...update,lastActivityAt:Date.now()}));}
         catch(error){await this.failure(old,error,'decision.conversation.observe');}
     }
     private async failure(saved:SavedRecordConversation,error:unknown,stage:string):Promise<void> {
         const code=safeCode(error,'CONVERSATION_FAILED');
         if(saved.state==='error'&&saved.code===code)return;
         this.options.log({operationId:saved.id,boardId:saved.boardId,stage,result:'failure',code,durationMs:0});
-        if(code!=='SERVICE_STOPPING')await this.options.journal.update<SavedRecordConversation>(key(saved.id),old=>({...old!,state:'error',code}));
+        if(code!=='SERVICE_STOPPING')await this.options.journal.update<SavedRecordConversation>(key(saved.id),old=>({...old!,state:'error',code,lastActivityAt:Date.now()}));
     }
     private async watch(saved:SavedRecordConversation):Promise<void> {
         if(this.watches.has(saved.id))return;
@@ -60,7 +60,7 @@ class RecordConversations {
         try {
             if(!saved.binding){const binding=await this.options.port.prepare(id,boardId,saved.resources,saved.primaryResource);saved=await this.options.journal.update<SavedRecordConversation>(key(id),old=>({...old!,binding:old!.binding??binding}));}
             requireValue(this.active(),'SERVICE_STOPPING');
-            if(!saved.sessionId){const result=await this.options.port.start(saved.binding,await this.options.journal.claim(key(id)),this.active);saved=await this.options.journal.update<SavedRecordConversation>(key(id),old=>({...old!,...result,state:'clarifying',code:undefined}));}
+            if(!saved.sessionId){const result=await this.options.port.start(saved.binding,await this.options.journal.claim(key(id)),this.active);saved=await this.options.journal.update<SavedRecordConversation>(key(id),old=>({...old!,...result,state:'clarifying',code:undefined,lastActivityAt:Date.now()}));}
             requireValue(this.active(),'SERVICE_STOPPING');await this.watch(saved);await this.advance(id);
             return publicView((await this.options.journal.get<SavedRecordConversation>(key(id)))!);
         }catch(error){await this.failure(saved,error,'decision.conversation.start');throw error;}

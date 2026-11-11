@@ -13,7 +13,7 @@ export interface KanbanRuntimeContext {
 }
 /** Extensions bind host facilities; recovery and shutdown are coordinated by the runtime. */
 export interface KanbanRuntimeExtension {
-    deliveryReady?(boardId:string,item:import('../contracts').KanbanItem):Promise<boolean>;
+    projectRecords?(boardId:string,page:import('../contracts').KanbanRecordPage):Promise<import('../contracts').KanbanRecordPage>;
     archiveItemResources?(boardId:string,itemId:string,operationId:string):Promise<void>;
     capabilities?:Partial<KanbanClient>;
     scan?():Promise<void>;quiesce?():Promise<void>;dispose?():Promise<void>;

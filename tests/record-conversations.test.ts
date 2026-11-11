@@ -41,3 +41,12 @@ it('lets an unsubmitted legacy creation select its missing scope once, but never
  expect((await runtime.recordConversations('board')).find(row=>row.id==='unknown')?.scopeSelectionRequired).toBe(false);
  await expect(runtime.startRecordConversation('board',{operationId:'unknown',resources,primaryResource:resources[0]})).rejects.toMatchObject({code:'IDEMPOTENCY_CONFLICT'});
 });
+
+it('updates activity only for meaningful conversation transitions and keeps it stable across observation reads',async()=>{
+ const f=await fixture(),runtime=createRecordConversations(f.options);closes.push(()=>runtime.quiesce());
+ const started=await runtime.startRecordConversation('board',{operationId:'activity'});
+ expect(started.lastActivityAt).toBeGreaterThanOrEqual(started.createdAt);
+ await runtime.startRecordConversation('board',{operationId:'activity'});expect((await runtime.recordConversations('board'))[0].lastActivityAt).toBe(started.lastActivityAt);
+ f.port.advance.mockResolvedValueOnce({state:'draft'} as any);
+ await runtime.startRecordConversation('board',{operationId:'activity'});const changed=(await runtime.recordConversations('board'))[0];expect(changed.state).toBe('draft');expect(changed.lastActivityAt).toBeGreaterThanOrEqual(started.lastActivityAt!);
+});

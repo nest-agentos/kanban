@@ -5,6 +5,7 @@ export interface KanbanRecordResource {reference: KanbanExternalReference; label
 export interface KanbanItemResourceCatalog {resources:KanbanRecordResource[];selected?:KanbanExternalReference;required?:boolean;readonly?:boolean}
 export interface KanbanRecordExecution {
     id: string; recordId: string; recordRevision: number; boardId: string;
+    completion?:import('./task-state').KanbanTaskProjection['completion'];
     rootItemId?: string; itemIds?: string[]; stage?:'planning'|'execution';
     state: 'preparing' | 'running' | 'blocked' | 'review' | 'completed' | 'failed' | 'cancelling' | 'cancelled' | 'pausing' | 'paused' | 'resuming' | 'unknown';
     createdAt: number; updatedAt: number; archivedAt?:number; code?: string;

@@ -27,6 +27,14 @@ export interface KanbanProjectRecord {
     supersedes?: string; supersededBy?: string;
 }
 export type KanbanRecordInput = Pick<KanbanProjectRecord, 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs' | 'completion' | 'verificationLevel' | 'deliveryMode' | 'discussionSessionId'>;
-export type KanbanRecordSummary = Omit<KanbanProjectRecord, 'content' | 'rationale' | 'sources'> & {sessionIds:string[];attention?:'waiting-input'|'error'|'review';attentionCode?:string;attentionItemId?:string;attentionTasks?:Array<{itemId:string;title:string;phase:'waiting-input'|'error'|'unknown';purpose:'planning'|'execution';sessionId?:string}>};
+export interface KanbanRecordProgress {
+    state: 'draft' | 'waiting' | 'running' | 'needs-action' | 'failed' | 'completed' | 'checking' | 'cancelling' | 'cancelled' | 'rejected' | 'superseded';
+    phase?: import('./task-state').KanbanTaskPhase | 'planning' | 'execution';
+    completion?: import('./task-state').KanbanTaskProjection['completion']; groupIds?:string[];
+    followUps?:Array<{boardId:string;itemId:string;state:'pending'|'blocked';phase:string;code?:string}>;
+    reason?: string; boardId?:string; itemId?: string; sessionId?: string; lastActivityAt: number;
+}
+export interface KanbanRecordAttentionDismissal {fingerprint:string;operationId:string;actor:KanbanPrincipal;at:number}
+export type KanbanRecordSummary = Omit<KanbanProjectRecord, 'content' | 'rationale' | 'sources'> & {attentionDismissal?:KanbanRecordAttentionDismissal;progress?:KanbanRecordProgress;sessionIds:string[];attention?:'waiting-input'|'error'|'review';attentionCode?:string;attentionItemId?:string;attentionTasks?:Array<{itemId:string;title:string;phase:'waiting-input'|'error'|'unknown';purpose:'planning'|'execution';sessionId?:string}>};
 export interface KanbanRecordQuery {resource?:import('./configuration').KanbanExternalReference;includeDeleted?: boolean; includeArchived?:boolean; kind?: KanbanProjectRecord['kind']; itemId?: string; status?: KanbanProjectRecord['status']; limit?: number; cursor?: string}
 export interface KanbanRecordPage {revision: number; total: number; items: KanbanRecordSummary[]; nextCursor?: string}

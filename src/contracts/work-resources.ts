@@ -3,6 +3,8 @@ export interface KanbanWorkResource {
     id: string; kind: string; title: string; location: string; version: string;
     archivedAt?:number;
     ownership?: 'current' | 'other' | 'unknown';
+    owner?:{boardId:string;itemId:string};
+    resolution?:{kind:'ignored';operationId:string;reason:string;actor:import('./configuration').KanbanPrincipal;at:number};
     state: 'associated' | 'in-use' | 'retained' | 'cleanup-ready' | 'cleaned' | 'unknown';
     reasons: string[]; properties: Array<{label: string; value: string}>;
     canCleanup: boolean;
@@ -10,6 +12,7 @@ export interface KanbanWorkResource {
 export interface KanbanWorkResourceQuery {inspect?: boolean;resourceId?:string}
 export interface KanbanWorkResourceCleanup {
     operationId: string; itemId: string; resourceId: string; version: string;
+    resolution?:'ignore';reason?:string;
 }
 
 export interface KanbanWorkResourceTask {

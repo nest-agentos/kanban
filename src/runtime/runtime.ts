@@ -1,3 +1,5 @@
+import {withRecordProgress} from './record-progress';
+import {withRecordAttention,dismissRecordAttention} from './record-attention';
 import {createTaskRestart} from './task-restart';
 import {SeqKanbanStore} from '../storage';
 import {createKanbanActivityModule} from '../activity';
@@ -35,13 +37,17 @@ function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeConte
     const {service,journal,workLog}=context,directory=options.directory??'/kanban';
     const restarts=createTaskRestart({service,journal,assertIdle:options.assertRestartIdle});
     const capabilities:Partial<import('../contracts').KanbanClient>=Object.assign({},...extensions.map(extension=>extension.capabilities));
-    const records=options.resources?createRecordExecution({service,journal,deliveryReady:async(board,item)=>(await Promise.all(extensions.map(extension=>extension.deliveryReady?.(board,item)??true))).every(Boolean),archiveSession:options.archiveSession,archiveItemResources:async(board,item,operation)=>{for(const extension of extensions)await extension.archiveItemResources?.(board,item,operation);},resources:options.resources,requiresItemResource:options.requiresItemResource,planningSession:capabilities.planningSession,log:options.log??(()=>{})}):undefined;
+    const records=options.resources?createRecordExecution({service,journal,dismissAttention:(board,request):Promise<void>=>dismissRecordAttention(client,journal,board,request),archiveSession:options.archiveSession,archiveItemResources:async(board,item,operation)=>{for(const extension of extensions)await extension.archiveItemResources?.(board,item,operation);},resources:options.resources,requiresItemResource:options.requiresItemResource,planningSession:capabilities.planningSession,log:options.log??(()=>{})}):undefined;
     const automation=options.automation?createKanbanAutomation({...options.automation,...context,
         directory:directory+'/automation',log:options.log??(()=>{})}):undefined;
-    const client={...service,...capabilities,previewTaskRestart:restarts.previewTaskRestart,restartTask:restarts.restartTask,
+    const client:import('../contracts').KanbanClient={...service,...capabilities,previewTaskRestart:restarts.previewTaskRestart,restartTask:restarts.restartTask,
         ...(records?{...records,recordExecutions:async(board:string,id:string)=>(await workLog.record(service,board,id)).kind==='decision'?records.recordExecutions(board,id):[]}:{}),
         ...(automation?{automationCatalog:automation.automationCatalog,analysisStatus:automation.analysisStatus}:{}),
-        records:(board:string,query?:import('../contracts').KanbanRecordQuery)=>workLog.records(service,board,query),
+        records:async(board:string,query?:import('../contracts').KanbanRecordQuery)=>{
+            let page=await withRecordProgress(await workLog.records(service,board,query),board,journal,service);
+            for(const extension of extensions)if(extension.projectRecords)page=await extension.projectRecords(board,page);
+            return withRecordAttention(page,board,journal);
+        },
         record:(board:string,id:string)=>workLog.record(service,board,id)};
     const deletion=createBoardDeletion({service:client,journal});setDeletion(deletion.assertSettled);
     const participants=[restarts,...extensions,...records?[records]:[],...automation?[automation]:[]];

@@ -6,12 +6,13 @@ export {DEFAULT_KANBAN_WORK_TYPES, executableWorkItem} from './configuration';
 export type {KanbanActor, KanbanEstimate, KanbanPolicy, KanbanParticipant, KanbanAssignment, KanbanItem, KanbanBoard, KanbanEvent, KanbanCommand, KanbanRequest, KanbanBoardSummary, KanbanService, KanbanBoardInput} from './contracts';
 export type {KanbanSuggestionKind, KanbanSuggestionQuery, KanbanSuggestion, KanbanSuggestionPage} from './suggestions';
 export type {KanbanSourceRef, KanbanDiscoveryChange, KanbanDiscoveryBatch} from './source';
-export type {KanbanText, KanbanAmendment, KanbanProjectRecord, KanbanRecordActivity, KanbanRecordInput, KanbanRecordSummary, KanbanRecordQuery, KanbanRecordPage} from './context';
+export type {KanbanText, KanbanAmendment, KanbanProjectRecord, KanbanRecordActivity, KanbanRecordProgress, KanbanRecordInput, KanbanRecordSummary, KanbanRecordQuery, KanbanRecordPage} from './context';
 export type {KanbanArtifactRef, KanbanWorkDefinition, KanbanWorkPlan, KanbanPublishedPlan, KanbanDispatch, KanbanWorkflowState, KanbanWorkflowCommand} from './workflow';
 
 export type {KanbanScanSession, KanbanScanText, KanbanScanConnection, KanbanScanPolicy, KanbanScanInput, KanbanDiscoveryResult} from './discovery';
 export {DEFAULT_KANBAN_SCAN_POLICY} from './discovery';
 export type {KanbanClient, KanbanSessionPhase, KanbanExecutionSession, KanbanPlanningSession, KanbanSessionActivityQuery, KanbanSessionItemSummary, KanbanSessionItemPage, KanbanExecutionSessionDetail} from './activity';
+export {recordAttentionFingerprint} from './record-attention';
 export type {KanbanSessionPurpose, KanbanSessionExecution, KanbanSessionAssociation, KanbanRelatedSession, KanbanSessionDetailQuery} from './activity';
 export type {KanbanContent, KanbanContentItem, KanbanContentRecord, KanbanContentAmendment} from './content';
 export type {KanbanAutomationSettings, KanbanAutomationOption, KanbanAutomationTarget, KanbanAutomationCatalog, KanbanAnalysisStatus} from './automation';

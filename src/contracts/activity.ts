@@ -51,7 +51,7 @@ export interface KanbanClient extends KanbanService {
     replyTask?(boardId:string,request:{itemId:string;attemptId:string;replyTo:string;operationId:string;content:string}):Promise<void>;
     taskFixes?(boardId: string, itemId: string): Promise<import('./task-state').KanbanFixSession[]>;
     cancelFix?(boardId: string, request: {fixId: string; operationId: string}): Promise<import('./task-state').KanbanFixSession>;
-    controlRecord?(boardId: string, request: {recordId: string; operationId: string; action: 'pause' | 'resume' | 'cancel' | 'archive' | 'delete' | 'restart'; expectedRevision?:number}): Promise<void>;
+    controlRecord?(boardId: string, request: {recordId: string; operationId: string; action: 'pause' | 'resume' | 'cancel' | 'archive' | 'delete' | 'restart' | 'dismiss-attention'; expectedRevision?:number;attentionFingerprint?:string}): Promise<void>;
     fixTask?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./task-state').KanbanFixSession>;
     itemResources?(boardId:string,parentId?:string):Promise<import('./record-execution').KanbanItemResourceCatalog>;
     taskRecovery?(boardId:string,itemId:string):Promise<import('./recovery').KanbanTaskRecovery>;
