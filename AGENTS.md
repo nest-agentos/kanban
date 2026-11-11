@@ -19,3 +19,5 @@
 验证：pnpm typecheck、pnpm test、pnpm build。普通接入与恢复验收见 tests/public-runtime.test.ts；前台与远程客户端验收由 kanban-ui 自己维护。
 
 协作确认通过 commitCollaboration 统一冻结原命令、分解检查点和交付意图；updateMany 在同事务维护记录与二级索引。领域提交与外部 ACK 分阶段，交付按原身份幂等；已提交后不得重新发布子项。提案和结果验证的动作、ID 与资源继承由宿主注入。恢复准入只消费正向资源/目标证据，Native 版本与工作树策略不进入核心；持久独立调用控制属于 Session 层。
+
+Session 收尾经验的结构校验、脱敏、正式任务关联和幂等记录归本库 integration；宿主注入已授权的来源/证据、摘要和诊断端口。不导入 Session/Kernel 或应用通道 SDK，不从聊天正文推断 Task，不以经验记录代替执行、批准或验收。

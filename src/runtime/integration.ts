@@ -44,3 +44,6 @@ export {confirmRecordExecution,advanceRecordCancellation} from './record-confirm
 export {findRetainedExecution,validateDecisionSource,taskRecoveryEligibility,activeRecoveryIssueIds,type KanbanRecoveryEvidence} from './task-recovery-policy';
 
 export {managementTaskOwner} from './coordination-rules';
+
+export {registerSessionLearnings,type SessionLearningInput} from './session-learnings';
+export {parseSessionLearnings,learningText} from './session-learnings-input';
