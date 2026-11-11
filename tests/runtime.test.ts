@@ -48,3 +48,20 @@ it('keeps a successful execution unresolved until its output arrives',async()=>{
     vi.mocked(f.port.inspect).mockResolvedValueOnce({state:'succeeded',output:{value:'ready'}});
     expect(await f.advance()).toMatchObject({phase:'settled',state:'succeeded'});expect(f.port.start).toHaveBeenCalledOnce();
 });
+
+it('drains a failed background scan without preventing a safe shutdown',async()=>{
+ const {runtimeLifecycle}=await import('../src/runtime/runtime-lifecycle');let release!:()=>void;
+ const barrier=new Promise<void>(resolve=>{release=resolve;}),service={scan:vi.fn(async()=>{await barrier;throw Object.assign(Error('PRIVATE_DETAIL'),{code:'OPERATION_ACCEPTANCE_WAIVER_REQUIRED'});}),quiesce:vi.fn(async()=>{}),dispose:vi.fn(async()=>{})};
+ const journal={diagnostic:vi.fn(),drain:vi.fn(async()=>{})},extension={quiesce:vi.fn(async()=>{}),dispose:vi.fn(async()=>{})};
+ const lifecycle=runtimeLifecycle(service as never,journal as never,[extension],async()=>{});
+ const scan=lifecycle.scan(),observed=scan.catch(()=>{}),closing=lifecycle.quiesce();release();await observed;
+ await expect(closing).resolves.toBeUndefined();await lifecycle.dispose();
+ expect(service.quiesce).toHaveBeenCalledOnce();expect(service.dispose).toHaveBeenCalledOnce();expect(journal.drain).toHaveBeenCalledOnce();
+ expect(journal.diagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:'runtime.scan.drain',code:'OPERATION_ACCEPTANCE_WAIVER_REQUIRED'}));
+ expect(JSON.stringify(journal.diagnostic.mock.calls)).not.toContain('PRIVATE_DETAIL');
+});
+it('still refuses shutdown completion when an extension did not quiesce',async()=>{
+ const {runtimeLifecycle}=await import('../src/runtime/runtime-lifecycle'),service={scan:async()=>{},quiesce:vi.fn(async()=>{}),dispose:vi.fn(async()=>{})};
+ const lifecycle=runtimeLifecycle(service as never,{diagnostic:vi.fn(),drain:vi.fn(async()=>{})} as never,[{quiesce:async()=>{throw Error('unfinished');}}],async()=>{});
+ await expect(lifecycle.dispose()).rejects.toThrow('KANBAN_QUIESCE_FAILED');expect(service.dispose).not.toHaveBeenCalled();
+});

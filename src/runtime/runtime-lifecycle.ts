@@ -21,7 +21,8 @@ export function runtimeLifecycle(service:KanbanService & {quiesce():Promise<void
         stopping=true;
         const results=await Promise.allSettled([all(extensions,'quiesce',journal),pending]);
         await service.quiesce();await journal.drain();
-        failures(results,'KANBAN_QUIESCE_FAILED');
+        if(results[1].status==='rejected')journal.diagnostic({operationId:'runtime:quiesce:scan',stage:'runtime.scan.drain',result:'failure',code:safeCode(results[1].reason,'KANBAN_SCAN_FAILED'),durationMs:0});
+        failures([results[0]],'KANBAN_QUIESCE_FAILED');
     })();
     return {scan,quiesce,dispose:()=>disposing??=(async()=>{await quiesce();await all(extensions,'dispose',journal);await service.dispose();})()};
 }
