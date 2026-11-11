@@ -11,7 +11,7 @@ export interface KanbanItemOperation {
     waiver?: {id:string;cause:'direct'|'dependency';action:string;reason:string;at:number;actor:import('./contracts').KanbanActor};
     runAction?:string; runLabel?:string; hideRun?:boolean; followUp?:{action:string;label:string;confirmation:string};
     enabled: boolean; code?: string; reason?: string; runId?: string; sessionId?: string;
-    summary?: string; fields?: KanbanOperationField[]; confirmation?: string;
+    statusText?:string; summary?: string; fields?: KanbanOperationField[]; confirmation?: string;
     configurable?: boolean; binding?: KanbanExternalReference;
     openSessionOnRun?: boolean;
 }
