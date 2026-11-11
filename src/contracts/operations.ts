@@ -16,6 +16,10 @@ export interface KanbanItemOperation {
     openSessionOnRun?: boolean;
 }
 export interface KanbanItemOperations {
+    code?:string;
+    /** Host-owned operation scopes share the same task owner and retain independent receipts. */
+    scopes?:Array<{id:string;label:string;contributors:Array<{itemId:string;title:string}>;view:KanbanItemOperations}>;
+    owner?:{boardId:string;itemId:string};
     automatic?:{state:'running'|'blocked'|'completed'|'waiting-confirmation';stage:string;code?:string;waitingForTarget?:boolean;waitingForUser?:boolean};
     halted?: {runId:string;state:'cancelling'|'cancelled'};
     waivers?: import('./operation-waiver').KanbanOperationWaiver[];
@@ -26,11 +30,13 @@ export interface KanbanItemOperations {
     targets?: Array<{label: string; reference: KanbanExternalReference}>;
 }
 export interface KanbanItemOperationRequest {
+    scopeId?:string;
     operationId: string; itemId: string; action: string; expectedRevision: string;
     cancel?: {runId:string};
     skip?: {action:string;reason:string;affected:string[]};
     selections?: Record<string, string>; confirmed?: boolean; followUp?:string;
 }
 export interface KanbanItemOperationBinding {
+    scopeId?:string;
     operationId: string; itemId: string; action: string; expectedRevision: string; target: KanbanExternalReference;
 }
