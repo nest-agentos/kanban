@@ -42,3 +42,5 @@ export {commitCollaboration,resumeCollaborationRepairs,type RepairResumption,typ
 export {reserveJournalResource,releaseJournalResource} from './resource-reservation';
 export {confirmRecordExecution,advanceRecordCancellation} from './record-confirmation';
 export {findRetainedExecution,validateDecisionSource,taskRecoveryEligibility,activeRecoveryIssueIds,type KanbanRecoveryEvidence} from './task-recovery-policy';
+
+export {managementTaskOwner} from './coordination-rules';

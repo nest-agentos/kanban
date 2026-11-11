@@ -1,6 +1,6 @@
 import {expect,it} from 'vitest';
 import type {KanbanBoard,KanbanItem} from '../src/contracts';
-import {compileCoordinationProposal,validateCoordinationResult,itemWithinRoots,itemsWithinRoots} from '../src/runtime/coordination-rules';
+import {compileCoordinationProposal,validateCoordinationResult,itemWithinRoots,itemsWithinRoots,managementTaskOwner} from '../src/runtime/coordination-rules';
 const parent={id:'parent',title:'Research',responsibility:'Coordinate research',acceptance:'Reviewed',planning:{kind:'group'}} as KanbanItem;
 const board={items:[parent],policy:{requireEstimate:false},workTypes:[{id:'group',label:'Group',rank:0,executable:false},{id:'study',label:'Study',rank:1,executable:true}],automation:{worker:{kind:'service',id:'researcher'}}} as KanbanBoard;
 const task=(key:string,dependsOn:string[]=[])=>({key,title:key,responsibility:'Study',acceptance:'Review evidence',dependsOn});
@@ -32,4 +32,12 @@ it('shares descendant scoping while terminating corrupt ancestry and preserving 
     const items=[parent,{id:'child',planning:{parentId:'parent'}},{id:'archived',deletedAt:1,planning:{parentId:'child'}},{id:'loop-a',planning:{parentId:'loop-b'}},{id:'loop-b',planning:{parentId:'loop-a'}}] as KanbanItem[];
     expect(itemsWithinRoots(items,['parent']).map(row=>row.id)).toEqual(['parent','child']);
     expect(itemsWithinRoots(items,['parent'],{includeDeleted:true}).map(row=>row.id)).toEqual(['parent','child','archived']);expect(itemWithinRoots(items,'loop-a',['parent'])).toBe(false);
+});
+
+it('resolves the management owner from ancestry and fails closed for broken or cyclic links',()=>{
+    const root={id:'root',planning:{execution:'children'}},group={id:'group',planning:{execution:'children',parentId:'root'}},child={id:'child',planning:{parentId:'group'}};
+    const value={...board,items:[root,group,child]} as KanbanBoard;
+    expect(managementTaskOwner(value,child as KanbanItem)?.id).toBe('root');
+    expect(()=>managementTaskOwner({...value,items:[child]} as KanbanBoard,child as KanbanItem)).toThrow('OPERATION_OWNER_INVALID');
+    expect(()=>managementTaskOwner({...value,items:[{...root,planning:{execution:'children',parentId:'child'}},group,child]} as KanbanBoard,child as KanbanItem)).toThrow('OPERATION_OWNER_INVALID');
 });

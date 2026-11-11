@@ -55,3 +55,17 @@ export function itemsWithinRoots(items:readonly KanbanItem[],roots:readonly stri
     const byId=new Map(items.map(item=>[item.id,item])),scope=new Set(roots);
     return items.filter(item=>(options.includeDeleted||item.deletedAt===undefined)&&within(byId,item.id,scope));
 }
+
+/** Canonical parent links establish ownership; titles and conversation state never infer it. */
+export function managementTaskOwner(board:KanbanBoard,item:KanbanItem):KanbanItem|undefined {
+    let current=item,owner=item.planning?.execution==='children'?item:undefined;
+    const byId=new Map(board.items.map(row=>[row.id,row]));
+    const visited=new Set([item.id]);
+    while(current.planning?.parentId){
+        const parent=byId.get(current.planning.parentId);
+        requireValue(parent&&!visited.has(parent.id),'OPERATION_OWNER_INVALID');
+        visited.add(parent.id);current=parent;
+        if(parent.planning?.execution==='children')owner=parent;
+    }
+    return owner;
+}
