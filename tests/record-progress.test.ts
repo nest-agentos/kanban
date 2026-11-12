@@ -145,3 +145,9 @@ it('does not replace a complete aggregate with a partially linked descendant sub
  const child={...fact('child','running'),item:{...fact('child','running').item,planning:{parentId:'root'}}};
  expect(recordProgress({...record,itemIds:['root','child']},[root,child])).toMatchObject({tasks:{management:{total:1},execution:{total:3,completed:1,phases:{running:2}}}});
 });
+
+it('retains downstream task facts while decision cancellation is still pending',()=>{
+ const root={...fact('root','cancelling'),item:{...fact('root','cancelling').item,planning:{execution:'children'}}};
+ const child={...fact('child','running'),item:{...fact('child','running').item,planning:{parentId:'root'}}};
+ expect(recordProgress({...record,status:'cancelling'},[root,child])).toMatchObject({state:'cancelling',tasks:{management:{total:1,phases:{cancelling:1}},execution:{total:1,phases:{running:1}}}});
+});
