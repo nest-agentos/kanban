@@ -8,8 +8,20 @@ import {sha256HexSync} from '../utils';
 import {safeCode} from './diagnostics';
 type Log=(event:{operationId:string;boardId:string;stage:string;result:'success'|'failure';code?:string;count?:number;durationMs:number})=>void;
 type Saved={digest:string;results:KanbanRecordArchiveResult['items']};
+type ArchiveOne=(board:string,request:{recordId:string;operationId:string;expectedRevision?:number})=>Promise<void>;
 export function recordArchival(service:KanbanClient,journal:KanbanAutomationJournal,log:Log,readRecords: (board:string)=>Promise<KanbanRecordPage>=async board=>withRecordProgress(await service.records(board,{kind:'decision',includeArchived:true,limit:200}),board,journal,service)){
-    const archive=async(boardId:string,request:{recordId:string;operationId:string;expectedRevision?:number})=>{
+    const archive=recordArchiver(service,journal,log,readRecords),batch=recordArchiveBatch(journal,log,archive);
+    let stopping=false;const pending=new Set<Promise<unknown>>();
+    const track=async<T>(run:()=>Promise<T>):Promise<T>=>{
+        requireValue(!stopping,'SERVICE_STOPPING');const work=run();pending.add(work);
+        try{return await work;}finally{pending.delete(work);}
+    };
+    return {archive:(board:string,request:Parameters<ArchiveOne>[1])=>track(()=>archive(board,request)),
+        archiveRecords:(board:string,request:KanbanRecordArchiveRequest)=>track(()=>batch(board,request)),
+        quiesce:async()=>{stopping=true;await Promise.allSettled([...pending]);}};
+}
+function recordArchiver(service:KanbanClient,journal:KanbanAutomationJournal,log:Log,readRecords:(board:string)=>Promise<KanbanRecordPage>):ArchiveOne {
+    return async(boardId,request)=>{
         const started=Date.now();try{
             requireValue(request&&typeof request.operationId==='string'&&/^[\w-]{1,128}$/.test(request.operationId),'INVALID_RECORD_CONTROL');
             const record=await service.record(boardId,request.recordId);
@@ -20,7 +32,9 @@ export function recordArchival(service:KanbanClient,journal:KanbanAutomationJour
             log({operationId:request.operationId,boardId,stage:'record.archive',result:'success',durationMs:Date.now()-started});
         }catch(error){log({operationId:request.operationId,boardId,stage:'record.archive',result:'failure',code:safeCode(error,'RECORD_ARCHIVE_FAILED'),durationMs:Date.now()-started});throw error;}
     };
-    return {archive,archiveRecords:async(boardId:string,request:KanbanRecordArchiveRequest):Promise<KanbanRecordArchiveResult>=>{
+}
+function recordArchiveBatch(journal:KanbanAutomationJournal,log:Log,archive:ArchiveOne){
+    return async(boardId:string,request:KanbanRecordArchiveRequest):Promise<KanbanRecordArchiveResult>=>{
         const started=Date.now();
         requireValue(request&&typeof request.operationId==='string'&&/^[\w-]{1,128}$/.test(request.operationId)&&Array.isArray(request.records)&&request.records.length>0&&request.records.length<=50,'INVALID_RECORD_CONTROL');
         requireValue(request.records.every(row=>row&&typeof row.recordId==='string'&&row.recordId.length>0&&Number.isSafeInteger(row.expectedRevision)&&row.expectedRevision>0)&&new Set(request.records.map(row=>row.recordId)).size===request.records.length,'INVALID_RECORD_CONTROL');
@@ -36,7 +50,7 @@ export function recordArchival(service:KanbanClient,journal:KanbanAutomationJour
         const code=saved.results.some(row=>row.outcome==='unknown')?'RECORD_ARCHIVE_RESULT_UNKNOWN':saved.results.some(row=>row.outcome==='failed')?'RECORD_ARCHIVE_PARTIAL':undefined;
         log({operationId:request.operationId,boardId,stage:'record.archive.batch',result:code?'failure':'success',code,count:request.records.length,durationMs:Date.now()-started});
         return {operationId:request.operationId,items:saved.results};
-    }};
+    };
 }
 
 export async function verifyRecordArchive(journal:KanbanAutomationJournal,boardId:string,recordId:string,readRecords:(board:string)=>Promise<KanbanRecordPage>):Promise<void> {

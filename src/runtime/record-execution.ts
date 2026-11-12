@@ -98,7 +98,7 @@ export function createRecordExecution(options: Options) {
             }
             if (errors.length) throw new AggregateError(errors, 'RECORD_EXECUTION_SCAN_FAILED');
         },
-        async quiesce() {stopped = true; await Promise.allSettled([...pending.values()]);},
+        async quiesce() {stopped = true; await Promise.allSettled([archival.quiesce(),...pending.values()]);},
     };
 }
 

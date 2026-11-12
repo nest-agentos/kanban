@@ -56,7 +56,7 @@ function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeConte
         },
         record:(board:string,id:string)=>workLog.record(service,board,id)};
     const deletion=createBoardDeletion({service:client,journal});setDeletion(deletion.assertSettled);
-    const participants=[restarts,...extensions,...records?[records]:[],...automation?[automation]:[]];
+    const participants=[restarts,archival,...extensions,...records?[records]:[],...automation?[automation]:[]];
     const lifecycle=runtimeLifecycle(service,journal,participants,async()=>{
         await scanBoardStopWork({service,journal,ports:options.control??{control:{control:async()=> 'unknown'}},fixes:capabilities.cancelFix?{cancelFix:capabilities.cancelFix}:undefined,records});
         if(!automation&&options.control)for(const board of await service.list())await scanTaskControls(options.control,journal,board,service);

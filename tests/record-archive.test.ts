@@ -83,3 +83,14 @@ it('reconciles a lost archive acknowledgement using the original batch without r
     expect(execute).toHaveBeenCalledOnce();
     await expect(archival.archiveRecords('b',{operationId:'invalid',records:[null]} as any)).rejects.toMatchObject({code:'INVALID_RECORD_CONTROL'});
 });
+
+it('drains accepted batches before shutdown and refuses new archive requests during quiescence',async()=>{
+    const f=await fixture();let release!:()=>void;const barrier=new Promise<void>(resolve=>{release=resolve;});
+    const read=vi.fn(async(board:string)=>{await barrier;return f.service.records(board,{includeArchived:true,limit:200});});
+    const archival=recordArchival(f.service,f.journal,f.log,read),record=await f.service.record('b','done');
+    const request={operationId:'drain',records:[{recordId:'done',expectedRevision:record.revision}]};
+    const work=archival.archiveRecords('b',request);await vi.waitFor(()=>expect(read).toHaveBeenCalledOnce());
+    let closed=false;const closing=archival.quiesce().then(()=>{closed=true;});
+    await expect(archival.archiveRecords('b',{...request,operationId:'late'})).rejects.toMatchObject({code:'SERVICE_STOPPING'});
+    expect(closed).toBe(false);release();expect((await work).items[0].outcome).toBe('archived');await closing;expect(closed).toBe(true);
+});
