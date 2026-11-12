@@ -1,3 +1,4 @@
+import {recordArchival} from './record-archive';
 import {withRecordProgress} from './record-progress';
 import {withRecordAttention,dismissRecordAttention} from './record-attention';
 import {createTaskRestart} from './task-restart';
@@ -23,25 +24,30 @@ export async function assembleKanbanRuntime(options:KanbanRuntimeOptions) {
     const workLog=new KanbanWorkLog(fs,{directory:directory+'/runtime',diagnostic:options.log,...options.workLog});
     await journal.open();await workLog.open();
     let verifyDeletion:(id:string)=>Promise<void>=async()=>{};
+    let runtimeClient:import('../contracts').KanbanClient|undefined;
     const createService=options.createService??createKanbanActivityModule;
     const serviceFor=(actor:KanbanActor)=>createService({...options,store,actor,
         referenceSystem:options.referenceSystem??defaultReferences.execution,
-        verifyLifecycle:async(board,command)=>{await verifyRuntimeLifecycle(service,journal,board,command);if(command.type==='commit-task-restart')await options.assertRestartIdle?.(board.id,command.affectedIds);await options.verifyLifecycle?.(board,command);},
+        verifyLifecycle:async(board,command)=>{await verifyRuntimeLifecycle(command.type==='archive-record'?runtimeClient??service:service,journal,board,command);if(command.type==='commit-task-restart')await options.assertRestartIdle?.(board.id,command.affectedIds);await options.verifyLifecycle?.(board,command);},
         verifyDeletion:async board=>{await verifyDeletion(board.id);await options.verifyDeletion?.(board);},
         onCommitted:async(id,source,now)=>{await workLog.synchronize(id,source);await options.onCommitted?.(id,source,now);}});
     const service=serviceFor(options.actor),context:KanbanRuntimeContext={fs,store,journal,workLog,service,serviceFor};
     const extensions=options.extensions?.(context)??[];
-    return assembleRuntime(options,context,extensions,verify=>{verifyDeletion=verify;});
+    const runtime=assembleRuntime(options,context,extensions,verify=>{verifyDeletion=verify;});
+    runtimeClient=runtime.service;return runtime;
 }
 function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeContext,extensions:KanbanRuntimeExtension[],setDeletion:(verify:(id:string)=>Promise<void>)=>void) {
     const {service,journal,workLog}=context,directory=options.directory??'/kanban';
     const restarts=createTaskRestart({service,journal,assertIdle:options.assertRestartIdle});
     const capabilities:Partial<import('../contracts').KanbanClient>=Object.assign({},...extensions.map(extension=>extension.capabilities));
     const records=options.resources?createRecordExecution({service,journal,dismissAttention:(board,request):Promise<void>=>dismissRecordAttention(client,journal,board,request),archiveSession:options.archiveSession,archiveItemResources:async(board,item,operation)=>{for(const extension of extensions)await extension.archiveItemResources?.(board,item,operation);},resources:options.resources,requiresItemResource:options.requiresItemResource,planningSession:capabilities.planningSession,log:options.log??(()=>{})}):undefined;
+    const archival=recordArchival(service,journal,options.log??(()=>{}),board=>client.records(board,{kind:'decision',includeArchived:true,limit:200}));
     const automation=options.automation?createKanbanAutomation({...options.automation,...context,
         directory:directory+'/automation',log:options.log??(()=>{})}):undefined;
     const client:import('../contracts').KanbanClient={...service,...capabilities,previewTaskRestart:restarts.previewTaskRestart,restartTask:restarts.restartTask,
         ...(records?{...records,recordExecutions:async(board:string,id:string)=>(await workLog.record(service,board,id)).kind==='decision'?records.recordExecutions(board,id):[]}:{}),
+        archiveRecords:archival.archiveRecords,
+        controlRecord:async(board,request)=>{if(request.action==='archive')return archival.archive(board,request);if(!records)throw Object.assign(new Error('Record control unavailable'),{code:'RECORD_CONTROL_UNAVAILABLE'});return records.controlRecord(board,request);},
         ...(automation?{automationCatalog:automation.automationCatalog,analysisStatus:automation.analysisStatus}:{}),
         records:async(board:string,query?:import('../contracts').KanbanRecordQuery)=>{
             let page=await withRecordProgress(await workLog.records(service,board,query),board,journal,service);

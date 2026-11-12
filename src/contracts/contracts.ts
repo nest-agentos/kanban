@@ -65,7 +65,7 @@ export type KanbanCommand = import('./task-restart').RepairDependencyCommand | i
     | {type: 'request-record-cancellation'; recordId: string}
     | {type: 'cancel-record'; recordId: string}
     | {type: 'delete-record'; recordId: string}
-    | {type:'archive-record';recordId:string}
+    | {type:'archive-record';recordId:string;recordRevision?:number}
     | {type:'revise-record';recordId:string;title:string;content:string;rationale:string;externalRefs?:import('./configuration').KanbanExternalReference[];completion?:'manual'|'automatic';verificationLevel?:'full'|'quick'|'none';deliveryMode?:'release'|'source'|'build'}
     | {type:'restart-record';recordId:string;epoch:string}
     | {type:'request-board-stop'; controlId:string; intent:'cancel'|'delete'; mode:'drain'|'cancel'}

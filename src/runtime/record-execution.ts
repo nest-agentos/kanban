@@ -1,3 +1,4 @@
+import {recordArchival} from './record-archive';
 import {cleanupRecordTasks} from './record-cleanup';
 import {advanceRecordControl, requestRecordControl, recordControlKey, type RecordControl} from './record-controls';
 import {DEFAULT_KANBAN_WORK_TYPES,projectKanbanTask} from '../contracts';
@@ -28,6 +29,7 @@ interface Options {
 
 /** A restartable projection from an approved decision into work on its chosen board. */
 export function createRecordExecution(options: Options) {
+    const archival=recordArchival(options.service,options.journal,options.log);
     let stopped = false;
     const pending = new Map<string, Promise<KanbanRecordExecution>>();
     const resume = (run: SavedRun) => {
@@ -58,6 +60,7 @@ export function createRecordExecution(options: Options) {
             return resume(run);
         },
         controlRecord: async (boardId: string, request: Parameters<NonNullable<KanbanClient['controlRecord']>>[1]) => {
+            if(request.action==='archive')return archival.archive(boardId,request);
             if(request.action==='dismiss-attention'){requireValue(options.dismissAttention,'RECORD_CONTROL_UNAVAILABLE');return options.dismissAttention(boardId,request);}
             await requestRecordControl(options.service, options.journal, boardId, {...request,action:request.action});
             if((await options.journal.get<RecordControl>(recordControlKey(boardId,request.recordId)))?.settled)return;

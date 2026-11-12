@@ -1,6 +1,5 @@
 import {applyRecordRevision} from './record-revision';
 import {validateDecisionOptions} from './decision-options';
-import {archiveItems} from './archives';
 import {sha256HexSync} from './utils';
 import type {KanbanActor, KanbanCommand, KanbanProjectRecord, KanbanRecordPage, KanbanRecordQuery} from './contracts';
 import type {KanbanState} from './ports';
@@ -36,7 +35,12 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
         requireValue(principal(actor).kind === 'human', 'FORBIDDEN');
         requireValue(record.kind === 'decision', 'DECISION_REQUIRED');
         if (command.type !== 'request-record-cancellation') requireValue(record.itemIds.every(id => {const item = state.board.items.find(i => i.id === id) ?? state.archiveIndex?.find(i => i.id === id); return item && ['completed', 'cancelled'].includes(item.status);}), 'RECORD_EXECUTION_UNSETTLED');
-        if(command.type==='delete-record'||command.type==='archive-record')cleanupLinkedTasks(state,record,command.type==='delete-record'?'delete':'archive',now);
+        if(command.type==='delete-record')cleanupLinkedTasks(state,record,now);
+        if(command.type==='archive-record'){
+            requireValue(command.recordRevision===undefined||record.revision===command.recordRevision,'REVISION_CONFLICT');
+            requireValue(record.status!=='draft'&&record.status!=='cancelling','RECORD_EXECUTION_UNSETTLED');
+            requireValue(linkedRecordTasks(state,record).every(item=>['completed','cancelled'].includes(item.status)),'RECORD_EXECUTION_UNSETTLED');
+        }
         if (command.type === 'request-record-cancellation') record.status = record.status === 'cancelled' ? 'cancelled' : 'cancelling';
         else if (command.type === 'cancel-record') record.status = 'cancelled';
         else if(command.type==='archive-record')record.archivedAt=now;
@@ -142,16 +146,14 @@ export function recordSummary(record: KanbanProjectRecord): import('./contracts'
     return {...metadata, sessionIds: [...new Set(sources.map(source => source.sessionId))]};
 }
 
-function cleanupLinkedTasks(state:KanbanState,record:KanbanProjectRecord,action:'archive'|'delete',now:number):void {
+function linkedRecordTasks(state:KanbanState,record:KanbanProjectRecord){
     const ids=new Set(record.itemIds),all=[...state.board.items,...state.archiveIndex??[]];
     for(let index=0;index<all.length;index++)for(const item of all)if(item.planning?.parentId&&ids.has(item.planning.parentId))ids.add(item.id);
-    const selected=all.filter(item=>ids.has(item.id));
+    return all.filter(item=>ids.has(item.id));
+}
+function cleanupLinkedTasks(state:KanbanState,record:KanbanProjectRecord,now:number):void {
+    const selected=linkedRecordTasks(state,record),ids=new Set(selected.map(item=>item.id));
     requireValue(selected.every(item=>['completed','cancelled'].includes(item.status)),'RECORD_EXECUTION_UNSETTLED');
-    if(action==='archive'){
-        const active=state.board.items.filter(item=>ids.has(item.id)&&item.deletedAt===undefined);
-        for(let at=0;at<active.length;at+=50)archiveItems(state,active.slice(at,at+50).map(item=>item.id),'decision-'+record.id,now);
-    }else{
-        requireValue(!state.archiveIndex?.some(item=>ids.has(item.id)&&item.deletedAt===undefined),'RECORD_TASK_CLEANUP_REQUIRED');
-        for(const item of state.board.items.filter(item=>ids.has(item.id)&&item.deletedAt===undefined)){item.deletedAt=now;item.updatedAt=now;item.revision++;}
-    }
+    requireValue(!state.archiveIndex?.some(item=>ids.has(item.id)&&item.deletedAt===undefined),'RECORD_TASK_CLEANUP_REQUIRED');
+    for(const item of state.board.items.filter(item=>ids.has(item.id)&&item.deletedAt===undefined)){item.deletedAt=now;item.updatedAt=now;item.revision++;}
 }

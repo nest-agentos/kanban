@@ -49,3 +49,6 @@ export type {KanbanBoardWorkResource,KanbanBoardWorkResourceQuery,KanbanBoardWor
 export type {KanbanBoardSetting,KanbanBoardSettingsCatalog} from './settings';
 
 export type {KanbanOperationWaiver, KanbanAcceptanceResult} from './operation-waiver';
+
+export {recordArchiveBlocker} from './record-archive';
+export type {KanbanRecordArchiveRequest,KanbanRecordArchiveResult} from './record-archive';

@@ -1,3 +1,4 @@
+import {verifyRecordArchive} from './record-archive';
 import type {KanbanBoard,KanbanCommand,KanbanService} from '../contracts';
 import {KanbanError} from '../ports';
 import {boardDeletionBlockers} from './board-deletion-inspection';
@@ -5,11 +6,12 @@ import type {KanbanAutomationJournal} from './automation-journal';
 import type {KanbanRuntimeExtension} from './runtime-ports';
 import {safeCode} from './diagnostics';
 export async function verifyRuntimeLifecycle(service:KanbanService,journal:KanbanAutomationJournal,board:KanbanBoard,command:KanbanCommand) {
+    if(command.type==='archive-record')await verifyRecordArchive(journal,board.id,command.recordId,id=>service.records(id,{kind:'decision',includeArchived:true,limit:200}));
     if(command.type==='delete-item') {
         const blocker=(await boardDeletionBlockers({service,journal},board.id)).find(row=>row.itemId===command.itemId);
         if(blocker)throw new KanbanError(blocker.code);
     }
-    if(command.type==='cancel-record'||command.type==='delete-record'||command.type==='archive-record'||command.type==='restart-record'||command.type==='revise-record') {
+    if(command.type==='cancel-record'||command.type==='delete-record'||command.type==='restart-record'||command.type==='revise-record') {
         const runs=await journal.get<Array<{recordId:string;state:string}>>('record-runs:'+board.id);
         if(runs?.some(run=>run.recordId===command.recordId&&!['completed','failed','cancelled'].includes(run.state)))throw new KanbanError('RECORD_EXECUTION_UNSETTLED');
     }
