@@ -1,3 +1,5 @@
+import {managementRoots,managementGroups,managementGrouping} from './query-groups';
+import {kanbanColumnStatus,kanbanTaskType,kanbanAttentionRank} from './contracts';
 import {projectKanbanTask} from './contracts/task-projection';
 import {kanbanReference} from './contracts';
 import type {KanbanItemPage, KanbanItemQuery, KanbanItemSummary, KanbanOverview,KanbanProgress} from './contracts';
@@ -9,15 +11,31 @@ import {emptyTaskProgress,addTaskProgress,taskProgress} from './task-progress';
 
 export function queryItems(state: KanbanState, query: KanbanItemQuery = {}, all = catalog(state), now = Date.now()): KanbanItemPage {
     const {cursor, limit = 50, ...filters} = query;
+    validateQuery(query,limit,filters);
+    const fingerprint = JSON.stringify(Object.fromEntries(Object.entries({...filters, view: filters.view ?? 'ready'}).sort(([a], [b]) => a.localeCompare(b)))), revision = state.board.revision;
+    all = all.map(item => ({...item, task: projectKanbanTask(item, state.workflow, now, all)}));
+    const selected = all.filter(item => matchesQuery(item, filters, state.board));
+    const matches = (managementGrouping(query)?managementRoots(selected,all):selected).sort(filters.view === 'archive'
+        ? (a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0) || a.id.localeCompare(b.id) : query.groupBy==='management'?attentionOrder:order);
+    const start=queryPageStart(cursor,matches,fingerprint,revision);
+    const progress = progressByParent(state, all);
+    all=all.map(item=>({...item,taskType:kanbanTaskType(item),...(progress.has(item.id)?{progress:progress.get(item.id)}:{})}));
+    const enriched=new Map(all.map(item=>[item.id,item]));
+    const items = matches.slice(start, start + limit).map(item => enriched.get(item.id)!);
+    return {revision,total:matches.length,items,...(managementGrouping(query)?{groups:managementGroups(items,all,new Set(selected.map(row=>row.id)))}:{}),...(query.parentId?{progress:childProgress(matches),attentionItems:matches.filter(item=>['waiting-input','error','unknown','review'].includes(item.task?.phase??'')),parentTask:all.find(item=>item.id===query.parentId)?.task}:{}), ...(start + items.length < matches.length ? {
+        nextCursor: JSON.stringify({revision, after: items.at(-1)!.id, filter: fingerprint}),
+    } : {})};
+}
+function validateQuery(query:KanbanItemQuery,limit:number,filters:KanbanItemQuery):void {
+    requireValue(query.groupBy===undefined||query.groupBy==='management','INVALID_GROUPING');
+    requireValue(!query.groupBy||!query.parentId,'INVALID_GROUPING');
     requireValue(Number.isSafeInteger(limit) && limit >= 1 && limit <= 200, 'INVALID_PAGE_SIZE');
     requireValue(['ready', 'backlog', 'in-progress', 'review', 'closed', 'proposed', 'archive', 'all'].includes(query.view ?? 'ready'), 'INVALID_VIEW');
     for (const field of ['area', 'milestone', 'parentId', 'kind', 'sessionId', 'search', 'restartedFrom'] as const) if (filters[field] !== undefined) requireValue(typeof filters[field] === 'string' && filters[field]!.length <= 256, 'INVALID_FILTER');
     if(filters.ids!==undefined)requireValue(Array.isArray(filters.ids)&&filters.ids.length<=200&&filters.ids.every(id=>typeof id==='string'&&id.length>0&&id.length<=256),'INVALID_FILTER');
     if (filters.reference) requireValue(typeof filters.reference.system === 'string' && typeof filters.reference.id === 'string' && filters.reference.system.length <= 256 && filters.reference.id.length <= 256, 'INVALID_REFERENCE_FILTER');
-    const fingerprint = JSON.stringify(Object.fromEntries(Object.entries({...filters, view: filters.view ?? 'ready'}).sort(([a], [b]) => a.localeCompare(b)))), revision = state.board.revision;
-    all = all.map(item => ({...item, task: projectKanbanTask(item, state.workflow, now, all)}));
-    const matches = all.filter(item => matchesQuery(item, filters, state.board)).sort(filters.view === 'archive'
-        ? (a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0) || a.id.localeCompare(b.id) : order);
+}
+function queryPageStart(cursor:string|undefined,matches:KanbanItemSummary[],fingerprint:string,revision:number):number {
     let start = 0;
     if (cursor) {
         requireValue(typeof cursor === 'string' && cursor.length <= 4000, 'INVALID_CURSOR');
@@ -27,14 +45,13 @@ export function queryItems(state: KanbanState, query: KanbanItemQuery = {}, all 
         requireValue(decoded.revision === revision, 'CURSOR_STALE');
         start = matches.findIndex(i => i.id === decoded.after) + 1; requireValue(start > 0, 'INVALID_CURSOR');
     }
-    const progress = progressByParent(state, all);
-    const items = matches.slice(start, start + limit).map(item => ({...item, ...(progress.has(item.id) ? {progress: progress.get(item.id)} : {})}));
-    return {revision,total:matches.length,items,...(query.parentId?{progress:childProgress(matches),attentionItems:matches.filter(item=>['waiting-input','error','unknown','review'].includes(item.task?.phase??'')),parentTask:all.find(item=>item.id===query.parentId)?.task}:{}), ...(start + items.length < matches.length ? {
-        nextCursor: JSON.stringify({revision, after: items.at(-1)!.id, filter: fingerprint}),
-    } : {})};
+    return start;
 }
 function order(a: KanbanItemSummary, b: KanbanItemSummary): number {
     return a.planning.priority - b.planning.priority || a.createdAt - b.createdAt || a.id.localeCompare(b.id);
+}
+function attentionOrder(a:KanbanItemSummary,b:KanbanItemSummary):number {
+    return kanbanAttentionRank(a)-kanbanAttentionRank(b)||order(a,b);
 }
 function matchesQuery(item: KanbanItemSummary, query: Omit<KanbanItemQuery, 'cursor' | 'limit'>, board: KanbanState['board']): boolean {
     if(query.ids&&!query.ids.includes(item.id))return false;
@@ -43,7 +60,7 @@ function matchesQuery(item: KanbanItemSummary, query: Omit<KanbanItemQuery, 'cur
     if (item.deletedAt !== undefined && !query.includeDeleted) return false;
     if (query.restartedFrom !== undefined && item.restartedFrom !== query.restartedFrom) return false;
     if (query.phase && item.task?.phase !== query.phase) return false;
-    if (!matchesView(item, query.view ?? 'ready')) return false;
+    if (!matchesView({...item,status:kanbanColumnStatus(item)}, query.view ?? 'ready')) return false;
     for (const field of ['area', 'milestone', 'parentId', 'kind'] as const) if (query[field] !== undefined && item.planning[field] !== query[field]) return false;
     if (query.reference && !item.externalRefs?.some(r => r.system === query.reference!.system && r.id === query.reference!.id)) return false;
     if (query.sessionId && !item.sessionIds.includes(query.sessionId)) return false;

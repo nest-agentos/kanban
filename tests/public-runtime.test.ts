@@ -5,6 +5,19 @@ import {createKanbanRuntime,type KanbanRuntime,type KanbanExecutionAdapter,type 
 import type {KanbanCommand} from '../src/contracts';
 const closes:Array<()=>Promise<void>>=[];
 afterEach(async()=>{for(const close of closes.splice(0).reverse())await close();});
+it('exposes plugin operations through the standalone runtime without application or Kernel dependencies',async()=>{
+ const {manager}=await createVFS({rootBackend:new MemoryBackend()});closes.push(()=>manager.dispose());
+ const run=vi.fn(async()=>({revision:'r2',operations:[]})),dispose=vi.fn(async()=>{});
+ const service=await createKanbanRuntime({fs:await manager.openFileSystem('/'),actor:{kind:'human',id:'owner'},authorize:async()=>{},operationPlugins:[{
+  id:'documents',version:'1',label:'Documents',actions:[{id:'publish',label:'Publish document'}],create:()=>({
+   itemOperations:async()=>({revision:'r1',operations:[{id:'publish',label:'Publish document',enabled:true,state:'ready'}]}),runItemOperation:run,dispose})}]});
+ closes.push(()=>service.dispose());
+ await service.create({id:'docs',title:'Documents',scope:{kind:'system'},members:[{kind:'human',id:'owner',responsibility:'Manage',roles:['coordinator','worker']}]});
+ await service.execute('docs',{operationId:'create',expectedRevision:1,command:{type:'create-item',item:{id:'item',title:'Document',responsibility:'Publish',acceptance:'Stored'}}});
+ expect(await service.itemOperations!('docs','item')).toMatchObject({pluginId:'documents',revision:'r1'});expect(run).not.toHaveBeenCalled();
+ await service.runItemOperation!('docs',{pluginId:'documents',operationId:'publish',itemId:'item',action:'publish',expectedRevision:'r1'});
+ expect(run).toHaveBeenCalledOnce();expect(service).not.toHaveProperty('store');
+});
 async function fixture() {
     const {manager}=await createVFS({rootBackend:new MemoryBackend()});closes.push(()=>manager.dispose());
     const fs=await manager.openFileSystem('/'),intents=new Map<string,KanbanExecutionIntent>(),receipts=new Map<string,KanbanExecutionReceipt>();

@@ -344,3 +344,14 @@ it.each(['failed', 'cancelled', 'unknown'] as const)('never projects a nonaccept
     const workflow = {dispatches: {d: {id: 'd', itemId: 'task', attempt: 1, outcome, code: 'ORIGINAL_FAILURE'}}} as never;
     expect(projectKanbanTask(item, workflow).phase).toBe(outcome === 'unknown' ? 'unknown' : 'error');
 });
+
+it('rejects contradictory explicit task responsibility at creation',async()=>{
+ const f=await fixture();
+ await expect(f.run({type:'create-item',item:{id:'conflict',title:'Conflict',responsibility:'Execute',acceptance:'Done',taskType:'execution'},planning:{kind:'task',execution:'children',priority:2,dependencies:[],references:[]}})).rejects.toMatchObject({code:'INVALID_TASK_TYPE'});
+});
+it('promotes a task to management responsibility when editing it into a task group',async()=>{
+ const f=await fixture();await f.run({type:'create-item',item:{id:'editable',title:'Task',responsibility:'Execute',acceptance:'Done'}});
+ await f.run({type:'begin-edit',itemId:'editable',editId:'edit',leaseMs:60000});
+ await f.run({type:'save-edit',itemId:'editable',editId:'edit',title:'Group',responsibility:'Coordinate',acceptance:'Done',planning:{kind:'task',execution:'children',priority:2,dependencies:[],references:[]}});
+ expect((await f.service.item('board','editable')).item.taskType).toBe('coordination');
+});

@@ -1,3 +1,4 @@
+import {restoreTaskIdentity} from './task-identity';
 import {randomUUID, sha256HexSync} from './utils';
 import type {KanbanItem, KanbanProjectRecord} from './contracts';
 import {summary} from './planning';
@@ -27,7 +28,7 @@ export async function hydrateEntity(raw: string | null, row: string | null, kind
     if (!(kind === 'item' ? view.items : view.records).some(value => value.id === id)) return {view};
     requireValue(typeof row === 'string', 'MISSING_STORAGE_ROW');
     const value = await decodeRow<KanbanItem | KanbanProjectRecord>(row, bodies);
-    requireValue(value.id === id, 'INVALID_STORAGE'); return {view, value};
+    requireValue(value.id === id, 'INVALID_STORAGE'); if(kind==='item')restoreTaskIdentity(value as KanbanItem);return {view, value};
 }
 
 export function rowKeys(raw: string | null): string[] {
@@ -44,7 +45,7 @@ export async function hydrate(saved: StoredBoard, bodies?: KanbanBodyStore): Pro
     const state = validateState(parsed.state), id = state.board.id;
     state.board.items = await Promise.all(parsed.itemIds.map(async itemId => {
         const item = await decodeRow<KanbanItem>(requiredRow(saved, rowKey('item', id, itemId)), bodies);
-        requireValue(item.id === itemId, 'INVALID_STORAGE'); return item;
+        requireValue(item.id === itemId, 'INVALID_STORAGE'); return restoreTaskIdentity(item);
     }));
     state.records = await Promise.all(parsed.recordIds.map(async recordId => {
         const record = await decodeRow<KanbanProjectRecord>(requiredRow(saved, rowKey('record', id, recordId)), bodies);
@@ -98,14 +99,15 @@ function verifyBody(bytes: ArrayBuffer, ref: BodyRef): void {
 }
 function requiredRow(saved: StoredBoard, key: string): string {requireValue(typeof saved.rows[key] === 'string', 'MISSING_STORAGE_ROW'); return saved.rows[key];}
 function validateState(state: KanbanState): KanbanState {
-    requireValue(state?.schema === 1 && state.board && Array.isArray(state.board.items) && Array.isArray(state.events), 'INVALID_STORAGE'); return state;
+    requireValue(state?.schema === 1 && state.board && Array.isArray(state.board.items) && Array.isArray(state.events), 'INVALID_STORAGE');
+    state.board.items.forEach(restoreTaskIdentity);state.archiveIndex?.forEach(restoreTaskIdentity);return state;
 }
 
 export function indexedView(raw: string | null): KanbanReadView | null {
     if (raw === null) return null;
     const parsed = JSON.parse(raw) as Manifest;
     if (parsed.layout === 2 && Array.isArray(parsed.itemIndex) && Array.isArray(parsed.recordIndex))
-        return {state: validateState(parsed.state), items: parsed.itemIndex, records: parsed.recordIndex};
+        return {state: validateState(parsed.state), items: parsed.itemIndex.map(restoreTaskIdentity), records: parsed.recordIndex};
     return null;
 }
 export function viewFromState(state: KanbanState): KanbanReadView {

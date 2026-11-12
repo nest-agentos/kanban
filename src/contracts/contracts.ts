@@ -55,6 +55,7 @@ export interface KanbanBoard {
     participants: KanbanParticipant[];
 }
 export interface KanbanEvent {
+    taskType?:import('./task-type').KanbanTaskType;
     sequence: number; boardId: string; itemId?: string; operationId: string; at: number;
     kind: string; actor: KanbanActor; recipients: string[];
     data: { status?: KanbanItem['status']; reference?: KanbanExternalReference; code?: string; itemTitle?: string; dispatchId?: string; readyItemIds?: string[]; planId?: string; recordId?: string; recordIds?: string[]; itemIds?: string[]; planning?: KanbanPlanning; message?: string; reason?: string; resultRef?: string; estimate?: KanbanEstimate; workUnits?: number };

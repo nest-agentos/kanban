@@ -48,3 +48,22 @@ export {managementTaskOwner} from './coordination-rules';
 
 export {registerSessionLearnings,type SessionLearningInput} from './session-learnings';
 export {parseSessionLearnings,learningText} from './session-learnings-input';
+
+export {registerTaskResultRecovery,resumeTaskResultRecovery,type TaskResultRecovery,type TaskResultRecoveryPorts} from './task-result-recovery';
+
+export {automaticDelivery,automaticDeliveryStatus,automaticDeliveryStatuses,settleWorkspaceFinalization} from './automatic-delivery';
+export {deliveryKey,deliverySteps,deliveryComplete,deliveryNeedsAuthority,deliveryStatus} from './automatic-delivery-state';
+export {claimDeliveryTarget,releaseDeliveryTarget,type DeliveryScope} from './automatic-delivery-target';
+export type {AutomaticDeliveryOptions,AutomaticDeliveryState,AutomaticDeliveryPolicy} from './automatic-delivery-types';
+export {selectDeliverySteps,reviewKey,jobKey} from './delivery-policy';
+
+export {finishReviewCleanup,reviewCleanupKey,type ReviewCleanup,type ReviewCleanupPorts} from './item-operation-cleanup';
+export {cancellationKey,pendingCancellation,blocksOperation,cancellationSupported,requestCancellation,reconcileCancellation,scanCancellations,type ReviewCancellation,type ReviewCancellationPorts,type CancellableReviewJob} from './item-operation-cancellation';
+
+export {requireOperationAuthority,type OperationOrigin,type OperationAuthorityPorts,type OperationAuthorityContext} from './item-operation-authority';
+
+export {invalidateReviewAnalysis,revalidateMergeAdmission,prepareAutomaticReanalysis,settleRejectedMerge,type AnalysisReviewJob,type ReviewAnalysisPorts,type ReviewAnalysisPolicy} from './item-operation-analysis';
+
+export {createOperationPluginRegistry,type KanbanOperationPlugin,type KanbanOperationProvider,type KanbanOperationPluginContext} from './operation-plugins';
+
+export {initializeResourceIndex,indexResourceJob,resourceJobIndex,type ResourceJobJournal} from './resource-operation-index';

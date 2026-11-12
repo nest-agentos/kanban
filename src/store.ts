@@ -1,3 +1,4 @@
+import {restoreTaskIdentity} from './task-identity';
 import {numberEntities, boardCounterKey, boardNumberKey, counter, allocateBoardNumber, patchBoardNumber} from './numbering';
 import {hydrateEntity, rowKey} from './storage-codec';
 import type { KanbanEvent, KanbanArchivedItem } from './contracts';
@@ -38,7 +39,7 @@ export class SeqKanbanStore implements KanbanStore {
     async archived(boardId: string, itemId: string): Promise<KanbanArchivedItem | null> {
         const raw = await this.fs.meta.seq!.getEntry(this.path, archiveKey(boardId, itemId));
         if (!raw) return null; const record = await decodeRow<KanbanArchivedItem>(raw, this.bodies);
-        record.item.number ??= (await this.view(boardId))?.state.archiveIndex?.find(item => item.id === itemId)?.number; return record;
+        restoreTaskIdentity(record.item);record.item.number ??= (await this.view(boardId))?.state.archiveIndex?.find(item => item.id === itemId)?.number; return record;
     }
     private async load(id: string, receiptKey?: string): Promise<StoredBoard & {receipt?: string | null}> {
         return this.fs.meta.seq!.transaction!(async tx => {

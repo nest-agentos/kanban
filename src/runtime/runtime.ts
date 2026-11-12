@@ -1,3 +1,4 @@
+import {createOperationPluginRegistry} from './operation-plugins';
 import {recordArchival} from './record-archive';
 import {withRecordProgress} from './record-progress';
 import {withRecordAttention,dismissRecordAttention} from './record-attention';
@@ -33,6 +34,9 @@ export async function assembleKanbanRuntime(options:KanbanRuntimeOptions) {
         onCommitted:async(id,source,now)=>{await workLog.synchronize(id,source);await options.onCommitted?.(id,source,now);}});
     const service=serviceFor(options.actor),context:KanbanRuntimeContext={fs,store,journal,workLog,service,serviceFor};
     const extensions=options.extensions?.(context)??[];
+    const plugins=[...options.operationPlugins??[],...extensions.flatMap(extension=>extension.operationPlugins??[])];
+    if(plugins.length&&extensions.some(extension=>extension.capabilities?.itemOperations||extension.capabilities?.runItemOperation||extension.capabilities?.bindItemOperation))throw Object.assign(new Error('Operation plugins conflict with legacy operation capabilities'),{code:'OPERATION_PLUGIN_CAPABILITY_CONFLICT'});
+    if(plugins.length)extensions.push(await createOperationPluginRegistry(context,plugins));
     const runtime=assembleRuntime(options,context,extensions,verify=>{verifyDeletion=verify;});
     runtimeClient=runtime.service;return runtime;
 }

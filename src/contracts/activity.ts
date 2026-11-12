@@ -9,7 +9,7 @@ export interface KanbanExecutionSession {
 export interface KanbanPlanningSession extends KanbanExecutionSession {itemId: string; analysisId: string; coordination?:{id:string;state:string;code?:string;summary?:string;suggestions?:Array<{itemId:string;action:string;reason:string}>}}
 export interface KanbanSessionActivityQuery extends KanbanItemQuery {execution?: 'all' | 'running' | 'recent' | 'active'}
 export interface KanbanSessionItemSummary extends KanbanItemSummary {execution?: KanbanExecutionSession}
-export interface KanbanSessionItemPage extends Omit<KanbanItemPage,'items'|'attentionItems'> {attentionItems?:KanbanSessionItemSummary[];items: KanbanSessionItemSummary[]}
+export interface KanbanSessionItemPage extends Omit<KanbanItemPage,'items'|'attentionItems'|'groups'> {groups?:Array<{parentId:string;total:number;items:KanbanSessionItemSummary[]}>;attentionItems?:KanbanSessionItemSummary[];items: KanbanSessionItemSummary[]}
 export type KanbanSessionPurpose = 'execution' | 'planning' | 'fix' | 'finalization' | 'discussion';
 /** A run belongs to a Session; continuing it does not create another Session. */
 export interface KanbanSessionExecution {

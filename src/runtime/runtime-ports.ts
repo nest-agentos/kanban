@@ -13,6 +13,7 @@ export interface KanbanRuntimeContext {
 }
 /** Extensions bind host facilities; recovery and shutdown are coordinated by the runtime. */
 export interface KanbanRuntimeExtension {
+    operationPlugins?:import('./operation-plugins').KanbanOperationPlugin[];
     projectRecords?(boardId:string,page:import('../contracts').KanbanRecordPage):Promise<import('../contracts').KanbanRecordPage>;
     archiveItemResources?(boardId:string,itemId:string,operationId:string):Promise<void>;
     capabilities?:Partial<KanbanClient>;
@@ -26,6 +27,7 @@ export interface KanbanRuntimeOptions extends Omit<KanbanActivityModuleOptions,'
     assertRestartIdle?(boardId:string,itemIds:string[]):Promise<void>;
     control?:KanbanTaskControlOptions;
     automation?:Omit<KanbanAutomationOptions,'fs'|'directory'|'service'|'serviceFor'|'journal'|'workLog'|'log'>;
+    operationPlugins?:import('./operation-plugins').KanbanOperationPlugin[];
     extensions?(context:KanbanRuntimeContext):KanbanRuntimeExtension[];
     createService?(options:KanbanActivityModuleOptions):KanbanActivityHandle;
 }

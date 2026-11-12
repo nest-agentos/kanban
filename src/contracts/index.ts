@@ -1,4 +1,4 @@
-export type {KanbanPlanning, KanbanProgress, KanbanItemSummary, KanbanArchivedItem, KanbanItemQuery, KanbanItemPage, KanbanOverview} from './planning';
+export type {KanbanTaskGroup, KanbanPlanning, KanbanProgress, KanbanItemSummary, KanbanArchivedItem, KanbanItemQuery, KanbanItemPage, KanbanOverview} from './planning';
 export type {KanbanReferenceTarget} from './references';
 export {kanbanReference} from './references';
 export type {KanbanPrincipal, KanbanMember, KanbanWorkType, KanbanColumn, KanbanNotificationPolicy, KanbanExternalReference} from './configuration';
@@ -19,7 +19,7 @@ export type {KanbanAutomationSettings, KanbanAutomationOption, KanbanAutomationT
 export {sameAutomationBinding} from './automation';
 export type {KanbanItemResourceCatalog, KanbanRecordResource, KanbanRecordExecution, KanbanRecordRunRequest} from './record-execution';
 export type {KanbanWorkResource, KanbanWorkResourceCleanup, KanbanWorkResourceQuery} from './work-resources';
-export type {KanbanOperationChoice, KanbanOperationField, KanbanItemOperation, KanbanItemOperations, KanbanItemOperationRequest, KanbanItemOperationBinding} from './operations';
+export type {KanbanOperationFact, KanbanOperationAttention, KanbanOperationChoice, KanbanOperationField, KanbanItemOperation, KanbanItemOperations, KanbanItemOperationRequest, KanbanItemOperationBinding,KanbanOperationPluginDescriptor} from './operations';
 
 export type {KanbanDeletionPreview, KanbanDeletionRequest} from './deletion';
 
@@ -52,3 +52,5 @@ export type {KanbanOperationWaiver, KanbanAcceptanceResult} from './operation-wa
 
 export {recordArchiveBlocker} from './record-archive';
 export type {KanbanRecordArchiveRequest,KanbanRecordArchiveResult} from './record-archive';
+
+export {kanbanColumnStatus,kanbanAttentionRank} from './task-display';

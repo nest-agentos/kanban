@@ -14,6 +14,6 @@ export function kanbanVerificationOptions(mode: string): KanbanVerificationOptio
     return {...options[mode as KanbanVerificationMode]};
 }
 export function kanbanVerificationMode(value: KanbanVerificationOptions): KanbanVerificationMode {
-    if (value.verificationLevel !== 'none') return value.verificationLevel ?? 'full';
-    return value.deliveryMode === 'release' ? 'release' : value.deliveryMode === 'source' ? 'source' : 'build';
+    if (value.verificationLevel === 'full' || value.verificationLevel === 'quick') return value.verificationLevel;
+    return value.deliveryMode === 'source' ? 'source' : value.deliveryMode === 'build' ? 'build' : 'release';
 }

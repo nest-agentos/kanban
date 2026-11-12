@@ -27,11 +27,12 @@ export interface KanbanRuntimeOptions {
     fs:IFileSystem;directory?:string;actor:KanbanActor;
     authorize:KanbanModuleOptions['authorize'];
     execution?:KanbanExecutionAdapter;resources?:KanbanResourceCatalog;activity?:KanbanSessionSource;
+    operationPlugins?:import('./operation-plugins').KanbanOperationPlugin[];
     onCommitted?:KanbanModuleOptions['onCommitted'];
     log?(event:KanbanRuntimeDiagnostic):void;
 }
 /** All persistence, projections, control and deletion barriers are owned by this service. */
-export interface KanbanRuntime extends KanbanService,Pick<KanbanClient,'previewTaskRestart'|'restartTask'|'records'|'record'|'runRecord'|'recordExecutions'|'controlRecord'|'archiveRecords'|'itemResources'|'recordResources'|'previewDeletion'|'deleteBoard'|'cancelBoard'|'requestBoardDeletion'|'queryActivity'|'executionSession'|'automationCatalog'|'analysisStatus'> {
+export interface KanbanRuntime extends KanbanService,Pick<KanbanClient,'itemOperations'|'runItemOperation'|'bindItemOperation'|'previewTaskRestart'|'restartTask'|'records'|'record'|'runRecord'|'recordExecutions'|'controlRecord'|'archiveRecords'|'itemResources'|'recordResources'|'previewDeletion'|'deleteBoard'|'cancelBoard'|'requestBoardDeletion'|'queryActivity'|'executionSession'|'automationCatalog'|'analysisStatus'> {
     results(boardId:string,dispatchId:string):Promise<Array<{reference:KanbanArtifactRef;value:unknown}>>;
     quiesce():Promise<void>;dispose():Promise<void>;
 }

@@ -1,3 +1,4 @@
+import {kanbanTaskType} from './contracts/task-type';
 import {configureBoardSettings} from './board-settings';
 import {prepareItemCleanup} from './item-cleanup';
 import {insertRepairDependency} from './repair-dependency';
@@ -87,6 +88,7 @@ function createItem(state: KanbanState, command: Extract<KanbanCommand, { type: 
     const input = {id, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose,taskType:taskType??(purpose==='planning'||command.planning?.execution==='children'?'coordination' as const:'execution' as const)}, board = state.board;
     requireValue(taskType===undefined||['coordination','execution'].includes(taskType),'INVALID_TASK_TYPE');
     requireValue(purpose===undefined||purpose==='planning','INVALID_ITEM_PURPOSE');
+    requireValue(taskType!=='execution'||purpose!=='planning'&&command.planning?.execution!=='children','INVALID_TASK_TYPE');
     identity(input.id); text(input.title); text(input.responsibility); text(input.acceptance);
     requireValue(!board.items.some(i => i.id === input.id) && !state.archiveIndex?.some(i => i.id === input.id), 'ITEM_EXISTS');
     const item: KanbanItem = { ...input, origin: {kind: 'direct', principal: principal(actor)}, status: 'backlog', revision: 1, createdAt: now, readyAt: now, updatedAt: now, workUnits: 0, participants: [] };
@@ -116,7 +118,8 @@ function append(state: KanbanState, actor: KanbanActor, operationId: string, at:
     itemId?: string, data: KanbanEvent['data'] = {}, recipients?: string[]): void {
     const archived = state.archiveWrites?.flatMap(write => write.value?.item.participants ?? []) ?? [];
     const members = [...archived, ...state.board.participants, ...state.board.items.filter(i => i.id === itemId).flatMap(i => i.participants)];
-    state.events.push({ sequence: ++state.sequence, boardId: state.board.id, itemId, operationId, at, kind, actor,
+    const item=state.board.items.find(row=>row.id===itemId)??state.archiveIndex?.find(row=>row.id===itemId);
+    state.events.push({...(item?{taskType:kanbanTaskType(item)}:{}), sequence: ++state.sequence, boardId: state.board.id, itemId, operationId, at, kind, actor,
         recipients: [...new Set(recipients ?? members.filter(p => p.subscribed).map(p => p.sessionId))], data });
 }
 function scan(state: KanbanState, actor: KanbanActor, operationId: string, now: number): void {

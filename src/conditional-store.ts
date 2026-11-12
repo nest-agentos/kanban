@@ -1,3 +1,4 @@
+import {restoreTaskIdentity} from './task-identity';
 import {numberEntities, boardCounterKey, boardNumberKey, counter, allocateBoardNumber, storedBoardNumber} from './numbering';
 import {hydrateEntity, rowKey} from './storage-codec';
 import type {KanbanSeqClient, KanbanSeqChange, KanbanSeqSnapshot} from './storage-ports';
@@ -63,7 +64,7 @@ export class ConditionalKanbanStore implements KanbanStore {
     async archived(board: string, item: string): Promise<KanbanArchivedItem | null> {
         const raw = entry(await this.select([archiveKey(board, item)]), archiveKey(board, item));
         if (!raw) return null; const record = await decodeRow<KanbanArchivedItem>(raw, this.bodies);
-        record.item.number ??= (await this.view(board))?.state.archiveIndex?.find(value => value.id === item)?.number; return record;
+        restoreTaskIdentity(record.item);record.item.number ??= (await this.view(board))?.state.archiveIndex?.find(value => value.id === item)?.number; return record;
     }
     private async numberBoard(snapshot: KanbanSeqSnapshot, raw: string | null, id: string, state: KanbanState): Promise<KanbanSeqChange[]> {
         const high = counter(entry(snapshot, boardCounterKey)), number = allocateBoardNumber(raw, high);

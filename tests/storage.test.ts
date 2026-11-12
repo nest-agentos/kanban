@@ -155,3 +155,14 @@ it('reads a 500-event page through bounded key batches', async () => {
     expect(batches.map(batch=>batch.length)).toEqual([256,234]);expect(events).toHaveLength(490);
     expect(events[0].sequence).toBe(1);expect(events.at(-1)!.sequence).toBe(490);
 });
+
+it('normalizes conflicting legacy management identity consistently without writes on read',async()=>{
+ const {fs,store}=await fixture(),state=initial();
+ Object.assign(state.board.items[0],{taskType:'execution',planning:{kind:'task',execution:'children',priority:2,dependencies:[],references:[]}});
+ await store.update('b','legacy-identity','legacy-identity',()=>state);
+ const before=await fs.meta.seq!.getEntry(path,'board/b');
+ expect((await store.read('b'))!.board.items[0].taskType).toBe('coordination');
+ expect((await store.view('b'))!.items[0].taskType).toBe('coordination');
+ expect((await store.entity('b','item','one'))!.value).toMatchObject({taskType:'coordination'});
+ expect(await fs.meta.seq!.getEntry(path,'board/b')).toBe(before);
+});

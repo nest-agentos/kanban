@@ -20,8 +20,8 @@ export function assertDefinitionEditable(item: KanbanItem, now: number, editId?:
 export function applyTaskCommand(state: KanbanState, command: KanbanTaskCommand, actor: KanbanActor, now: number): void {
     const item = state.board.items.find(i => i.id === command.itemId); requireValue(item, 'ITEM_NOT_FOUND');
     item.launch ??= {startAt: taskStartAt(item)};
-    if(command.type==='finish-planning'){requireCoordinator(state,actor);const children=catalog(state).filter(row=>row.planning.parentId===item.id&&row.deletedAt===undefined);requireValue(children.length>0&&children.every(row=>row.purpose!=='planning'),'ANALYSIS_CLARIFICATION_PENDING');delete item.purpose;}
-    else if(command.type==='mark-planning'){requireCoordinator(state,actor);requireValue(!item.owner&&['backlog','open'].includes(item.status),'PLAN_ROOT_UNAVAILABLE');requireValue(!Object.values(state.workflow?.plans??{}).some(plan=>plan.rootItemId===item.id||plan.itemIds.includes(item.id)),'ITEM_IN_OTHER_PLAN');item.purpose='planning';}
+    if(command.type==='finish-planning'){requireCoordinator(state,actor);const children=catalog(state).filter(row=>row.planning.parentId===item.id&&row.deletedAt===undefined);requireValue(children.length>0&&children.every(row=>row.purpose!=='planning'),'ANALYSIS_CLARIFICATION_PENDING');item.taskType='coordination';delete item.purpose;}
+    else if(command.type==='mark-planning'){requireCoordinator(state,actor);requireValue(!item.owner&&['backlog','open'].includes(item.status),'PLAN_ROOT_UNAVAILABLE');requireValue(!Object.values(state.workflow?.plans??{}).some(plan=>plan.rootItemId===item.id||plan.itemIds.includes(item.id)),'ITEM_IN_OTHER_PLAN');item.taskType='coordination';item.purpose='planning';}
     else if (command.type === 'reopen-item') reopen(state, item, command.reopenId, actor, now);
     else if (['begin-edit', 'end-edit', 'save-edit'].includes(command.type)) edit(state, item, command, actor, now);
     else if(command.type==='retry-analysis') {
@@ -60,6 +60,7 @@ function edit(state: KanbanState, item: KanbanItem, command: KanbanTaskCommand, 
         text(command.title); text(command.responsibility); text(command.acceptance); validatePlan(state, item, command.planning);
         if (command.launchMode !== undefined) setMode(item, command.launchMode);
         Object.assign(item, {title: command.title, responsibility: command.responsibility, acceptance: command.acceptance, planning: command.planning});
+        if(command.planning.execution==='children')item.taskType='coordination';
         if (command.externalRefs) {item.externalRefs = []; for (const ref of command.externalRefs) attachReference(item, ref);}
     }
     if(command.type==='save-edit')for(const plan of Object.values(state.workflow?.plans??{})) {

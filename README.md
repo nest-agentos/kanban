@@ -168,3 +168,21 @@ const executionAdapter = {
 A human may issue `restart-item` with a cancelled `itemId` and a distinct `replacementId` after control and execution settlement. It creates fresh manual work linked through `restartedFrom`, retaining the original task, sealed plans and execution history. Workspace cleanup and starting the successor are separate host operations.
 
 任务投影的 `phase=completed` 表示事项已结算。可选 `completion` 区分 `accepted`、`waived`、`mixed` 和 `children`，任务摘要透传已有 `acceptanceResult`；缺少历史验收依据时不补造通过记录。豁免与任务组结算不证明构建、部署、Git 合并或资源清理成功，各交付步骤仍需自己的回执。
+
+
+### 已有结果的恢复推进（integration）
+
+`registerTaskResultRecovery(journal, candidate)` 原子保存 board/item/dispatch/result 身份与待处理索引。`resumeTaskResultRecovery(ports)` 只处理索引中的候选：复核当前任务、最新派发、暂停/取消及宿主自动授权，取得正向恢复证据后复用既有 continuation 准入；running/unknown 不重派。完成、取消或已被新尝试替代的候选退出索引，历史回执保留。
+
+宿主通过 `authorized / inspect / recover` 提供授权、资源及正式结果证据。库不解释 Session、原生轮次、Git、构建或发布；旧失败 Dispatch 不改写为成功，接纳结果由新的稳定 continuation 及其产物所有权记录表达。
+
+
+## Operation plugins
+
+`createKanbanRuntime({ ...options, operationPlugins })` accepts trusted operation plugins. Import `KanbanOperationPlugin` from `@nestos/kanban/runtime`. Each plugin declares `{ id, version, label, actions, create }`; actions have plugin-local IDs, labels and optional dependencies. Cyclic or unknown dependencies and duplicate plugin IDs are rejected.
+
+The factory receives only `{ service, journal, workLog }` and returns an operation provider (`itemOperations`, `runItemOperation`, optional binding/applicability and lifecycle ports). Host authorization, business result validation and side effects stay in the provider. Reuse `coordinateOperation` and the injected execution ports instead of adding an execution queue. Reading a view never starts work.
+
+Requests carry `pluginId`; one-provider legacy callers remain compatible. Multiple providers can use the same action IDs without sharing authority. Operation routing freezes the plugin/version/request fingerprint before provider admission. Changing that binding requires a new operation identity; an unknown result never grants replay. One failed provider projection does not hide another provider's controls.
+
+Stage order, confirmation actions, handoff/finalization actions and version-recovery classifications are injected policies. The library does not ship software-development actions; a development plugin supplies build/deploy/merge operations, while other plugins supply their own actions.
