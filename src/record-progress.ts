@@ -1,16 +1,18 @@
 import type {KanbanItemSummary,KanbanRecordSummary,KanbanRecordProgress,KanbanTaskProjection} from './contracts';
 import {recordTaskProgress} from './record-task-progress';
+import {recordParticipation} from './record-participation';
 
 type Fact={item:KanbanItemSummary;task:KanbanTaskProjection};
 const priorities=['unknown','error','waiting-input','review','cancelling','pausing','paused','resuming','analyzing','running','preparing','queued','waiting-dependency','waiting-start','cancelled','completed'];
 /** Business progress derives from task settlement; archive and Session liveness are independent. */
 export function recordProgress(record:KanbanRecordSummary,facts:Fact[]):KanbanRecordProgress {
     const latest=Math.max(record.updatedAt??record.createdAt,...facts.map(({item})=>item.updatedAt));
-    let base:Pick<KanbanRecordProgress,'lastActivityAt'|'tasks'|'stage'>={lastActivityAt:latest};
+    let base:Pick<KanbanRecordProgress,'lastActivityAt'|'tasks'|'stage'|'participation'>={lastActivityAt:latest};
     const roots=facts.filter(({item})=>record.itemIds.includes(item.id)),groupIds=roots.map(({item})=>item.id);
     if(roots.length&&roots.length===record.itemIds.length){
-        const tasks=recordTaskProgress(activeFacts(facts,new Set(groupIds),new Set(groupIds)),roots);
-        base={...base,tasks,stage:tasks.execution.total?'execution':'management'};
+        const scope=activeFacts(facts,new Set(groupIds),new Set(groupIds)),tasks=recordTaskProgress(scope,roots);
+        base={...base,tasks,stage:tasks.execution.total?'execution':'management',
+            ...(record.status!=='draft'?{participation:recordParticipation(scope,roots)}:{})};
     }
     if(record.status!=='confirmed')return {...base,state:record.status==='draft'?'needs-action':record.status,reason:record.status==='draft'?'confirm-decision':undefined};
     if(!record.itemIds.length)return {...base,state:'waiting',reason:'awaiting-execution'};

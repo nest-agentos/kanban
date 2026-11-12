@@ -27,7 +27,11 @@ export interface KanbanProjectRecord {
     supersedes?: string; supersededBy?: string;
 }
 export type KanbanRecordInput = Pick<KanbanProjectRecord, 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs' | 'completion' | 'verificationLevel' | 'deliveryMode' | 'discussionSessionId'>;
+export interface KanbanRecordParticipationTarget {
+    itemId:string;title:string;purpose:'management'|'execution';phase:import('./task-state').KanbanTaskPhase;
+}
 export interface KanbanRecordProgress {
+    participation?:{reason:'needs-action'|'running'|'management';targets:KanbanRecordParticipationTarget[]};
     stage?:'management'|'execution'|'finalization';
     tasks?:{management:import('./planning').KanbanProgress;execution:import('./planning').KanbanProgress};
     state: 'draft' | 'waiting' | 'running' | 'needs-action' | 'failed' | 'completed' | 'checking' | 'cancelling' | 'cancelled' | 'rejected' | 'superseded';

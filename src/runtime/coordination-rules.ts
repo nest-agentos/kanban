@@ -1,4 +1,4 @@
-import {DEFAULT_KANBAN_WORK_TYPES,type KanbanBoard,type KanbanItem,type KanbanEstimate,type KanbanExternalReference} from '../contracts';
+import {kanbanTaskType,DEFAULT_KANBAN_WORK_TYPES,type KanbanBoard,type KanbanItem,type KanbanEstimate,type KanbanExternalReference} from '../contracts';
 import type {Definition} from './task-fix-ports';
 import {requireValue,identity} from '../rules';
 export interface CoordinationResult {schema:'kanban.coordination/1';summary:string;suggestions:Array<{itemId:string;action:string;reason:string}>}
@@ -57,15 +57,15 @@ export function itemsWithinRoots(items:readonly KanbanItem[],roots:readonly stri
 }
 
 /** Canonical parent links establish ownership; titles and conversation state never infer it. */
-export function managementTaskOwner(board:KanbanBoard,item:KanbanItem):KanbanItem|undefined {
-    let current=item,owner=item.planning?.execution==='children'?item:undefined;
+export function managementTaskOwner<T extends {id:string;planning?:{parentId?:string;execution?:string}}>(board:{items:readonly T[]},item:T):T|undefined {
+    let current=item,owner=kanbanTaskType(item)==='coordination'?item:undefined;
     const byId=new Map(board.items.map(row=>[row.id,row]));
     const visited=new Set([item.id]);
     while(current.planning?.parentId){
         const parent=byId.get(current.planning.parentId);
         requireValue(parent&&!visited.has(parent.id),'OPERATION_OWNER_INVALID');
         visited.add(parent.id);current=parent;
-        if(parent.planning?.execution==='children')owner=parent;
+        if(kanbanTaskType(parent)==='coordination')owner=parent;
     }
     return owner;
 }

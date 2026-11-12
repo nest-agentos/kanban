@@ -1,6 +1,7 @@
 import type {KanbanItemSummary,KanbanRecordSummary,KanbanTaskProjection} from './contracts';
 import type {KanbanState} from './ports';
 import {recordProgress} from './record-progress';
+import {recordTaskHasOwnIssue} from './record-participation';
 import {projectKanbanTask} from './contracts/task-projection';
 
 /** Attention is a read projection from existing indexes, never a second notification store. */
@@ -37,7 +38,7 @@ export function recordAttention(state:KanbanState,items:KanbanItemSummary[],reco
 
 function pendingTask(item:KanbanItemSummary|undefined,task:KanbanTaskProjection|undefined):NonNullable<KanbanRecordSummary['attentionTasks']>{
     if(!task||!item||!['waiting-input','error','unknown'].includes(task.phase))return [];
-    const ownIssue=item.blocked||item.issues?.some(issue=>!issue.resolvedBy)||['failed','blocked','clarification','unknown'].includes(item.analysis?.state??'');
+    const ownIssue=recordTaskHasOwnIssue(item);
     if(item.planning.execution==='children'&&!ownIssue)return [];
     return [{itemId:item.id,title:item.title,phase:task.phase as 'waiting-input'|'error'|'unknown',purpose:item.purpose==='planning'||item.planning.execution==='children'?'planning':'execution',...(task.sessionId?{sessionId:task.sessionId}:{})}];
 }
