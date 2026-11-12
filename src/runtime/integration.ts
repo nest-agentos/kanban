@@ -1,4 +1,5 @@
 export {KanbanAutomationJournal} from './automation-journal';
+export {recordFinalization} from '../record-progress';
 export {journalCommand} from './journal-command';
 export {completeCompositePlans} from './analysis-aggregation';
 export {validateSubtasks, adoptDecomposition, type AnalysisSubtask} from './analysis-decomposition';

@@ -35,7 +35,8 @@ export interface KanbanItemQuery {
     reference?: Pick<KanbanExternalReference, 'system' | 'id'>;
     sessionId?: string; search?: string; limit?: number; cursor?: string;
 }
-export interface KanbanProgress {total:number;completed:number;cancelled:number;inProgress:number;waitingInput:number;errors:number;review:number;paused:number;waiting:number}
+export interface KanbanProgress {total:number;completed:number;cancelled:number;inProgress:number;waitingInput:number;errors:number;review:number;paused:number;waiting:number;
+    phases?:Partial<Record<import('./task-state').KanbanTaskPhase,number>>}
 export interface KanbanItemPage {attentionItems?:KanbanItemSummary[];parentTask?:import('./task-state').KanbanTaskProjection;progress?:KanbanProgress;revision: number; total: number; items: KanbanItemSummary[]; nextCursor?: string}
 export interface KanbanOverview {
     attention?:{board:number;decision:number;log:number};

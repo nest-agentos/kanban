@@ -1,10 +1,11 @@
 import {projectKanbanTask} from './contracts/task-projection';
 import {kanbanReference} from './contracts';
-import type {KanbanItemPage, KanbanItemQuery, KanbanItemSummary, KanbanOverview} from './contracts';
+import type {KanbanItemPage, KanbanItemQuery, KanbanItemSummary, KanbanOverview,KanbanProgress} from './contracts';
 import type {KanbanState} from './ports';
 import {requireValue} from './rules';
 import {executable} from './configuration';
 import {catalog, limits, summary, terminal} from './planning';
+import {emptyTaskProgress,addTaskProgress,taskProgress} from './task-progress';
 
 export function queryItems(state: KanbanState, query: KanbanItemQuery = {}, all = catalog(state), now = Date.now()): KanbanItemPage {
     const {cursor, limit = 50, ...filters} = query;
@@ -69,19 +70,12 @@ export function overview(state: KanbanState, now: number, items = state.board.it
 
 function progressByParent(state: KanbanState, all: KanbanItemSummary[]): Map<string, NonNullable<KanbanItemSummary['progress']>> {
     const byId = new Map(all.map(i => [i.id, i]));
-    const result = new Map<string, NonNullable<KanbanItemSummary['progress']>>();
+    const result = new Map<string,KanbanProgress>();
     for (const item of all.filter(i => executable(state.board, i))) {
         let parent = item.planning.parentId; const seen = new Set<string>();
         while (parent && !seen.has(parent)) {
-            seen.add(parent); const progress = result.get(parent) ?? {total:0,completed:0,cancelled:0,inProgress:0,waitingInput:0,errors:0,review:0,paused:0,waiting:0};
-            progress.total++;const phase=item.task?.phase;
-            if(phase==='completed')progress.completed++;if(phase==='cancelled')progress.cancelled++;
-            if(['running','preparing','analyzing','queued','resuming'].includes(phase??''))progress.inProgress++;
-            if(phase==='waiting-input')progress.waitingInput=(progress.waitingInput??0)+1;
-            if(phase==='error'||phase==='unknown')progress.errors=(progress.errors??0)+1;
-            if(phase==='review')progress.review=(progress.review??0)+1;
-            if(phase==='paused'||phase==='pausing')progress.paused=(progress.paused??0)+1;
-            if(phase==='waiting-start'||phase==='waiting-dependency')progress.waiting=(progress.waiting??0)+1;
+            seen.add(parent); const progress = result.get(parent) ?? emptyTaskProgress();
+            addTaskProgress(progress,item.task?.phase);
             result.set(parent, progress); parent = byId.get(parent)?.planning.parentId;
         }
     }
@@ -89,7 +83,5 @@ function progressByParent(state: KanbanState, all: KanbanItemSummary[]): Map<str
 }
 
 function childProgress(items:KanbanItemSummary[]):import('./contracts/planning').KanbanProgress {
-    const count=(phases:string[])=>items.filter(item=>phases.includes(item.task?.phase??'')).length;
-    return {total:items.length,completed:count(['completed']),cancelled:count(['cancelled']),inProgress:count(['running','preparing','analyzing','queued','resuming']),
-        waitingInput:count(['waiting-input']),errors:count(['error','unknown']),review:count(['review']),paused:count(['paused','pausing']),waiting:count(['waiting-start','waiting-dependency'])};
+    return taskProgress(items.map(item=>item.task?.phase));
 }

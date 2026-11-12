@@ -28,10 +28,12 @@ export interface KanbanProjectRecord {
 }
 export type KanbanRecordInput = Pick<KanbanProjectRecord, 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs' | 'completion' | 'verificationLevel' | 'deliveryMode' | 'discussionSessionId'>;
 export interface KanbanRecordProgress {
+    stage?:'management'|'execution'|'finalization';
+    tasks?:{management:import('./planning').KanbanProgress;execution:import('./planning').KanbanProgress};
     state: 'draft' | 'waiting' | 'running' | 'needs-action' | 'failed' | 'completed' | 'checking' | 'cancelling' | 'cancelled' | 'rejected' | 'superseded';
     phase?: import('./task-state').KanbanTaskPhase | 'planning' | 'execution';
     completion?: import('./task-state').KanbanTaskProjection['completion']; groupIds?:string[];
-    followUps?:Array<{boardId:string;itemId:string;state:'pending'|'blocked';phase:string;code?:string}>;
+    followUps?:Array<{boardId:string;itemId:string;state:'pending'|'blocked'|'unknown';phase:string;code?:string;requiresConfirmation?:boolean}>;
     reason?: string; boardId?:string; itemId?: string; sessionId?: string; lastActivityAt: number;
 }
 export interface KanbanRecordAttentionDismissal {fingerprint:string;operationId:string;actor:KanbanPrincipal;at:number}

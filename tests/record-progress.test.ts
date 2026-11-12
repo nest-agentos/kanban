@@ -1,5 +1,5 @@
 import {expect,it,vi} from 'vitest';
-import {recordProgress} from '../src/record-progress';
+import {recordProgress,recordFinalization} from '../src/record-progress';
 import {recordAttention} from '../src/attention';
 import {withRecordProgress} from '../src/runtime/record-progress';
 import type {KanbanRecordSummary,KanbanTaskPhase} from '../src/contracts';
@@ -103,4 +103,45 @@ it('does not let an archived attempt override active local work and reports summ
  await expect(withRecordProgress(page,'source',journal as any,service as any)).rejects.toMatchObject({code:'EIO'});
  expect(journal.diagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:'record.progress.groups',result:'failure',code:'EIO'}));
  expect(JSON.stringify(journal.diagnostic.mock.calls)).not.toContain('PRIVATE_CONTENT');
+});
+
+
+it('summarizes management and execution tasks without double-counting a parent aggregate',()=>{
+ const root={...fact('root','running'),item:{...fact('root','running').item,taskType:'coordination',planning:{execution:'children'},progress:{total:2,completed:1,inProgress:1}}};
+ const child=(id:string,phase:KanbanTaskPhase)=>({...fact(id,phase),item:{...fact(id,phase).item,planning:{parentId:'root'}}});
+ const progress=recordProgress(record,[root,child('one','completed'),child('two','running'),fact('unrelated','error')]);
+ expect(progress).toMatchObject({state:'running',stage:'execution',tasks:{management:{total:1,completed:0,phases:{running:1}},execution:{total:2,completed:1,inProgress:1,errors:0,phases:{completed:1,running:1}}}});
+});
+it('retains the exact blocked child and distinguishes unknown work across management groups',()=>{
+ const root=(id:string)=>({...fact(id,'running'),item:{...fact(id,'running').item,planning:{execution:'children'}}});
+ const child={...fact('child','unknown'),item:{...fact('child','unknown').item,planning:{parentId:'second'}}};
+ const progress=recordProgress({...record,itemIds:['root','second']},[root('root'),root('second'),child]);
+ expect(progress).toMatchObject({state:'checking',itemId:'child',sessionId:'session-child',tasks:{management:{total:2},execution:{total:1,phases:{unknown:1}}}});
+ expect(progress.tasks!.execution.phases!.error).toBeUndefined();
+});
+it('uses bounded root summaries for cross-board task counters without enumerating descendants',async()=>{
+ const root={...fact('root','running').item,planning:{execution:'children'},task:fact('root','running').task,progress:{total:3,completed:1,inProgress:1,review:1,phases:{completed:1,running:1,review:1}}};
+ const journal={get:vi.fn(async()=>[{id:'current',recordId:'decision',boardId:'target',rootItemId:'root',state:'running',createdAt:2,updatedAt:9}]),diagnostic:vi.fn()};
+ const service={query:vi.fn(async()=>({revision:1,total:1,items:[root]}))};
+ const result=await withRecordProgress({revision:1,total:1,items:[record]},'source',journal as any,service as any);
+ expect(result.items[0].progress).toMatchObject({tasks:{management:{total:1},execution:{total:3,completed:1,phases:{review:1}}}});
+ expect(service.query).toHaveBeenCalledOnce();
+});
+it('keeps management-only work in management until execution tasks exist',()=>{
+ const root={...fact('root','analyzing'),item:{...fact('root','analyzing').item,purpose:'planning'}};
+ expect(recordProgress(record,[root])).toMatchObject({stage:'management',tasks:{management:{total:1,phases:{analyzing:1}},execution:{total:0}}});
+});
+it('does not declare a decision complete before finalization or its confirmation settles',()=>{
+ const completed=recordProgress(record,[fact('root','completed')]),followUp={boardId:'board',itemId:'root',phase:'delivery',state:'pending' as const};
+ expect(recordFinalization(completed,[followUp])).toMatchObject({state:'running',stage:'finalization',tasks:completed.tasks});
+ expect(recordFinalization(completed,[{...followUp,requiresConfirmation:true}])).toMatchObject({state:'needs-action',reason:'confirmation-required'});
+ expect(recordFinalization(completed,[{...followUp,state:'unknown',code:'EIO'}])).toMatchObject({state:'checking',reason:'EIO'});
+ expect(recordFinalization(completed,[])).toMatchObject({state:'completed',tasks:completed.tasks});
+ expect(completed.state).toBe('completed');
+});
+
+it('does not replace a complete aggregate with a partially linked descendant subset',()=>{
+ const root={...fact('root','running'),item:{...fact('root','running').item,planning:{execution:'children'},progress:{total:3,completed:1,inProgress:2,phases:{completed:1,running:2}}}};
+ const child={...fact('child','running'),item:{...fact('child','running').item,planning:{parentId:'root'}}};
+ expect(recordProgress({...record,itemIds:['root','child']},[root,child])).toMatchObject({tasks:{management:{total:1},execution:{total:3,completed:1,phases:{running:2}}}});
 });
