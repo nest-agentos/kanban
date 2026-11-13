@@ -73,7 +73,7 @@ export function managementTaskOwner<T extends {id:string;planning?:{parentId?:st
 }
 
 /** Resolve stable identities outside the visible board, including archived ancestors. */
-export async function resolveManagementTaskOwner<T extends {id:string;deletedAt?:number;planning?:{parentId?:string;execution?:string}}>(board:{items:readonly T[]},item:T,read:(id:string)=>Promise<T|undefined>):Promise<T|undefined> {
+export async function resolveManagementTaskOwner<T extends {id:string;deletedAt?:number;planning?:{parentId?:string;execution?:string}}>(board:{items:readonly T[]},item:T,read:(id:string)=>Promise<T|undefined>,options:{includeDeleted?:boolean}={}):Promise<T|undefined> {
     const byId=new Map(board.items.map(row=>[row.id,row]));byId.set(item.id,item);
     let current=item;const visited=new Set([item.id]);
     while(current.planning?.parentId){
@@ -81,7 +81,7 @@ export async function resolveManagementTaskOwner<T extends {id:string;deletedAt?
         const parent=byId.get(parentId)??await read(parentId);
         if(!parent)throw ownerError(item.id,parentId,'parent-missing');
         if(parent.id!==parentId)throw ownerError(item.id,parentId,'identity-mismatch');
-        if(parent.deletedAt!==undefined)throw ownerError(item.id,parentId,'parent-deleted');
+        if(parent.deletedAt!==undefined&&!options.includeDeleted)throw ownerError(item.id,parentId,'parent-deleted');
         byId.set(parentId,parent);visited.add(parentId);current=parent;
     }
     return managementTaskOwner({items:[...byId.values()]},item);
