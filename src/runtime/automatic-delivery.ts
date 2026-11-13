@@ -1,4 +1,4 @@
-import {deliveryKey as key,deliverySteps as actions,deliveryComplete as settledDelivery,deliveryStatus,reportDelivery} from './automatic-delivery-state';
+import {deliveryKey as key,deliverySteps as actions,deliveryComplete as settledDelivery,deliveryNeedsTarget,deliveryStatus,reportDelivery} from './automatic-delivery-state';
 import type {AutomaticDeliveryState as State,AutomaticDeliveryOptions as Options} from './automatic-delivery-types';
 import {refreshAutomaticAnalysis,recordAutomaticFailure} from './automatic-reanalysis';
 import {selectDeliverySteps} from './delivery-policy';
@@ -56,11 +56,15 @@ async function prepareState(options:Options,board:KanbanBoard,item:KanbanItem,wo
     const target=options.target?.(board,item),plan=group&&!options.scopeId?undefined:await options.plan?.(board,item),selected=selectDeliverySteps(group&&!options.scopeId?[options.policy.finalizeAction]:plan?.steps??options.policy.steps,options.policy.steps,plan?.ordering);
     const previous=await options.journal.get<State>(key(board.id,item.id,options.scopeId)),executionId=dispatch?.id??item.id;
     if(previous&&previous.executionId!==executionId){await options.journal.update('automatic-delivery-history:'+previous.id,old=>old??previous);await releaseDeliveryTarget(options,previous);}
-    return options.journal.update<State>(key(board.id,item.id,options.scopeId),old=>{
-        if(old?.executionId!==executionId)return {id,target,ordering:plan?.ordering,scopeId:options.scopeId,boardId:board.id,itemId:item.id,executionId,step:0,steps:selected,manualAfter:plan?.manualAfter,manualOrder:plan?.steps,requests:{}};
+    const state=await options.journal.update<State>(key(board.id,item.id,options.scopeId),old=>{
+        const targetActions=old?.targetActions??options.policy.targetActions;
+        if(old?.executionId!==executionId)return {id,target,targetActions:options.policy.targetActions,ordering:plan?.ordering,scopeId:options.scopeId,boardId:board.id,itemId:item.id,executionId,step:0,steps:selected,manualAfter:plan?.manualAfter,manualOrder:plan?.steps,requests:{}};
         const ordered=selectDeliverySteps(old.steps??options.policy.steps,options.policy.steps,old.ordering),changed=JSON.stringify(ordered)!==JSON.stringify(old.steps??options.policy.steps);
-        return {...old,...(!old.target&&target?{target}:{}),...(!old.steps||changed?{steps:ordered,...(changed?{step:0}:{})}: {})};
+        return {...old,targetActions,...(!old.target&&target?{target}:{}),...(!old.steps||changed?{steps:ordered,...(changed?{step:0}:{})}: {})};
     });
+    if(previous&&!previous.targetActions&&state.targetActions)options.journal.diagnostic({operationId:state.id,boardId:board.id,itemId:item.id,
+        stage:'automatic.target.policy-migrate',result:'success',count:state.targetActions.length,durationMs:0});
+    return state;
 }
 async function scanItem(options:Options,board:KanbanBoard,item:KanbanItem,workflow:KanbanWorkflowState) {
     let state=await prepareState(options,board,item,workflow);if(!state)return;
@@ -69,7 +73,7 @@ async function scanItem(options:Options,board:KanbanBoard,item:KanbanItem,workfl
     if(owner){await handoffDelivery(options,state,owner);return;}
     if(settledDelivery(state)){if(settledDelivery(state))await releaseDeliveryTarget(options,state);return;}
     if(state.code==='OPERATION_CANCELLED'&&(await options.view(state.boardId,state.itemId)).halted){await releaseDeliveryTarget(options,state);return;}
-    if(state.manualAfter&&state.step>actions(state).indexOf(state.manualAfter))await releaseDeliveryTarget(options,state);
+    if(!deliveryNeedsTarget(state)||state.manualAfter&&state.step>actions(state).indexOf(state.manualAfter))await releaseDeliveryTarget(options,state);
     else if(!await claimDeliveryTarget(options,state)){if(!state.waitingForTarget)await options.journal.update<State>(key(board.id,item.id,options.scopeId),old=>({...old!,waitingForTarget:true}));return;}
     if(state.waitingForTarget)state=await options.journal.update<State>(key(board.id,item.id,options.scopeId),old=>({...old!,waitingForTarget:false}));
     try {

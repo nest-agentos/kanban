@@ -5,14 +5,14 @@ export interface AutomaticDeliveryState {
     id:string;boardId:string;itemId:string;executionId:string;scopeId?:string;
     ordering?:'configured';steps?:string[];step:number;
     manualAfter?:string;manualOrder?:string[];reportedBoundary?:string;
-    target?:string;waitingForTarget?:boolean;
+    target?:string;waitingForTarget?:boolean;targetActions?:string[];
     handoff?:{boardId:string;itemId:string;at:number};
     code?:string;cleanupPrecondition?:boolean;resolvedBy?:string;revisionEpoch?:string;
     requests:Record<string,KanbanItemOperationRequest>;
     /** Legacy storage and compatibility reports; new checkpoints never write these fields. */
     done?:boolean;waitingForUser?:boolean;
 }
-export interface AutomaticDeliveryPolicy {steps:string[];finalizeAction:string;handoffAction:string;refreshAction:string;refreshableActions:string[];refreshCodes:string[];unstartedCodes:string[]}
+export interface AutomaticDeliveryPolicy {steps:string[];targetActions?:string[];finalizeAction:string;handoffAction:string;refreshAction:string;refreshableActions:string[];refreshCodes:string[];unstartedCodes:string[]}
 export interface AutomaticDeliveryOptions {policy:AutomaticDeliveryPolicy;scopeId?:string;service:KanbanService;journal:KanbanAutomationJournal;active():boolean;
     handoff?(board:KanbanBoard,item:KanbanItem):Promise<{boardId:string;itemId:string}|undefined>;
     settle?(board:string,item:string):Promise<void>;

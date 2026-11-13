@@ -64,6 +64,28 @@ it('serializes finalization for the same target while leaving development indepe
  for(let n=0;n<10;n++)await automaticDelivery(f.options).scan();
  expect(f.options.cleanup).toHaveBeenCalledWith('b','task',expect.any(String));expect(f.options.run.mock.calls.some(call=>call[1].itemId==='second')).toBe(true);
 });
+it('releases a legacy shared-target reservation when only independent finalization is blocked',async()=>{
+ const f=await fixture(),next={...f.item,id:'next',planning:{...f.item.planning}};f.item.status='completed';(f.item.planning as any).execution='children';f.board.items.push(next);
+ f.options.target=()=> 'project';f.options.policy.targetActions=['build','deploy','accept','analyze','merge'];
+ f.options.service.workflow=async()=>({dispatches:{next:{id:'next-run',itemId:'next',attempt:1,outcome:'succeeded'}}});
+ const storageKey='automatic-delivery:'+JSON.stringify(['b','task']);
+ await f.journal.update(storageKey,()=>({id:'legacy',boardId:'b',itemId:'task',executionId:'task',target:'project',step:0,steps:['cleanup'],code:'ASSOCIATION_UNKNOWN',cleanupPrecondition:true,requests:{}}));
+ await f.journal.update('automatic-target:'+JSON.stringify('project'),()=>({id:'legacy',boardId:'b',itemId:'task',target:'project'}));
+ f.options.cleanup.mockRejectedValue(Object.assign(Error('missing association'),{code:'ASSOCIATION_UNKNOWN',cleanupPrecondition:true}));
+ await automaticDelivery(f.options).scan();
+ expect(f.run.mock.calls[0][1]).toMatchObject({itemId:'next',action:'build'});
+ expect(await f.journal.get(storageKey)).toMatchObject({step:0,code:'ASSOCIATION_UNKNOWN',cleanupPrecondition:true,targetActions:f.options.policy.targetActions});
+ expect(await f.journal.get('automatic-target:'+JSON.stringify('project'))).toMatchObject({itemId:'next'});
+});
+it('keeps a shared-target operation with an unknown receipt reserved',async()=>{
+ const f=await fixture(),next={...f.item,id:'next'};f.board.items.push(next);f.options.target=()=> 'project';
+ f.options.policy.targetActions=['build','deploy','accept','analyze','merge'];
+ f.options.service.workflow=async()=>({dispatches:{a:{id:'d',itemId:'task',attempt:1,outcome:'succeeded'},b:{id:'next-run',itemId:'next',attempt:1,outcome:'succeeded'}}});
+ await automaticDelivery(f.options).scan();f.jobs.get('build').state='unknown';
+ await automaticDelivery(f.options).scan();await automaticDelivery(f.options).scan();
+ expect(f.run.mock.calls.map(row=>row[1].itemId)).toEqual(['task']);
+ expect(await f.journal.get('automatic-target:'+JSON.stringify('project'))).toMatchObject({itemId:'task'});
+});
 
 it('retains target ownership until cancelled work has no unsettled admitted operation',async()=>{
  const f=await fixture();f.options.target=()=> 'project';await automaticDelivery(f.options).scan();

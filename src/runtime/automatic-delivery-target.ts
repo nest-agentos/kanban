@@ -1,4 +1,4 @@
-import {deliveryKey,deliveryComplete} from './automatic-delivery-state';
+import {deliveryKey,deliveryComplete,deliveryNeedsTarget} from './automatic-delivery-state';
 import type {AutomaticDeliveryState} from './automatic-delivery-types';
 import {reserveJournalResource,releaseJournalResource} from './resource-reservation';
 import type {KanbanService} from '../contracts';
@@ -25,7 +25,8 @@ async function releasable(ports:Ports,scope:DeliveryScope):Promise<boolean> {
     let stopped=false;
     try{const detail=await ports.service.item(scope.boardId,scope.itemId);stopped=!!detail.archive||detail.item.deletedAt!==undefined||detail.item.status==='cancelled';}
     catch(error){if(!['BOARD_NOT_FOUND','ITEM_NOT_FOUND'].includes((error as {code:string}).code))throw error;stopped=true;}
-    if(!stopped)return false;
+    const independent=state?.id===scope.id&&!deliveryNeedsTarget(state);
+    if(!stopped&&!independent)return false;
     const settings=await ports.journal.get<ReviewSettings>(reviewKey(scope.boardId,scope.itemId,scope.scopeId));
     const jobs=await ports.journal.getMany<ReviewJob>((settings?.jobs??[]).map(jobKey));
     return jobs.every(job=>job?.phase==='settled');

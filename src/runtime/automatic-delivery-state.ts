@@ -2,6 +2,7 @@ import type {KanbanItemOperations} from '../contracts';
 import type {AutomaticDeliveryState as State,AutomaticDeliveryOptions as Options} from './automatic-delivery-types';
 export const deliveryKey=(board:string,item:string,scopeId?:string)=>'automatic-delivery:'+JSON.stringify(scopeId?[board,item,scopeId]:[board,item]);
 export const deliverySteps=(state:State)=>state.steps??[];
+export const deliveryNeedsTarget=(state:State)=>!state.targetActions||state.targetActions.includes(deliverySteps(state)[state.step]);
 export const deliveryComplete=(state:State|undefined):boolean=>!!state&&!state.code&&(!!state.handoff||Array.isArray(state.steps)&&state.step>=deliverySteps(state).length);
 export function deliveryNeedsAuthority(state:State):boolean {
     const steps=state.manualOrder??deliverySteps(state),action=deliverySteps(state)[state.step];
