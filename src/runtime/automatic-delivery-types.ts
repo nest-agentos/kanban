@@ -14,6 +14,7 @@ export interface AutomaticDeliveryState {
 }
 export interface AutomaticDeliveryPolicy {steps:string[];targetActions?:string[];finalizeAction:string;handoffAction:string;refreshAction:string;refreshableActions:string[];refreshCodes:string[];unstartedCodes:string[]}
 export interface AutomaticDeliveryOptions {policy:AutomaticDeliveryPolicy;scopeId?:string;service:KanbanService;journal:KanbanAutomationJournal;active():boolean;
+    releasableTarget?(scope:import('./automatic-delivery-target').DeliveryScope,state:AutomaticDeliveryState):Promise<boolean>;
     handoff?(board:KanbanBoard,item:KanbanItem):Promise<{boardId:string;itemId:string}|undefined>;
     settle?(board:string,item:string):Promise<void>;
     plan?(board:KanbanBoard,item:KanbanItem):Promise<{steps:string[];manualAfter?:string;ordering?:'configured'}>;

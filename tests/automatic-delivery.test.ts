@@ -86,6 +86,21 @@ it('keeps a shared-target operation with an unknown receipt reserved',async()=>{
  expect(f.run.mock.calls.map(row=>row[1].itemId)).toEqual(['task']);
  expect(await f.journal.get('automatic-target:'+JSON.stringify('project'))).toMatchObject({itemId:'task'});
 });
+it('reclaims an inactive legacy finalizer only with plugin evidence and settled operation records',async()=>{
+ const f=await fixture(),retired={...f.item,id:'retired',status:'completed'};f.board.items.unshift(retired);
+ f.options.target=()=> 'project';f.options.automatic=async(_board,item)=>item.id!=='retired';
+ const old={id:'retired-auto',boardId:'b',itemId:'retired',executionId:'retired',target:'project',step:0,steps:['cleanup'],cleanupPrecondition:true,requests:{}};
+ await f.journal.update('automatic-delivery:'+JSON.stringify(['b','retired']),()=>old);
+ await f.journal.update('automatic-target:'+JSON.stringify('project'),()=>({id:old.id,boardId:'b',itemId:'retired',target:'project'}));
+ await f.journal.update('review-operations:'+JSON.stringify(['b','retired']),()=>({jobs:['pending']}));
+ await f.journal.update('review-operation:pending',()=>({phase:'submitting'}));
+ const proof=vi.fn(async()=>true);f.options.releasableTarget=proof;
+ await automaticDelivery(f.options).scan();expect(f.run).not.toHaveBeenCalled();
+ await f.journal.update('review-operation:pending',()=>({phase:'settled'}));
+ await automaticDelivery(f.options).scan();expect(f.run.mock.calls[0][1]).toMatchObject({itemId:'task',action:'build'});
+ expect(await f.journal.get('automatic-delivery:'+JSON.stringify(['b','retired']))).toEqual(old);
+ expect(f.options.cleanup).not.toHaveBeenCalled();expect(proof).toHaveBeenCalled();
+});
 
 it('retains target ownership until cancelled work has no unsettled admitted operation',async()=>{
  const f=await fixture();f.options.target=()=> 'project';await automaticDelivery(f.options).scan();
