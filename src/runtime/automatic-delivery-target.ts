@@ -21,6 +21,10 @@ export async function claimDeliveryTarget(ports:Ports,scope:DeliveryScope):Promi
 export async function releaseDeliveryTarget(ports:Ports,scope:DeliveryScope):Promise<void>{
     if(scope.target)await releaseJournalResource(ports.journal,key(scope.target),binding(scope),sameBinding);
 }
+/** Failed preparation may retire a reservation only after positive plugin and settlement evidence. */
+export async function releaseBlockedDeliveryTarget(ports:Ports,scope:DeliveryScope):Promise<void>{
+    if(scope.target&&await releasable(ports,scope))await releaseDeliveryTarget(ports,scope);
+}
 const binding=({id,boardId,itemId,target,scopeId}:DeliveryScope):DeliveryScope=>({id,boardId,itemId,target,scopeId});
 const sameBinding=(left:DeliveryScope,right:DeliveryScope)=>left.boardId===right.boardId&&left.itemId===right.itemId&&left.target===right.target&&left.scopeId===right.scopeId;
 async function releasable(ports:Ports,scope:DeliveryScope):Promise<boolean> {

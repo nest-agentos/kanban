@@ -254,3 +254,18 @@ it('does not persist derived completion and confirmation flags in new checkpoint
  expect(state).toMatchObject({step:6});expect(state).not.toHaveProperty('done');expect(state).not.toHaveProperty('waitingForUser');
  expect(f.run.mock.calls.every(([,request])=>request.confirmed===undefined)).toBe(true);
 });
+
+
+it('releases proven preparation failures without reacquiring the target on later scans',async()=>{
+ const f=await fixture(),next={...f.item,id:'next'};f.board.items.push(next);f.options.target=()=> 'project';
+ f.options.service.workflow=async()=>({dispatches:{a:{id:'d',itemId:'task',attempt:1,outcome:'succeeded'},b:{id:'next-run',itemId:'next',attempt:1,outcome:'succeeded'}}});
+ const storageKey='automatic-delivery:'+JSON.stringify(['b','task']);
+ await f.journal.update(storageKey,()=>({id:'blocked',boardId:'b',itemId:'task',executionId:'d',target:'project',step:0,steps:['build'],code:'PREPARATION_FAILED',requests:{}}));
+ await f.journal.update('automatic-target:'+JSON.stringify('project'),()=>({id:'blocked',boardId:'b',itemId:'task',target:'project'}));
+ const view=f.options.view;f.options.view=async(board,id)=>id==='task'?{revision:'r',operations:[{id:'build',state:'ready',enabled:true}]}:view(board,id);
+ f.options.releasableTarget=async(_scope,state)=>state.code==='PREPARATION_FAILED';
+ await automaticDelivery(f.options).scan();await automaticDelivery(f.options).scan();
+ expect(f.run.mock.calls.map(row=>row[1].itemId)).toEqual(['next']);
+ expect(await f.journal.get(storageKey)).toMatchObject({code:'PREPARATION_FAILED',step:0});
+ expect(await f.journal.get('automatic-target:'+JSON.stringify('project'))).toMatchObject({itemId:'next'});
+});

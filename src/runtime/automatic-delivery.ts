@@ -3,7 +3,7 @@ import type {AutomaticDeliveryState as State,AutomaticDeliveryOptions as Options
 import {refreshAutomaticAnalysis,recordAutomaticFailure} from './automatic-reanalysis';
 import {selectDeliverySteps} from './delivery-policy';
 import type {KanbanWorkResource} from '../contracts';
-import {claimDeliveryTarget,releaseDeliveryTarget} from './automatic-delivery-target';
+import {claimDeliveryTarget,releaseDeliveryTarget,releaseBlockedDeliveryTarget} from './automatic-delivery-target';
 import {sha256HexSync} from '../utils';
 import type {KanbanBoard,KanbanItem,KanbanItemOperations,KanbanService,KanbanWorkflowState} from '../contracts';
 import {type KanbanAutomationJournal} from './automation-journal';
@@ -73,16 +73,17 @@ async function scanItem(options:Options,board:KanbanBoard,item:KanbanItem,workfl
     if(owner){await handoffDelivery(options,state,owner);return;}
     if(settledDelivery(state)){if(settledDelivery(state))await releaseDeliveryTarget(options,state);return;}
     if(state.code==='OPERATION_CANCELLED'&&(await options.view(state.boardId,state.itemId)).halted){await releaseDeliveryTarget(options,state);return;}
-    if(!deliveryNeedsTarget(state)||state.manualAfter&&state.step>actions(state).indexOf(state.manualAfter))await releaseDeliveryTarget(options,state);
-    else if(!await claimDeliveryTarget(options,state)){if(!state.waitingForTarget)await options.journal.update<State>(key(board.id,item.id,options.scopeId),old=>({...old!,waitingForTarget:true}));return;}
-    if(state.waitingForTarget)state=await options.journal.update<State>(key(board.id,item.id,options.scopeId),old=>({...old!,waitingForTarget:false}));
     try {
         state=await refreshAutomaticAnalysis(options,state,actions(state))??state;
-        if(state.code&&!(actions(state)[state.step]===options.policy.finalizeAction&&state.cleanupPrecondition)){state=await resumeConfirmedOperation(options,state);if(state.code)return;}
+        if(state.code&&!(actions(state)[state.step]===options.policy.finalizeAction&&state.cleanupPrecondition)){
+            state=await resumeConfirmedOperation(options,state);if(state.code){await releaseBlockedDeliveryTarget(options,state);return;}}
+        if(!deliveryNeedsTarget(state)||state.manualAfter&&state.step>actions(state).indexOf(state.manualAfter))await releaseDeliveryTarget(options,state);
+        else if(!await claimDeliveryTarget(options,state)){if(!state.waitingForTarget)await options.journal.update<State>(key(board.id,item.id,options.scopeId),old=>({...old!,waitingForTarget:true}));return;}
+        if(state.waitingForTarget)state=await options.journal.update<State>(key(board.id,item.id,options.scopeId),old=>({...old!,waitingForTarget:false}));
         const manualOrder=state.manualAfter?(await options.plan?.(board,item))?.steps:undefined;
         await advance(options,state,manualOrder);
         if(settledDelivery(await options.journal.get<State>(key(board.id,item.id,options.scopeId))))await releaseDeliveryTarget(options,state);
-    }catch(error){await recordAutomaticFailure(options,state,error,actions(state));}
+    }catch(error){await recordAutomaticFailure(options,state,error,actions(state));await releaseBlockedDeliveryTarget(options,state);}
 }
 async function handoffDelivery(options:Options,state:State,owner:{boardId:string;itemId:string}):Promise<void> {
     await options.settle?.(state.boardId,state.itemId);
