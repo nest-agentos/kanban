@@ -1,6 +1,7 @@
 import {kanbanTaskType,DEFAULT_KANBAN_WORK_TYPES,type KanbanBoard,type KanbanItem,type KanbanEstimate,type KanbanExternalReference} from '../contracts';
 import type {Definition} from './task-fix-ports';
 import {requireValue,identity} from '../rules';
+import {KanbanError} from '../ports';
 export interface CoordinationResult {schema:'kanban.coordination/1';summary:string;suggestions:Array<{itemId:string;action:string;reason:string}>}
 export function validateCoordinationResult(output:unknown,children:readonly {id:string}[],allowedActions:readonly string[]):asserts output is CoordinationResult{
     const result=output as CoordinationResult;
@@ -63,9 +64,28 @@ export function managementTaskOwner<T extends {id:string;planning?:{parentId?:st
     const visited=new Set([item.id]);
     while(current.planning?.parentId){
         const parent=byId.get(current.planning.parentId);
-        requireValue(parent&&!visited.has(parent.id),'OPERATION_OWNER_INVALID');
+        if(!parent)throw ownerError(item.id,current.planning.parentId,'parent-missing');
+        if(visited.has(parent.id))throw ownerError(item.id,parent.id,'cycle');
         visited.add(parent.id);current=parent;
         if(kanbanTaskType(parent)==='coordination')owner=parent;
     }
     return owner;
+}
+
+/** Resolve stable identities outside the visible board, including archived ancestors. */
+export async function resolveManagementTaskOwner<T extends {id:string;deletedAt?:number;planning?:{parentId?:string;execution?:string}}>(board:{items:readonly T[]},item:T,read:(id:string)=>Promise<T|undefined>):Promise<T|undefined> {
+    const byId=new Map(board.items.map(row=>[row.id,row]));byId.set(item.id,item);
+    let current=item;const visited=new Set([item.id]);
+    while(current.planning?.parentId){
+        const parentId=current.planning.parentId;if(visited.has(parentId))throw ownerError(item.id,parentId,'cycle');
+        const parent=byId.get(parentId)??await read(parentId);
+        if(!parent)throw ownerError(item.id,parentId,'parent-missing');
+        if(parent.id!==parentId)throw ownerError(item.id,parentId,'identity-mismatch');
+        if(parent.deletedAt!==undefined)throw ownerError(item.id,parentId,'parent-deleted');
+        byId.set(parentId,parent);visited.add(parentId);current=parent;
+    }
+    return managementTaskOwner({items:[...byId.values()]},item);
+}
+function ownerError(itemId:string,parentId:string,reason:string):KanbanError {
+    return Object.assign(new KanbanError('OPERATION_OWNER_INVALID'),{itemId,parentId,reason});
 }

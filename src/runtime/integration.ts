@@ -44,7 +44,7 @@ export {reserveJournalResource,releaseJournalResource} from './resource-reservat
 export {confirmRecordExecution,advanceRecordCancellation} from './record-confirmation';
 export {findRetainedExecution,validateDecisionSource,taskRecoveryEligibility,activeRecoveryIssueIds,type KanbanRecoveryEvidence} from './task-recovery-policy';
 
-export {managementTaskOwner} from './coordination-rules';
+export {managementTaskOwner,resolveManagementTaskOwner} from './coordination-rules';
 
 export {registerSessionLearnings,type SessionLearningInput} from './session-learnings';
 export {parseSessionLearnings,learningText} from './session-learnings-input';

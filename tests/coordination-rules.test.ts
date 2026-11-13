@@ -41,3 +41,17 @@ it('resolves the management owner from ancestry and fails closed for broken or c
     expect(()=>managementTaskOwner({...value,items:[child]} as KanbanBoard,child as KanbanItem)).toThrow('OPERATION_OWNER_INVALID');
     expect(()=>managementTaskOwner({...value,items:[{...root,planning:{execution:'children',parentId:'child'}},group,child]} as KanbanBoard,child as KanbanItem)).toThrow('OPERATION_OWNER_INVALID');
 });
+
+it('resolves archived ancestors by stable ID without reading already visible items',async()=>{
+ const {resolveManagementTaskOwner}=await import('@nestos/kanban/integration');
+ const child={id:'child',planning:{parentId:'group'}},group={id:'group',planning:{parentId:'root',execution:'children'}},root={id:'root',planning:{execution:'children'}};
+ const reads:string[]=[];const read=async(id:string)=>{reads.push(id);return id==='root'?root:undefined;};
+ expect(await resolveManagementTaskOwner({items:[child,group]},child,read)).toBe(root);expect(reads).toEqual(['root']);
+ expect(child.planning.parentId).toBe('group');expect(group.planning.parentId).toBe('root');
+});
+it('distinguishes missing, deleted and cyclic parent identities',async()=>{
+ const {resolveManagementTaskOwner}=await import('@nestos/kanban/integration');const child={id:'child',planning:{parentId:'parent'}};
+ await expect(resolveManagementTaskOwner({items:[child]},child,async()=>undefined)).rejects.toMatchObject({code:'OPERATION_OWNER_INVALID',reason:'parent-missing',itemId:'child',parentId:'parent'});
+ await expect(resolveManagementTaskOwner({items:[child]},child,async()=>({id:'parent',deletedAt:1}))).rejects.toMatchObject({reason:'parent-deleted',parentId:'parent'});
+ await expect(resolveManagementTaskOwner({items:[child]},child,async()=>({id:'parent',planning:{parentId:'child'}}))).rejects.toMatchObject({reason:'cycle',parentId:'child'});
+});
