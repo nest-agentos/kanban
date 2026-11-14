@@ -14,7 +14,9 @@ it('finds approvals across parallel participants in one metadata batch and route
 });
 it.each(['stale','mismatched','settled'])('does not surface %s authorization evidence',async mode=>{
  const row=item('b','waiting-approval',mode==='stale');if(mode==='mismatched')row.execution.sessionId='historical';if(mode==='settled')row.task.phase='completed';
- expect((await withRecordInteractions(page(),'board',{queryActivity:async()=>({items:[row]})} as any,journal as any)).items[0]).toEqual(record);
+ const result=(await withRecordInteractions(page(),'board',{queryActivity:async()=>({items:[row]})} as any,journal as any)).items[0];
+ expect(result.attention).toBeUndefined();expect(result.progress?.state).toBe('running');
+ expect(result.progress?.participation?.targets[1].resourceId).toBe(mode==='settled'?'/native/b':undefined);
 });
 it('never reopens completed, cancelled or archived decisions',async()=>{
  const queryActivity=vi.fn();
@@ -31,4 +33,11 @@ it('keeps other boards readable and diagnoses metadata failures without leaking 
  expect((await withRecordInteractions(page(),'board',{queryActivity} as any,{diagnostic} as any)).items[0]).toEqual(record);
  expect(diagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:'record.interactions.read',result:'failure',code:'EACCES'}));
  expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('PRIVATE_CONTENT');
+});
+
+it('includes only fresh matching bound resources without an additional task lookup',async()=>{
+ const queryActivity=vi.fn(async()=>({items:[item('a','running'),item('b','running',true)]}));
+ const result=await withRecordInteractions(page(),'board',{queryActivity} as any,journal as any);
+ expect(result.items[0].progress?.participation?.targets.map(target=>target.resourceId)).toEqual(['/native/a',undefined]);
+ expect(queryActivity).toHaveBeenCalledOnce();expect(record.progress?.participation?.targets[0].resourceId).toBeUndefined();
 });

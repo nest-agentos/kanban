@@ -28,7 +28,7 @@ export interface KanbanProjectRecord {
 }
 export type KanbanRecordInput = Pick<KanbanProjectRecord, 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs' | 'completion' | 'verificationLevel' | 'deliveryMode' | 'discussionSessionId'>;
 export interface KanbanRecordParticipationTarget {
-    itemId:string;title:string;purpose:'management'|'execution';phase:import('./task-state').KanbanTaskPhase;
+    itemId:string;title:string;resourceId?:string;purpose:'management'|'execution';phase:import('./task-state').KanbanTaskPhase;
 }
 export interface KanbanRecordProgress {
     interactions?:Array<{requestIds?:string[];kind:'approval'|'input';itemId:string;sessionId:string;resourceId:string;title:string}>;

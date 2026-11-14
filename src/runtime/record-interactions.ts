@@ -24,7 +24,13 @@ export async function withRecordInteractions(page:KanbanRecordPage,board:string,
     return {...page,items:page.items.map(record=>project(record,rows.get(record.progress?.boardId??board)??[]))};
 }
 function project(record:KanbanRecordSummary,rows:KanbanSessionItemSummary[]):KanbanRecordSummary {
-    const ids=new Set(targets(record)),progress=record.progress;
+    const ids=new Set(targets(record));
+    const participation=record.progress?.participation;
+    if(participation)record={...record,progress:{...record.progress!,participation:{...participation,targets:participation.targets.map(target=>{
+        const row=rows.find(row=>row.id===target.itemId),execution=row?.execution;
+        return execution&&!execution.stale&&row?.task?.sessionId===execution.sessionId&&execution.resourceId?{...target,resourceId:execution.resourceId}:target;
+    })}}};
+    const progress=record.progress;
     const waiting=rows.filter(row=>ids.has(row.id)&&row.execution&&!row.execution.stale&&['waiting-approval','waiting-input'].includes(row.execution.state)
         &&row.task?.sessionId===row.execution.sessionId&&['running','waiting-input','analyzing'].includes(row.task.phase));
     if(!progress||!waiting.length)return record;
@@ -32,5 +38,5 @@ function project(record:KanbanRecordSummary,rows:KanbanSessionItemSummary[]):Kan
     const interactions=waiting.flatMap(row=>row.execution!.resourceId?[{kind:row.execution!.state==='waiting-approval'?'approval' as const:'input' as const,itemId:row.id,sessionId:row.execution!.sessionId,resourceId:row.execution!.resourceId,title:row.title,requestIds:row.execution!.interactionIds}]:[]);
     const first=waiting[0],reason=first.execution!.state==='waiting-approval'?'authorization-required':'input-required';
     return {...record,attention:'waiting-input',attentionCode:reason,attentionItemId:first.id,progress:{...progress,state:'needs-action',phase:'waiting-input',reason,itemId:first.id,sessionId:first.execution!.sessionId,interactions,
-        participation:{reason:'needs-action',targets:waiting.map(row=>({itemId:row.id,title:row.title,phase:'waiting-input',purpose:'execution'}))}}};
+        participation:{reason:'needs-action',targets:waiting.map(row=>({itemId:row.id,title:row.title,phase:'waiting-input',purpose:'execution',resourceId:row.execution?.resourceId}))}}};
 }
