@@ -29,5 +29,6 @@ export interface KanbanRuntimeOptions extends Omit<KanbanActivityModuleOptions,'
     automation?:Omit<KanbanAutomationOptions,'fs'|'directory'|'service'|'serviceFor'|'journal'|'workLog'|'log'>;
     operationPlugins?:import('./operation-plugins').KanbanOperationPlugin[];
     extensions?(context:KanbanRuntimeContext):KanbanRuntimeExtension[];
+    prepareRecordReads?(service:KanbanActivityHandle):Pick<KanbanActivityHandle,'query'|'queryActivity'>;
     createService?(options:KanbanActivityModuleOptions):KanbanActivityHandle;
 }

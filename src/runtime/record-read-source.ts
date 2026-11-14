@@ -13,7 +13,7 @@ function reusable(query:KanbanItemQuery):boolean {
     return Array.isArray(query.ids)&&query.ids.length>0&&query.ids.length<=200&&query.limit===200&&query.view==='all'&&!query.cursor&&Object.keys(query).every(key=>['ids','view','includeDeleted','limit'].includes(key));
 }
 /** The query plan owns these facts only until this record-page assembly finishes. */
-export function recordReadSource(service:KanbanActivityHandle,options:KanbanRuntimeOptions):Pick<KanbanActivityHandle,'query'|'queryActivity'> {
+export function recordReadSource(service:KanbanActivityHandle,options:Pick<KanbanRuntimeOptions,'executionSessions'|'referenceSystem'|'log'>):Pick<KanbanActivityHandle,'query'|'queryActivity'> {
     const boards=new Map<string,Facts>(),operationId=randomUUID();
     const query:KanbanActivityHandle['query']=async(board,input={})=>{
         if(!reusable(input))return service.query(board,input);

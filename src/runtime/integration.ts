@@ -67,3 +67,5 @@ export {invalidateReviewAnalysis,revalidateMergeAdmission,prepareAutomaticReanal
 export {createOperationPluginRegistry,type KanbanOperationPlugin,type KanbanOperationProvider,type KanbanOperationPluginContext} from './operation-plugins';
 
 export {initializeResourceIndex,indexResourceJob,resourceJobIndex,type ResourceJobJournal} from './resource-operation-index';
+
+export {recordReadSource as createRecordReadSource} from './record-read-source';

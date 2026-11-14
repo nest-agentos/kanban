@@ -30,3 +30,11 @@ it('starts independent board reads before a slow board resolves',async()=>{
  const pending=currentGroupProgress(records as any,runs as any,'source',{query} as any);
  try{await vi.waitFor(()=>expect(query).toHaveBeenCalledTimes(2));}finally{release();await pending;}
 });
+it('preserves the host binding namespace and observes pending authorization through the authorized source',async()=>{
+ const row={id:'task',title:'Task',status:'claimed',createdAt:1,updatedAt:2,planning:{priority:1},sessionIds:[],externalRefs:[{system:'host-execution',id:'session',revision:'dispatch'}],task:{phase:'running',sessionId:'session',actions:[]}};
+ const query=vi.fn(async()=>({revision:1,total:1,items:[row]})),inspect=vi.fn(async()=>({sessionId:'session',state:'waiting-approval',observedAt:Date.now(),resourceId:'/original-session'}));
+ const core={query,catalog:async()=>[{id:'board'}],workflow:async()=>({dispatches:{dispatch:{id:'dispatch',itemId:'task',attempt:1,outcome:'running'}}})};
+ const reader=recordReadSource(core as any,{referenceSystem:'host-execution',log:vi.fn(),executionSessions:{source:{inspect}}} as any);
+ await reader.query('board',{ids:['task'],view:'all',includeDeleted:true,limit:200});
+ expect((await reader.queryActivity('board',{ids:['task'],view:'all',limit:200})).items[0].execution).toMatchObject({sessionId:'session',state:'waiting-approval',stale:false});expect(query).toHaveBeenCalledOnce();expect(inspect).toHaveBeenCalledOnce();
+});
