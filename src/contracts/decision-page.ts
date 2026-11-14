@@ -9,3 +9,6 @@ export type DecisionSort=typeof decisionSorts[number];
 export interface KanbanDecisionQuery {resource?:KanbanExternalReference;cursor?:string;sort?:DecisionSort;attentionOnly?:boolean;archived?:boolean;sections?:Array<'page'|'catalog'|'projects'>;locale?:string}
 export interface KanbanDecisionPage extends KanbanRecordPage {decisionRows:KanbanDecisionRow[];conversationCode?:string;conversationSignature?:string;attentionTotal?:number;dismissAvailable?:boolean;dismissConversationAvailable?:boolean}
 export interface KanbanDecisionSnapshot {page?:KanbanDecisionPage;boards?:KanbanBoardSummary[];resources?:KanbanRecordResource[];resourceCode?:string;observedAt:number}
+
+export const DECISION_SORT_PREFERENCE_KEY='kanban.decision-sort.v1';
+export interface KanbanPreparedDecision {boardId:string;query:KanbanDecisionQuery;value?:KanbanDecisionSnapshot;code?:string}

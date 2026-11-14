@@ -59,3 +59,6 @@ export type {KanbanDecisionRow,KanbanDecisionPage,KanbanDecisionSnapshot,KanbanD
 export {decisionSorts} from './decision-page';
 export {decisionRowState,decisionRowPriority} from './decision-row-state';
 export {decisionSort,compareDecisionRows} from './decision-sort';
+
+export {DECISION_SORT_PREFERENCE_KEY} from './decision-page';
+export type {KanbanPreparedDecision} from './decision-page';
