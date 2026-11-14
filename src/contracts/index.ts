@@ -56,7 +56,7 @@ export type {KanbanRecordArchiveRequest,KanbanRecordArchiveResult} from './recor
 export {kanbanColumnStatus,kanbanAttentionRank} from './task-display';
 
 export type {KanbanDecisionRow,KanbanDecisionPage,KanbanDecisionSnapshot,KanbanDecisionQuery,DecisionSort} from './decision-page';
-export {decisionSorts} from './decision-page';
+export {DEFAULT_DECISION_SORT,decisionSorts} from './decision-page';
 export {decisionRowState,decisionRowPriority} from './decision-row-state';
 export {decisionSort,compareDecisionRows} from './decision-sort';
 

@@ -1,5 +1,5 @@
 import type {KanbanClient,KanbanDecisionQuery,KanbanDecisionSnapshot,KanbanDecisionRow,KanbanRecordConversation,KanbanRecordResource} from '../contracts';
-import {compareDecisionRows,decisionRowPriority,decisionRowState,decisionSorts} from '../contracts';
+import {DEFAULT_DECISION_SORT,compareDecisionRows,decisionRowPriority,decisionRowState,decisionSorts} from '../contracts';
 import {sha256HexSync,randomUUID} from '../utils';
 import {KanbanError} from '../ports';
 import type {KanbanRuntimeOptions} from './runtime-ports';
@@ -48,7 +48,7 @@ function composePage(records:Awaited<ReturnType<KanbanClient['records']>>,conver
     const drafts=query.archived?[]:conversations.filter(row=>(row.sessionId||row.resourceId)&&!row.recordId&&(!query.resource||row.resources?.some(ref=>sameResource(ref,query.resource!))));
     const rows:KanbanDecisionRow[]=[...records.items.filter(value=>query.archived?value.archivedAt!==undefined:value.archivedAt===undefined).map(value=>({kind:'record' as const,value,
         conversations:conversations.filter(row=>row.recordId===value.id),conversation:conversations.find(row=>row.recordId===value.id&&row.purpose==='coordination')??conversations.find(row=>row.recordId===value.id)})),...drafts.map(value=>({kind:'conversation' as const,value}))];
-    const sort=query.sort??'activity-desc';
+    const sort=query.sort??DEFAULT_DECISION_SORT;
     let collator: Intl.Collator|undefined;
     try{collator=query.locale?new Intl.Collator(query.locale,{numeric:true,sensitivity:'base'}):undefined;}catch{throw new KanbanError('INVALID_DECISION_LOCALE');}
     rows.sort((a,b)=>compareDecisionRows(a,b,sort,row=>projectLabel(row,resources),collator));

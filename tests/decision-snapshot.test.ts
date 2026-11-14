@@ -63,3 +63,17 @@ it('rejects malformed conditions before starting any source read',async()=>{
  }
  expect(f.records).not.toHaveBeenCalled();expect(f.catalog).not.toHaveBeenCalled();expect(f.recordConversations).not.toHaveBeenCalled();expect(f.recordResources).not.toHaveBeenCalled();
 });
+
+it('sorts titles naturally before pagination across decisions and drafts and preserves explicit alternate sorting',async()=>{
+    const items=Array.from({length:60},(_,n)=>({...record('id-'+n),title:'Task '+(60-n),createdAt:n,updatedAt:n}));
+    const f=fixture(items);f.recordConversations.mockResolvedValue([{id:'draft',boardId:'board',title:'Task 0',sessionId:'native',state:'draft',createdAt:0}] as never);
+    const first=(await decisionSnapshot(f.source,'board',{locale:'en'})).page!;
+    const next=(await decisionSnapshot(f.source,'board',{locale:'en',cursor:first.nextCursor})).page!;
+    const rows=[...first.decisionRows,...next.decisionRows];
+    expect(rows.map(row=>row.value.title)).toEqual(Array.from({length:61},(_,n)=>'Task '+n));
+    expect(new Set(rows.map(row=>row.value.id)).size).toBe(61);
+    const descending=(await decisionSnapshot(f.source,'board',{sort:'title-desc',locale:'en'})).page!;
+    expect(descending.decisionRows[0].value.title).toBe('Task 60');
+    await expect(decisionSnapshot(f.source,'board',{sort:'title-desc',locale:'en',cursor:first.nextCursor})).rejects.toMatchObject({code:'CURSOR_STALE'});
+    expect(f.recordResources).not.toHaveBeenCalled();expect(f.execute).not.toHaveBeenCalled();
+});
