@@ -1,3 +1,4 @@
+import {decisionSnapshot} from './decision-page';
 import {createOperationPluginRegistry} from './operation-plugins';
 import {recordArchival} from './record-archive';
 import {withRecordProgress} from './record-progress';
@@ -48,7 +49,7 @@ function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeConte
     const archival=recordArchival(service,journal,options.log??(()=>{}),board=>client.records(board,{kind:'decision',includeArchived:true,limit:200}));
     const automation=options.automation?createKanbanAutomation({...options.automation,...context,
         directory:directory+'/automation',log:options.log??(()=>{})}):undefined;
-    const client:import('../contracts').KanbanClient={...service,...capabilities,previewTaskRestart:restarts.previewTaskRestart,restartTask:restarts.restartTask,
+    const client:import('../contracts').KanbanClient={...service,...capabilities,decisionSnapshot:(board,query)=>decisionSnapshot(client,board,query,options.log),previewTaskRestart:restarts.previewTaskRestart,restartTask:restarts.restartTask,
         ...(records?{...records,recordExecutions:async(board:string,id:string)=>(await workLog.record(service,board,id)).kind==='decision'?records.recordExecutions(board,id):[]}:{}),
         archiveRecords:archival.archiveRecords,
         controlRecord:async(board,request)=>{if(request.action==='archive')return archival.archive(board,request);if(!records)throw Object.assign(new Error('Record control unavailable'),{code:'RECORD_CONTROL_UNAVAILABLE'});return records.controlRecord(board,request);},

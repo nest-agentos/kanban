@@ -105,3 +105,11 @@ it('reports unsupported control without falsely acknowledging cancellation',asyn
     await f.command({type:'request-control',itemId:'task',controlId:'unsupported-stop',action:'cancel'});await f.service.scan();
     const {item}=await f.service.item('board','task');expect(item.status).not.toBe('cancelled');expect(item.control).toMatchObject({state:'failed',code:'TASK_CONTROL_UNSUPPORTED'});
 });
+
+it('provides a composed read through the public authorized runtime without exposing storage',async()=>{
+ const f=await fixture();f.options.authorize.mockClear();
+ const snapshot=await f.service.decisionSnapshot!('board',{sections:['page','catalog']});
+ expect(snapshot.page).toMatchObject({decisionRows:[],attentionTotal:0});expect(snapshot.boards).toEqual(expect.arrayContaining([expect.objectContaining({id:'board'})]));
+ expect(f.options.authorize).toHaveBeenCalled();expect(snapshot.resources).toBeUndefined();
+ expect(f.diagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:'decision.snapshot',result:'success'}));
+});

@@ -54,3 +54,8 @@ export {recordArchiveBlocker} from './record-archive';
 export type {KanbanRecordArchiveRequest,KanbanRecordArchiveResult} from './record-archive';
 
 export {kanbanColumnStatus,kanbanAttentionRank} from './task-display';
+
+export type {KanbanDecisionRow,KanbanDecisionPage,KanbanDecisionSnapshot,KanbanDecisionQuery,DecisionSort} from './decision-page';
+export {decisionSorts} from './decision-page';
+export {decisionRowState,decisionRowPriority} from './decision-row-state';
+export {decisionSort,compareDecisionRows} from './decision-sort';
