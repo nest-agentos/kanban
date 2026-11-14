@@ -160,3 +160,9 @@ it('uses persisted current-attempt timestamps and freezes completed duration ind
  journal.get.mockResolvedValueOnce([{...run,state:'completed',updatedAt:300}]);
  expect((await withRecordProgress(page,'board',journal as any)).items[0].progress).toMatchObject({startedAt:100,finishedAt:300,lastActivityAt:999999});
 });
+
+it.each(['FORBIDDEN','EACCES','PERMISSION_DENIED','UNAUTHORIZED'])('requires intervention for an unknown result blocked by %s without claiming completion',reason=>{
+ const task={...fact('root','unknown'),task:{...fact('root','unknown').task,reason}};
+ expect(recordProgress(record,[task])).toMatchObject({state:'needs-action',phase:'unknown',reason,itemId:'root',sessionId:'session-root'});
+ expect(recordProgress(record,[fact('root','unknown')]).state).toBe('checking');
+});

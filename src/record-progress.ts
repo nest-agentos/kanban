@@ -21,7 +21,7 @@ export function recordProgress(record:KanbanRecordSummary,facts:Fact[]):KanbanRe
     const active=new Set(roots.filter(({task})=>task.phase!=='completed').map(({item})=>item.id));
     const fact=activeFacts(facts,active,new Set(groupIds)).sort((a,b)=>priorities.indexOf(a.task.phase)-priorities.indexOf(b.task.phase)||Number(a.item.planning.execution==='children')-Number(b.item.planning.execution==='children'))[0];
     const {item,task}=fact;
-    const state=phaseState(task.phase);
+    const state=task.phase==='unknown'&&['FORBIDDEN','EACCES','PERMISSION_DENIED','UNAUTHORIZED'].includes(task.reason??'')?'needs-action':phaseState(task.phase);
     const reason=task.phase==='review'?'acceptance-required':task.phase==='waiting-input'?'input-required':task.reason;
     return {...base,groupIds,state,phase:task.phase,itemId:item.id,...(task.sessionId?{sessionId:task.sessionId}:{}),
         ...(reason&&/^[A-Za-z0-9_:-]{1,160}$/.test(reason)?{reason}:{})};
