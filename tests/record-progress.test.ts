@@ -151,3 +151,12 @@ it('retains downstream task facts while decision cancellation is still pending',
  const child={...fact('child','running'),item:{...fact('child','running').item,planning:{parentId:'root'}}};
  expect(recordProgress({...record,status:'cancelling'},[root,child])).toMatchObject({state:'cancelling',tasks:{management:{total:1,phases:{cancelling:1}},execution:{total:1,phases:{running:1}}}});
 });
+
+it('uses persisted current-attempt timestamps and freezes completed duration independently of observation activity',async()=>{
+ const page={revision:1,total:1,items:[{...record,progress:{state:'running' as const,lastActivityAt:999999}}]};
+ const run={id:'run',recordId:'decision',recordRevision:1,boardId:'board',createdAt:100,updatedAt:200,state:'running',stage:'execution'};
+ const journal={get:vi.fn(async()=>[run]),diagnostic:vi.fn()};
+ expect((await withRecordProgress(page,'board',journal as any)).items[0].progress).toMatchObject({startedAt:100,finishedAt:undefined});
+ journal.get.mockResolvedValueOnce([{...run,state:'completed',updatedAt:300}]);
+ expect((await withRecordProgress(page,'board',journal as any)).items[0].progress).toMatchObject({startedAt:100,finishedAt:300,lastActivityAt:999999});
+});

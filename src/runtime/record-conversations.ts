@@ -1,19 +1,22 @@
+import {conversationAttentionFingerprint,type KanbanRecordConversationControl} from '../contracts';
 import type {KanbanClient,KanbanRecordConversation,KanbanRecordConversationRequest} from '../contracts';
 import type {KanbanAutomationJournal} from './automation-journal';
 import {requireValue} from '../rules';
 import {safeCode} from './diagnostics';
-export interface SavedRecordConversation extends KanbanRecordConversation {binding?:unknown;submitted?:boolean;phase:'prepared'|'submitting'}
+export interface SavedRecordConversation extends KanbanRecordConversation {binding?:unknown;submitted?:boolean;clearedAt?:number;phase:'prepared'|'submitting'}
 export interface RecordConversationPort {
     prepare(id:string,boardId:string,resources?:KanbanRecordConversation['resources'],primaryResource?:KanbanRecordConversation['primaryResource']):Promise<unknown>;
     start(binding:unknown,first:boolean,active:()=>boolean):Promise<{sessionId:string;resourceId:string}>;
     advance(conversation:SavedRecordConversation,active:()=>boolean):Promise<Partial<Pick<SavedRecordConversation,'recordId'|'state'|'code'|'pendingReports'|'purpose'>>>;
     watch(conversation:SavedRecordConversation,wake:()=>void):Promise<()=>Promise<void>>;
+    referenceUnavailable?(conversation:SavedRecordConversation):Promise<boolean>;
     close():Promise<void>;
 }
 interface Options {service:KanbanClient;journal:KanbanAutomationJournal;port:RecordConversationPort;log(event:{operationId:string;boardId:string;stage:string;result:'success'|'failure';code?:string;durationMs:number}):void}
 const key=(id:string)=>'record-conversation:'+id;
 export interface KanbanRecordConversations {
     startRecordConversation(board:string,request:KanbanRecordConversationRequest):Promise<KanbanRecordConversation>;
+    controlRecordConversation(board:string,request:KanbanRecordConversationControl):Promise<void>;
     recordConversations(board:string):Promise<KanbanRecordConversation[]>;
     scan():Promise<void>;quiesce():Promise<void>;
 }
@@ -31,7 +34,7 @@ class RecordConversations {
     }
     private async advance(id:string):Promise<void> {
         const old=await this.options.journal.get<SavedRecordConversation>(key(id));requireValue(old,'CONVERSATION_NOT_FOUND');
-        if(!this.active())return;
+        if(!this.active()||old.clearedAt!==undefined)return;
         try {const update=await this.options.port.advance(old,this.active);if(Object.keys(update).some(field=>JSON.stringify(old[field as keyof SavedRecordConversation])!==JSON.stringify(update[field as keyof typeof update])))await this.options.journal.update<SavedRecordConversation>(key(id),value=>({...value!,...update,lastActivityAt:Date.now()}));}
         catch(error){await this.failure(old,error,'decision.conversation.observe');}
     }
@@ -39,7 +42,7 @@ class RecordConversations {
         const code=safeCode(error,'CONVERSATION_FAILED');
         if(saved.state==='error'&&saved.code===code)return;
         this.options.log({operationId:saved.id,boardId:saved.boardId,stage,result:'failure',code,durationMs:0});
-        if(code!=='SERVICE_STOPPING')await this.options.journal.update<SavedRecordConversation>(key(saved.id),old=>({...old!,state:'error',code,lastActivityAt:Date.now()}));
+        if(code!=='SERVICE_STOPPING')await this.options.journal.update<SavedRecordConversation>(key(saved.id),old=>old?.clearedAt!==undefined?old:({...old!,state:'error',code,lastActivityAt:Date.now()}));
     }
     private async watch(saved:SavedRecordConversation):Promise<void> {
         if(this.watches.has(saved.id))return;
@@ -51,6 +54,7 @@ class RecordConversations {
         const {operationId:id}=request;
         requireValue(/^[a-zA-Z0-9_-]{1,128}$/.test(id),'INVALID_OPERATION_ID');await this.options.service.read(boardId);
         let saved=await this.options.journal.update<SavedRecordConversation>(key(id),old=>{
+            requireValue(old?.clearedAt===undefined,'CONVERSATION_REFERENCE_CLEARED');
             requireValue(!old||old.boardId===boardId,'IDEMPOTENCY_CONFLICT');
             const select=old&&old.resources===undefined&&!old.binding&&old.phase==='prepared'&&request.resources!==undefined;
             requireValue(select||!old||request.resources===undefined||JSON.stringify(old.resources)===JSON.stringify(request.resources),'IDEMPOTENCY_CONFLICT');
@@ -65,9 +69,37 @@ class RecordConversations {
             return publicView((await this.options.journal.get<SavedRecordConversation>(key(id)))!);
         }catch(error){await this.failure(saved,error,'decision.conversation.start');throw error;}
     }
-    recordConversations=async(boardId:string)=>{await this.options.service.read(boardId);return (await this.options.journal.find<SavedRecordConversation>('record-conversation:',value=>value.boardId===boardId)).map(row=>publicView(row.value));};
+    controlRecordConversation=(boardId:string,request:KanbanRecordConversationControl):Promise<void>=>this.serial(request.conversationId,async()=>{
+        const started=Date.now();
+        try {await this.control(boardId,request);this.options.log({operationId:request.operationId,boardId,stage:'conversation.reference.'+request.action,result:'success',durationMs:Date.now()-started});}
+        catch(error){this.options.log({operationId:request.operationId,boardId,stage:'conversation.reference.'+request.action,result:'failure',code:safeCode(error,'CONVERSATION_CONTROL_FAILED'),durationMs:Date.now()-started});throw error;}
+    });
+    private async control(boardId:string,request:KanbanRecordConversationControl):Promise<void> {
+        requireValue(/^[a-zA-Z0-9_-]{1,128}$/.test(request.operationId)&&/^[a-f0-9]{64}$/.test(request.fingerprint)&&['dismiss-attention','cleanup-reference'].includes(request.action),'INVALID_RECORD_CONTROL');
+        const [board,actor]=await Promise.all([this.options.service.read(boardId),this.options.service.currentPrincipal()]);
+        requireValue(actor.kind==='human'&&board.members?.some(row=>row.kind===actor.kind&&row.id===actor.id&&row.roles?.includes('coordinator')),'COORDINATOR_REQUIRED');
+        const receiptKey='conversation-control:'+request.operationId,identity=JSON.stringify([boardId,request.conversationId,request.action,request.fingerprint]);
+        const receipt=await this.options.journal.get<string>(receiptKey);
+        if(receipt){requireValue(receipt===identity,'IDEMPOTENCY_CONFLICT');if(request.action==='cleanup-reference')await this.closeWatch(request.conversationId);return;}
+        const saved=await this.options.journal.get<SavedRecordConversation>(key(request.conversationId));
+        requireValue(saved&&saved.boardId===boardId,'CONVERSATION_NOT_FOUND');requireValue(!saved.recordId,'CONVERSATION_HAS_RECORD');
+        requireValue(saved.clearedAt===undefined&&conversationAttentionFingerprint({...saved,attentionFingerprint:undefined})===request.fingerprint,'DECISION_ATTENTION_CHANGED');
+        if(request.action==='cleanup-reference'){
+            requireValue(request.confirmed===true,'CONVERSATION_CLEANUP_CONFIRM_REQUIRED');
+            requireValue(await this.options.port.referenceUnavailable?.(saved),'CONVERSATION_REFERENCE_STILL_AVAILABLE');
+        }
+        await this.options.journal.updateMany([{key:receiptKey,change:old=>{requireValue(!old||old===identity,'IDEMPOTENCY_CONFLICT');return identity;}},
+            {key:key(saved.id),change:value=>{
+                const old=value as SavedRecordConversation|undefined;
+                requireValue(old&&old.boardId===boardId&&conversationAttentionFingerprint({...old,attentionFingerprint:undefined})===request.fingerprint&&old.clearedAt===undefined,'DECISION_ATTENTION_CHANGED');
+                return {...old,...(request.action==='cleanup-reference'?{clearedAt:Date.now()}:{attentionDismissal:{fingerprint:request.fingerprint,operationId:request.operationId,at:Date.now()}})};
+            }}]);
+        if(request.action==='cleanup-reference')await this.closeWatch(saved.id);
+    }
+    private async closeWatch(id:string):Promise<void> {const watch=this.watches.get(id);if(watch){await(await watch)();this.watches.delete(id);}}
+    recordConversations=async(boardId:string)=>{await this.options.service.read(boardId);return (await this.options.journal.find<SavedRecordConversation>('record-conversation:',value=>value.boardId===boardId&&value.clearedAt===undefined)).map(row=>publicView(row.value));};
     scan=async()=>{
-        for(const row of await this.options.journal.find<SavedRecordConversation>('record-conversation:',value=>!!value.binding)) {
+        for(const row of await this.options.journal.find<SavedRecordConversation>('record-conversation:',value=>!!value.binding&&value.clearedAt===undefined)) {
             if(!this.active()||this.pending.size>=2)return;
             if(!this.watches.has(row.value.id))void this.startRecordConversation(row.value.boardId,{operationId:row.value.id}).catch(()=>{});
         }
@@ -75,5 +107,5 @@ class RecordConversations {
     quiesce=async()=>{this.stopped=true;await Promise.allSettled([...this.pending.values()]);await Promise.allSettled([...this.watches.values()].map(async opened=>(await opened)()));await this.options.port.close();};
 }
 function publicView(value:SavedRecordConversation):KanbanRecordConversation {
-    const {binding:_binding,submitted:_submitted,phase:_phase,...view}=value;return {...view,scopeSelectionRequired:!value.resources&&!value.binding&&value.phase==='prepared'};
+    const {binding:_binding,submitted:_submitted,phase:_phase,clearedAt:_clearedAt,...view}=value;return {...view,attentionFingerprint:conversationAttentionFingerprint({...value,attentionFingerprint:undefined}),scopeSelectionRequired:!value.resources&&!value.binding&&value.phase==='prepared'};
 }

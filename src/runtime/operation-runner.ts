@@ -4,6 +4,7 @@ import type {KanbanOperationRecord,KanbanOperationPort} from './operation-contra
 import {requireValue} from '../rules';
 import {safeCode} from './diagnostics';
 interface Options<T extends KanbanOperationRecord> {
+    observeOnly?:boolean;
     service:Pick<KanbanClient,'read'>;journal:KanbanAutomationJournal;key:string;record:T;port:KanbanOperationPort<T>;
 }
 /** A frozen record crosses the submission boundary once; response loss only triggers inspection. */
@@ -11,6 +12,7 @@ export async function coordinateOperation<T extends KanbanOperationRecord>(optio
     const {journal,key,port}=options;let record=await journal.get<T>(key)??options.record;
     requireValue(record.fingerprint===options.record.fingerprint,'OPERATION_IDENTITY_CONFLICT');
     if(record.phase==='settled'||record.phase==='prepared'&&(await options.service.read(record.boardId)).lifecycle)return record;
+    if(options.observeOnly&&record.phase==='prepared')return record;
     const started=Date.now();
     try {
         if(record.phase==='prepared') {

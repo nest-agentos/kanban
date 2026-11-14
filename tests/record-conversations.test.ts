@@ -50,3 +50,44 @@ it('updates activity only for meaningful conversation transitions and keeps it s
  f.port.advance.mockResolvedValueOnce({state:'draft'} as any);
  await runtime.startRecordConversation('board',{operationId:'activity'});const changed=(await runtime.recordConversations('board'))[0];expect(changed.state).toBe('draft');expect(changed.lastActivityAt).toBeGreaterThanOrEqual(started.lastActivityAt!);
 });
+
+async function controlledFixture(){
+ const f=await fixture();f.options.service.read.mockResolvedValue({id:'board',members:[{kind:'human',id:'owner',roles:['coordinator']}]});
+ f.options.service.currentPrincipal=vi.fn(async()=>({kind:'human',id:'owner'}));
+ const runtime=createRecordConversations(f.options);closes.push(()=>runtime.quiesce());
+ const value=await runtime.startRecordConversation('board',{operationId:'discussion'});
+ return {...f,runtime,value};
+}
+it('acknowledges only the current discussion issue, preserves its outcome and restores attention after a new event',async()=>{
+ const {conversationAttentionFingerprint}=await import('../src/contracts');const f=await controlledFixture();
+ const fingerprint=conversationAttentionFingerprint(f.value);
+ await f.runtime.controlRecordConversation('board',{conversationId:'discussion',operationId:'ack',action:'dismiss-attention',fingerprint});
+ await f.runtime.controlRecordConversation('board',{conversationId:'discussion',operationId:'ack',action:'dismiss-attention',fingerprint});
+ const saved=(await f.runtime.recordConversations('board'))[0];expect(saved.state).toBe('clarifying');
+ expect(saved.attentionDismissal?.fingerprint).toBe(conversationAttentionFingerprint(saved));expect(f.port.start).toHaveBeenCalledOnce();
+ await f.journal.update('record-conversation:discussion',old=>({...old as object,state:'error',code:'NEW_ERROR'}));
+ const changed=(await f.runtime.recordConversations('board'))[0];expect(changed.attentionDismissal?.fingerprint).not.toBe(conversationAttentionFingerprint(changed));
+ await expect(f.runtime.controlRecordConversation('board',{conversationId:'discussion',operationId:'stale',action:'dismiss-attention',fingerprint})).rejects.toMatchObject({code:'DECISION_ATTENTION_CHANGED'});
+});
+it('requires absence evidence and explicit confirmation, retains history, and stops observing a cleared reference',async()=>{
+ const {conversationAttentionFingerprint}=await import('../src/contracts');const f=await controlledFixture(),check=vi.fn(async()=>true);
+ Object.assign(f.port,{referenceUnavailable:check});const fingerprint=conversationAttentionFingerprint(f.value);
+ const request={conversationId:'discussion',operationId:'cleanup',action:'cleanup-reference' as const,fingerprint};
+ await expect(f.runtime.controlRecordConversation('board',request)).rejects.toMatchObject({code:'CONVERSATION_CLEANUP_CONFIRM_REQUIRED'});expect(check).not.toHaveBeenCalled();
+ check.mockResolvedValueOnce(false);
+ await expect(f.runtime.controlRecordConversation('board',{...request,confirmed:true})).rejects.toMatchObject({code:'CONVERSATION_REFERENCE_STILL_AVAILABLE'});
+ await f.runtime.controlRecordConversation('board',{...request,confirmed:true});await f.runtime.controlRecordConversation('board',{...request,confirmed:true});
+ expect(await f.runtime.recordConversations('board')).toHaveLength(0);
+ expect(await f.journal.get('record-conversation:discussion')).toMatchObject({binding:{private:'HOST_BINDING'},sessionId:'native',clearedAt:expect.any(Number),state:'clarifying'});
+ await f.runtime.scan();expect(f.port.start).toHaveBeenCalledOnce();
+ await expect(f.runtime.startRecordConversation('board',{operationId:'discussion'})).rejects.toMatchObject({code:'CONVERSATION_REFERENCE_CLEARED'});
+});
+it('does not clear formal decisions or accept a reused operation identity for a different discussion',async()=>{
+ const {conversationAttentionFingerprint}=await import('../src/contracts');const f=await controlledFixture();
+ const request={conversationId:'discussion',operationId:'shared-control',action:'dismiss-attention' as const,fingerprint:conversationAttentionFingerprint(f.value)};
+ await f.runtime.controlRecordConversation('board',request);
+ await expect(f.runtime.controlRecordConversation('board',{...request,conversationId:'other'})).rejects.toMatchObject({code:'IDEMPOTENCY_CONFLICT'});
+ await f.journal.update('record-conversation:discussion',old=>({...old as object,recordId:'formal'}));
+ const saved=(await f.runtime.recordConversations('board'))[0];
+ await expect(f.runtime.controlRecordConversation('board',{...request,operationId:'formal-ack',fingerprint:conversationAttentionFingerprint(saved)})).rejects.toMatchObject({code:'CONVERSATION_HAS_RECORD'});
+});

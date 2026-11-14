@@ -48,6 +48,11 @@ it('keeps a successful execution unresolved until its output arrives',async()=>{
     vi.mocked(f.port.inspect).mockResolvedValueOnce({state:'succeeded',output:{value:'ready'}});
     expect(await f.advance()).toMatchObject({phase:'settled',state:'succeeded'});expect(f.port.start).toHaveBeenCalledOnce();
 });
+it('never submits a prepared operation in observation-only recovery',async()=>{
+    const f=await operationFixture();
+    const record=await coordinateOperation({observeOnly:true,service:f.service,journal:f.journal,key:f.key,record:f.record,port:f.port});
+    expect(record.phase).toBe('prepared');expect(f.port.start).not.toHaveBeenCalled();expect(f.port.inspect).not.toHaveBeenCalled();
+});
 
 it('drains a failed background scan without preventing a safe shutdown',async()=>{
  const {runtimeLifecycle}=await import('../src/runtime/runtime-lifecycle');let release!:()=>void;

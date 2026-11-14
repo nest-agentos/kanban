@@ -3,10 +3,11 @@ import type {KanbanAutomationJournal} from './automation-journal';
 import {randomUUID} from '../utils';
 import {safeCode} from './diagnostics';
 import {currentRecordRun,currentGroupProgress,type RecordRun} from './record-progress-groups';
+import {withRecordInteractions} from './record-interactions';
 
 type Run=RecordRun;
 /** One bounded journal read covers every decision on the page, including cross-board runs. */
-export async function withRecordProgress(page:KanbanRecordPage,board:string,journal:KanbanAutomationJournal,service?:Pick<import('../contracts').KanbanClient,'query'>):Promise<KanbanRecordPage> {
+export async function withRecordProgress(page:KanbanRecordPage,board:string,journal:KanbanAutomationJournal,service?:Pick<import('../contracts').KanbanClient,'query'|'queryActivity'>):Promise<KanbanRecordPage> {
     if(!page.items.some(row=>row.kind==='decision'))return page;
     const started=Date.now(),operationId=randomUUID();
     let runs:Run[];
@@ -19,17 +20,18 @@ export async function withRecordProgress(page:KanbanRecordPage,board:string,jour
         projected=await currentGroupProgress(page.items,currentRuns,board,service);
         if(projected.size)journal.diagnostic({operationId,boardId:board,stage:'record.progress.groups',result:'success',count:projected.size,durationMs:Date.now()-started});
     }catch(error){journal.diagnostic({operationId,boardId:board,stage:'record.progress.groups',result:'failure',code:safeCode(error,'TASK_GROUP_READ_FAILED'),durationMs:Date.now()-started});throw error;}
-    return {...page,items:page.items.map(record=>{
+    const result={...page,items:page.items.map(record=>{
         if(record.kind!=='decision')return record;
         record=projected.get(record.id)??record;
         const current=currentRuns.get(record.id);
         return current?{...record,progress:executionProgress(record,current)}:record;
     })};
+    return withRecordInteractions(result,board,service,journal);
 }
 function executionProgress(record:KanbanRecordSummary,run:Run):KanbanRecordProgress {
     const progress=record.progress??{state:'waiting' as const,lastActivityAt:record.updatedAt};
     const groupIds=progress.groupIds??[...new Set([run.rootItemId,...run.itemIds??[]].filter((id):id is string=>!!id))];
-    const base={...progress,groupIds,...(run.rootItemId||run.itemIds?.[0]?{boardId:run.boardId,itemId:progress.itemId??run.rootItemId??run.itemIds?.[0]}:{}),lastActivityAt:Math.max(progress.lastActivityAt,run.updatedAt)};
+    const base={...progress,startedAt:run.createdAt,...(['completed','failed','cancelled'].includes(run.state)?{finishedAt:run.updatedAt}:{finishedAt:undefined}),groupIds,...(run.rootItemId||run.itemIds?.[0]?{boardId:run.boardId,itemId:progress.itemId??run.rootItemId??run.itemIds?.[0]}:{}),lastActivityAt:Math.max(progress.lastActivityAt,run.updatedAt)};
     if(record.status!=='confirmed'&&!(record.archivedAt!==undefined&&['completed','failed'].includes(run.state)))return base;
     const phase=run.stage??progress.phase,completion=completionResult(progress.completion,run.completion);
     if(progress.groupIds?.length&&record.status==='confirmed')return {...base,completion:progress.state==='completed'?completion:progress.completion};

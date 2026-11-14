@@ -31,6 +31,8 @@ export interface KanbanRecordParticipationTarget {
     itemId:string;title:string;purpose:'management'|'execution';phase:import('./task-state').KanbanTaskPhase;
 }
 export interface KanbanRecordProgress {
+    interactions?:Array<{requestIds?:string[];kind:'approval'|'input';itemId:string;sessionId:string;resourceId:string;title:string}>;
+    startedAt?:number;finishedAt?:number;
     participation?:{reason:'needs-action'|'running'|'management';targets:KanbanRecordParticipationTarget[]};
     stage?:'management'|'execution'|'finalization';
     tasks?:{management:import('./planning').KanbanProgress;execution:import('./planning').KanbanProgress};

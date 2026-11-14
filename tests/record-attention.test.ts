@@ -38,3 +38,10 @@ it('requires the authorized coordinator and reports failures without private exc
  expect(f.diagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:'record.attention.read',result:'failure',code:'EIO'}));
  expect(JSON.stringify(f.diagnostic.mock.calls)).not.toContain('PRIVATE_CONTENT');
 });
+
+it('restores attention for a new native authorization request in the same task without counting observation time',()=>{
+ const progress={state:'needs-action',reason:'authorization-required',lastActivityAt:3,interactions:[{kind:'approval',itemId:'task',sessionId:'session',resourceId:'/session',title:'Task',requestIds:['epoch:number:0']}]};
+ const record={id:'decision',revision:1,progress} as KanbanRecordSummary,first=recordAttentionFingerprint(record);
+ expect(recordAttentionFingerprint({...record,progress:{...record.progress!,interactions:[{...record.progress!.interactions![0],requestIds:['epoch:number:1']}]}})).not.toBe(first);
+ expect(recordAttentionFingerprint(record)).toBe(first);
+});

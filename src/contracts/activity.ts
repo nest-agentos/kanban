@@ -2,6 +2,7 @@ import type {KanbanService} from './contracts';
 import type {KanbanItemPage, KanbanItemQuery, KanbanItemSummary} from './planning';
 export type KanbanSessionPhase = 'running' | 'queued' | 'waiting' | 'waiting-input' | 'waiting-approval' | 'paused' | 'idle' | 'completed' | 'failed' | 'cancelled' | 'unknown';
 export interface KanbanExecutionSession {
+    interactionIds?:string[];
     sessionId: string; resourceId?:string; title?: string; state: KanbanSessionPhase;
     createdAt?: number;
     lastActivityAt?: number; observedAt?: number; stale: boolean; recent: boolean; code?: string;
@@ -62,6 +63,7 @@ export interface KanbanClient extends KanbanService {
     openTaskCommunication?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
     openTaskCoordination?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
     openRecordCoordination?(boardId:string,request:{recordId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
+    controlRecordConversation?(boardId:string,request:import('./record-conversation').KanbanRecordConversationControl):Promise<void>;
     recordConversations?(boardId:string):Promise<import('./record-conversation').KanbanRecordConversation[]>;
     recordResources?(): Promise<import('./record-execution').KanbanRecordResource[]>;
     runRecord?(boardId: string, request: import('./record-execution').KanbanRecordRunRequest): Promise<import('./record-execution').KanbanRecordExecution>;
