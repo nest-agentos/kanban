@@ -23,8 +23,9 @@ export function validateSubtasks(value:unknown):AnalysisSubtask[]|undefined {
 }
 /** The model supplies local keys; the host owns stable identities, resource inheritance and publication. */
 export async function adoptDecomposition(journal:KanbanAutomationJournal, board:KanbanBoard, parent:KanbanItem, input:Input, service:KanbanService, inherited: import('../contracts').KanbanExternalReference[] = []):Promise<void> {
-    const types=board.workTypes??DEFAULT_KANBAN_WORK_TYPES,parentRank=types.find(type=>type.id===(parent.planning?.kind??board.defaultWorkType??'task'))?.rank;
-    const type=types.filter(type=>type.executable&&parentRank!==undefined&&type.rank>parentRank).sort((a,b)=>a.rank-b.rank)[0];
+    requireValue(parent.taskType==='coordination'&&!parent.planning?.parentId,'EXECUTION_CANNOT_HAVE_CHILDREN');
+    const types=board.workTypes??DEFAULT_KANBAN_WORK_TYPES;
+    const type=types.find(type=>type.id===board.defaultWorkType&&type.executable)??types.find(type=>type.executable);
     requireValue(type,'AUTOMATION_SUBTASK_TYPE_UNAVAILABLE');
     const ids=new Map(input.subtasks.map(task=>[task.key,'sub-'+sha256HexSync(JSON.stringify([input.id,task.key])).slice(0,40)]));
     const definitions:KanbanWorkDefinition[]=input.subtasks.map(task=>({id:ids.get(task.key)!,workType:type.id,title:task.title,responsibility:task.responsibility,acceptance:task.acceptance,

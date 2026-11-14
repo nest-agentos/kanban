@@ -66,6 +66,7 @@ async function loadJob<Target, Input>(options: KanbanAnalysisOptions<Target, Inp
     requireValue(board.items.length <= 200, 'AUTOMATION_CONTEXT_LIMIT');
     const signature = analysisSignature(board,item.id), currentKey = await options.journal.get<string>(keyFor(board.id, item.id));
     const currentJob = currentKey ? await options.journal.get<AnalysisJob<Input>>(currentKey) : undefined;
+    requireValue(currentJob||kanbanTaskType(item)==='coordination'&&!item.planning?.parentId,'EXECUTION_CANNOT_HAVE_CHILDREN');
     if (!board.automation?.enabled && !['submitting','waiting-input'].includes(currentJob?.phase??'')) return;
     const key = currentJob && (['submitting','waiting-input'].includes(currentJob.phase)||currentJob.status.state==='clarification') ? currentKey! : 'analysis:' + sha256HexSync(JSON.stringify([board.id, item.id, item.launch?.requestedAt, item.launch?.analysisEpoch, signature]));
     let job = await options.journal.get<AnalysisJob<Input>>(key);
@@ -123,13 +124,16 @@ export function parseAnalysis(output: unknown): AnalysisResult {
     requireValue(board.automation?.enabled && current && analysisSignature(board,job.signatureVersion===2?item.id:undefined) === job.signature, 'AUTOMATION_ANALYSIS_STALE');
     requireValue(board.policy.requireEstimate === false || job.result?.estimate, 'ESTIMATE_REQUIRED');
     const dependencies = [...new Set([...(item.planning?.dependencies ?? []), ...job.result!.dependencies])];
-    if(kanbanTaskType(item)==='coordination'&&!job.result?.subtasks?.length){
-        return adoptDecomposition(journal,board,item,{id:job.id,reason:job.result!.reason,dependencies,subtasks:[{key:'execute',title:item.title,responsibility:item.responsibility,acceptance:item.acceptance,dependsOn:[],estimate:job.result?.estimate}]},service,inherited);
-    }
-    if(job.result?.subtasks?.length) return adoptDecomposition(journal,board,item,{id:job.id,reason:job.result.reason,dependencies,subtasks:job.result.subtasks},service,inherited);
-    await service.execute(board.id, {operationId: 'analysis-plan:' + job.id, expectedRevision: board.revision, command: {type: 'publish-plan', plan: {
-        schema: 'kanban.plan/1', id: job.id, revision: 1, sealed: true,
-        items: [{id: item.id, title: item.title, responsibility: item.responsibility, acceptance: item.acceptance,
-            expectedRevision: current!.revision, assignee: board.automation.worker, dependsOn: dependencies, outputs: ['result']}],
-    }}});
+    requireValue(kanbanTaskType(item)==='coordination'&&!item.planning?.parentId,'EXECUTION_CANNOT_HAVE_CHILDREN');
+    const children=board.items.filter(child=>child.planning?.parentId===item.id&&child.taskType==='execution'&&!child.deletedAt);
+    if(children.length&&!job.result?.subtasks?.length)return adoptExistingChildren(journal,board,item,job,children,service);
+    const subtasks=job.result?.subtasks?.length?job.result.subtasks:[{key:'execute',title:item.title,responsibility:item.responsibility,acceptance:item.acceptance,dependsOn:[],estimate:job.result?.estimate}];
+    return adoptDecomposition(journal,board,item,{id:job.id,reason:job.result!.reason,dependencies,subtasks},service,inherited);
+}
+
+async function adoptExistingChildren<Input>(journal:KanbanAutomationJournal,board:KanbanBoard,parent:KanbanItem,job:AnalysisJob<Input>,children:KanbanItem[],service:KanbanService):Promise<void> {
+    const items=children.map(child=>({id:child.id,expectedRevision:child.revision,title:child.title,responsibility:child.responsibility,acceptance:child.acceptance,
+        assignee:board.automation!.worker,dependsOn:child.planning?.dependencies??[],outputs:['result']}));
+    for(const child of children)if(job.result?.estimate)await journal.update('decomposition-estimate:'+JSON.stringify([board.id,child.id]),old=>old??job.result!.estimate);
+    await service.execute(board.id,{operationId:'analysis-plan:'+job.id,expectedRevision:board.revision,command:{type:'publish-plan',plan:{schema:'kanban.plan/1',id:job.id,rootItemId:parent.id,coordination:true,revision:1,sealed:true,items}}});
 }

@@ -21,8 +21,9 @@ export function compileCoordinationProposal(input:unknown,parent:KanbanItem,boar
     requireValue(keys.size===value.tasks.length&&new Set(keys.values()).size===keys.size,'COORDINATION_PROPOSAL_INVALID');
     for(const id of keys.values())identity(id);
     const existing=new Set(board.items.filter(item=>item.planning?.parentId===parent.id&&!item.deletedAt).map(item=>item.id));
-    const types=board.workTypes??DEFAULT_KANBAN_WORK_TYPES,rank=types.find(type=>type.id===parent.planning?.kind)?.rank;
-    const childType=types.filter(type=>type.executable&&rank!==undefined&&type.rank>rank).sort((a,b)=>a.rank-b.rank)[0];
+    requireValue(parent.taskType==='coordination'&&!parent.planning?.parentId,'EXECUTION_CANNOT_HAVE_CHILDREN');
+    const types=board.workTypes??DEFAULT_KANBAN_WORK_TYPES;
+    const childType=types.find(type=>type.id===board.defaultWorkType&&type.executable)??types.find(type=>type.executable);
     requireValue(childType&&board.automation,'AUTOMATION_SUBTASK_TYPE_UNAVAILABLE');
     const children=value.tasks.map(task=>{
         requireValue(task.dependsOn.every(key=>(keys.has(key)||existing.has(key))&&key!==task.key),'AUTOMATION_SUBTASK_DEPENDENCY_INVALID');

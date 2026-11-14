@@ -97,7 +97,7 @@ export class KanbanAutomationJournal {
         requireValue(changes.length<=128&&new Set(changes.map(row=>row.key)).size===changes.length,'INVALID_JOURNAL_BATCH');
         const pending=this.fs.meta.seq!.transaction!(async tx=>{
             for(const {key,change}of changes){
-                const raw=await tx.getEntry(this.path,key),previous=await this.decode(key,raw,tx),value=change(previous),encoded=JSON.stringify(value);
+                const raw=await tx.getEntry(this.path,key),previous=await this.decode(key,raw,tx),value=change(structuredClone(previous)),encoded=JSON.stringify(value);
                 requireValue(encoded!==undefined,'INVALID_JOURNAL_VALUE');
                 if(JSON.stringify(previous)===encoded)continue;
                 await this.write(tx,key,previous,value,encoded);
@@ -118,7 +118,7 @@ export class KanbanAutomationJournal {
     private async commit<T>(key: string, change: (previous: T | undefined) => T): Promise<T> {
         return this.fs.meta.seq!.transaction!(async tx => {
             const raw = await tx.getEntry(this.path, key), previous = await this.decode<T>(key,raw,tx);
-            const value = change(previous);
+            const value = change(structuredClone(previous));
             const encoded = JSON.stringify(value);
             if (encoded === JSON.stringify(previous)) return structuredClone(value);
             await this.write(tx,key,previous,value,encoded!); return structuredClone(value);

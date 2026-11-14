@@ -1,9 +1,9 @@
+import {kanbanTaskType} from './contracts/task-type';
 import {assertDefinitionEditable} from './task-commands';
 import type {KanbanActor, KanbanCommand, KanbanExternalReference, KanbanItem} from './contracts';
 import type {KanbanState} from './ports';
 import {requireValue, text, identity, owned} from './rules';
 import {catalog, setStage, terminal, validatePlan} from './planning';
-import {executable} from './configuration';
 import {archiveItems, restoreItem} from './archives';
 
 type OperationalCommand = Extract<KanbanCommand, {type: 'block-item' | 'unblock-item' | 'link-reference' | 'release-item'}>;
@@ -59,7 +59,7 @@ function updatePlan(state: KanbanState, item: KanbanItem, command: PlanCommand, 
     } else {
         requireValue(catalog(state).filter(i => i.planning.parentId === item.id).every(terminal), 'CHILDREN_UNFINISHED');
         if (command.type === 'close-plan') {
-            requireValue(!executable(state.board, item), 'TASK_REQUIRES_REVIEW'); text(command.resultRef);
+            requireValue(kanbanTaskType(item)==='coordination', 'TASK_REQUIRES_REVIEW'); text(command.resultRef);
             const children=catalog(state).filter(child=>child.planning.parentId===item.id);
             if(item.planning?.execution==='children')requireValue(children.length>0&&children.every(child=>child.status==='completed'),'CHILDREN_UNFINISHED');
             item.status = 'completed'; item.resultRef = command.resultRef;

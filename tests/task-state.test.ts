@@ -14,7 +14,8 @@ async function fixture(policy: Partial<KanbanBoard['policy']> = {}) {
     const service=api('manager'),worker=api('worker');
     await service.create({id:'board',title:'Work',scope:{kind:'system'},policy:{requireEstimate:false,review:'independent',...policy},members:[{kind:'service',id:'manager',roles:['coordinator','reviewer'],responsibility:'Manage'},{kind:'service',id:'worker',roles:['worker'],responsibility:'Build'}]});
     const run=async(command:KanbanCommand,client:KanbanService=service)=>client.execute('board',{operationId:'op-'+ ++seq,expectedRevision:(await client.read('board')).revision,command});
-    await run({type:'publish-plan',plan:{schema:'kanban.plan/1',id:'plan',revision:1,sealed:true,items:[{id:'task',title:'Task',responsibility:'Build',acceptance:'Verify',assignee:{kind:'service',id:'worker'},dependsOn:[]}]}});
+    await run({type:'create-item',item:{id:'management-root',taskType:'coordination',title:'Manage work',responsibility:'Coordinate',acceptance:'All children accepted'}});
+    await run({type:'publish-plan',plan:{schema:'kanban.plan/1',rootItemId:'management-root',id:'plan',revision:1,sealed:true,items:[{id:'task',title:'Task',responsibility:'Build',acceptance:'Verify',assignee:{kind:'service',id:'worker'},dependsOn:[]}]}});
     const executor={prepare:vi.fn(async()=>({id:'original'})),start:vi.fn(async()=>({outcome:'running' as const,executionSessionId:'original-session'})),inspect:vi.fn(async()=>({outcome:'running' as const,executionSessionId:'original-session'}))};
     const bridge=async()=>{const b=await createKanbanExecutionBridge({fs,directory:'/executions',boardId:'board',service,worker:async()=>worker,autoDispatch:true,executor,authorize:async()=>{},log(){}});closes.push(()=>b.quiesce());return b;};
     const human=createKanbanModule({store,actor:{kind:"human",id:"admin"},restartReferences:refs=>refs.filter(ref=>ref.system==='project'),authorize:async()=>{},now:()=>now,log(){}});
@@ -28,7 +29,7 @@ it('persists the five-minute deadline and admits exactly once at 300000ms across
     await first.quiesce();await second.quiesce();const recovered=await f.bridge();await recovered.scan();
     expect(f.executor.start).toHaveBeenCalledTimes(1);expect(Object.values((await f.service.workflow('board')).dispatches)).toHaveLength(1);
     expect((await f.item()).launch?.startAt).toBe(original.launch?.startAt);
-    expect((await f.service.query('board',{view:'all'})).items[0].task).toMatchObject({phase:'running',sessionId:'original-session'});
+    expect((await f.service.query('board',{view:'all'})).items.find(row=>row.id==='task')!.task).toMatchObject({phase:'running',sessionId:'original-session'});
 });
 it('serializes immediate run and timer admission without another primary Session',async()=>{
     const f=await fixture(),a=await f.bridge(),b=await f.bridge();f.clock(300000);
@@ -61,7 +62,7 @@ it('requires independent acceptance and never offers or permits run after comple
     const f=await fixture();await f.run({type:'request-run',itemId:'task'});const b=await f.bridge();await b.scan();
     const dispatch=Object.values((await f.service.workflow('board')).dispatches)[0];
     await f.run({type:'observe-execution',dispatchId:dispatch.id,fence:dispatch.fence,outcome:'succeeded'});
-    expect((await f.item()).status).toBe('review');expect((await f.service.query('board',{view:'all',phase:'review'})).total).toBe(1);
+    expect((await f.item()).status).toBe('review');expect((await f.service.query('board',{view:'all',phase:'review'})).items.filter(row=>row.taskType==='execution')).toHaveLength(1);
     await f.run({type:'accept-execution',dispatchId:dispatch.id,accept:true});
     await expect(f.run({type:'request-run',itemId:'task'})).rejects.toMatchObject({code:'TASK_DEFINITION_FROZEN'});
     expect(projectKanbanTask(await f.item(),await f.service.workflow('board')).actions).not.toContain('run');
@@ -80,7 +81,7 @@ it('projects unresolved issues, concrete analysis errors and observation unknown
 
 it('persists legacy deadlines from the original creation time during the shared startup scan',async()=>{
     const f=await fixture(),before=await f.item();
-    await f.store.update('board','legacy-test','legacy-test',state=>{delete state!.board.items[0].launch;return state!;});
+    await f.store.update('board','legacy-test','legacy-test',state=>{delete state!.board.items.find(row=>row.id==='task')!.launch;return state!;});
     await f.service.scan();const restored=await f.item();
     expect(restored.createdAt).toBe(before.createdAt);expect(restored.launch?.startAt).toBe(before.createdAt+300000);
     expect((await f.service.events('board')).filter(e=>e.kind==='task-launch-initialized')).toHaveLength(1);
@@ -96,7 +97,7 @@ it('keeps manual tasks idle beyond the deadline and starts only after explicit r
 });
 it('creates a manual task already paused, without a gap for automatic admission', async () => {
     const f = await fixture();
-    await f.run({type: 'create-item', item: {id: 'held', title: 'Deferred analysis', responsibility: 'Wait', acceptance: 'Explicit user resume'}, launch: {mode: 'manual', paused: true}});
+    await f.run({type: 'create-item', item: {id: 'held', title: 'Deferred analysis', responsibility: 'Wait', acceptance: 'Explicit user resume'},planning:{kind:'task',parentId:'management-root',priority:2,dependencies:[],references:[]}, launch: {mode: 'manual', paused: true}});
     let item = await f.service.item('board', 'held'); expect(item.item.launch?.mode).toBe('manual'); expect(item.task?.phase).toBe('paused');
     await f.run({type: 'request-control', itemId: 'held', controlId: 'resume-held', action: 'resume'});
     await f.run({type: 'control-receipt', itemId: 'held', controlId: 'resume-held', state: 'resumed'});
@@ -147,7 +148,7 @@ it('reports unsupported execution controls as errors instead of claiming the exe
 
 it('explicitly reopens a cancelled unstarted task into manual backlog and preserves its cancellation audit', async () => {
     const f = await fixture();
-    await f.run({type: 'create-item', item: {id: 'unstarted', title: 'Retry', responsibility: 'Inspect', acceptance: 'Evidence'}});
+    await f.run({type: 'create-item', item: {id: 'unstarted', title: 'Retry', responsibility: 'Inspect', acceptance: 'Evidence'},planning:{kind:'task',parentId:'management-root',priority:2,dependencies:[],references:[]}});
     await f.run({type: 'request-control', itemId: 'unstarted', controlId: 'cancel-before-start', action: 'cancel'});
     await f.run({type: 'control-receipt', itemId: 'unstarted', controlId: 'cancel-before-start', state: 'cancelled'});
     await expect(f.run({type: 'reopen-item', itemId: 'unstarted', reopenId: 'retry'}, f.service)).rejects.toMatchObject({code: 'FORBIDDEN'});
@@ -194,10 +195,10 @@ it('allocates readable task IDs transactionally while numbering custom IDs indep
     const request = {operationId:'auto-create',expectedRevision:(await f.human.read('board')).revision,
         command:{type:'create-item' as const,item:{title:'Auto task',responsibility:'Build',acceptance:'Verify'}}};
     const first = await f.human.execute('board',request), item = first.items.find(item=>item.title==='Auto task')!;
-    expect(item.id).toBe('task-002'); expect(item.number).toBe(2);
+    expect(item.id).toBe('task-003'); expect(item.number).toBe(3);
     expect(await f.human.execute('board',request)).toEqual(first);
     await f.run({type:'create-item',item:{id:'meaningful-name',title:'Named task',responsibility:'Build',acceptance:'Verify'}},f.human);
-    expect((await f.human.item('board','meaningful-name')).item.number).toBe(3);
+    expect((await f.human.item('board','meaningful-name')).item.number).toBe(4);
     await expect(f.run({type:'create-item',item:{id:'meaningful-name',title:'Duplicate',responsibility:'Build',acceptance:'Verify'}},f.human)).rejects.toMatchObject({code:'ITEM_EXISTS'});
 });
 
@@ -212,7 +213,7 @@ it.each([
     const bridge = await f.bridge(); await bridge.scan();
     const dispatch = Object.values((await f.service.workflow('board')).dispatches)[0];
     await f.run({type: 'observe-execution', dispatchId: dispatch.id, fence: dispatch.fence, outcome: 'succeeded'});
-    await f.run({type: 'publish-plan', plan: {schema: 'kanban.plan/1', id: 'next-plan', revision: 1, sealed: true,
+    await f.run({type: 'publish-plan', plan: {schema: 'kanban.plan/1', rootItemId: 'management-root', id: 'next-plan', revision: 1, sealed: true,
         items: [{id: 'next', title: 'Next', responsibility: 'Build', acceptance: 'Verify', assignee: {kind: 'service', id: 'worker'}, dependsOn: []}]}});
     await f.run({type: 'request-run', itemId: 'next'}); await bridge.scan();
     expect(f.executor.start).toHaveBeenCalledTimes(starts ? 2 : 1);
@@ -221,7 +222,7 @@ it.each([
 it('keeps active executions within the default per-assignee capacity', async () => {
     const f = await fixture(); await f.run({type: 'request-run', itemId: 'task'});
     const bridge = await f.bridge(); await bridge.scan();
-    await f.run({type: 'publish-plan', plan: {schema: 'kanban.plan/1', id: 'next-plan', revision: 1, sealed: true,
+    await f.run({type: 'publish-plan', plan: {schema: 'kanban.plan/1', rootItemId: 'management-root', id: 'next-plan', revision: 1, sealed: true,
         items: [{id: 'next', title: 'Next', responsibility: 'Build', acceptance: 'Verify', assignee: {kind: 'service', id: 'worker'}, dependsOn: []}]}});
     await f.run({type: 'request-run', itemId: 'next'}); await bridge.scan();
     expect(f.executor.start).toHaveBeenCalledTimes(1);
@@ -259,7 +260,7 @@ it('keeps group attention outside the visible child page',async()=>{
 it('starts internal decision planning immediately while retaining the delay for development tasks',async()=>{
     const f=await fixture();
     await f.run({type:'create-item',item:{id:'planning-carrier',title:'Plan',responsibility:'Plan scope',acceptance:'Confirmed plan',purpose:'planning'}});
-    await f.run({type:'create-item',item:{id:'development-task',title:'Build',responsibility:'Build code',acceptance:'Verified'}});
+    await f.run({type:'create-item',item:{id:'development-task',title:'Build',responsibility:'Build code',acceptance:'Verified'},planning:{kind:'task',parentId:'management-root',priority:2,dependencies:[],references:[]}});
     const planning=(await f.service.item('board','planning-carrier')).item,development=(await f.service.item('board','development-task')).item;
     expect(planning.launch?.startAt).toBe(planning.createdAt);
     expect(development.launch!.startAt-development.createdAt).toBe(300000);
@@ -275,14 +276,15 @@ it('resumes a board containing unstarted items without a control record',async()
 it('archives a stopped failed task without completing dependents and blocks deletion of a live prerequisite',async()=>{
     const f=await fixture(),bridge=await f.bridge();f.clock(300000);await bridge.scan();
     const dispatch=Object.values((await f.service.workflow('board')).dispatches)[0];
-    await expect(f.run({type:'delete-item',itemId:'task'},f.human)).rejects.toMatchObject({code:'TASK_CLEANUP_EXECUTION_UNSETTLED'});
+    await expect(f.run({type:'delete-item',itemId:'management-root'},f.human)).rejects.toMatchObject({code:'TASK_CLEANUP_EXECUTION_UNSETTLED'});
     await f.run({type:'observe-execution',dispatchId:dispatch.id,fence:dispatch.fence,outcome:'failed',code:'BUILD_FAILED'});
-    await f.run({type:'create-item',item:{id:'followup',title:'Follow up',responsibility:'Integrate',acceptance:'Works'},planning:{kind:'task',priority:2,dependencies:['task'],references:[]}});
+    await f.run({type:'create-item',item:{id:'followup-manager',title:'Follow up manager',responsibility:'Coordinate',acceptance:'Done'}});
+    await f.run({type:'create-item',item:{id:'followup',title:'Follow up',responsibility:'Integrate',acceptance:'Works'},planning:{kind:'task',parentId:'followup-manager',priority:2,dependencies:['task'],references:[]}});
     const failed=await f.service.item('board','task');expect(failed.task?.cleanupAllowed).toBe(true);
     const waiting=(await f.service.query('board',{view:'all'})).items.find(row=>row.id==='followup')!;
     expect(waiting.task).toMatchObject({phase:'waiting-dependency',reason:'DEPENDENCY_FAILED:task'});
-    await expect(f.run({type:'delete-item',itemId:'task'},f.human)).rejects.toMatchObject({code:'TASK_HAS_DEPENDENTS'});
-    await f.run({type:'archive-items',itemIds:['task'],reason:'Stopped failed work'},f.human);
+    await expect(f.run({type:'delete-item',itemId:'management-root'},f.human)).rejects.toMatchObject({code:'TASK_HAS_DEPENDENTS'});
+    await f.run({type:'archive-items',itemIds:['management-root'],reason:'Stopped failed work'},f.human);
     expect((await f.service.item('board','task')).item.status).toBe('cancelled');
     expect((await f.service.item('board','followup')).item.status).not.toBe('cancelled');
     expect((await f.service.query('board',{view:'all'})).items.find(row=>row.id==='followup')?.task).toMatchObject({phase:'waiting-dependency',reason:'DEPENDENCY_CANCELLED:task'});
@@ -313,7 +315,7 @@ it('distinguishes stable coordination and execution references without changing 
  expect(task.taskType).toBe('execution');expect(group.taskType).toBe('coordination');
  expect(await f.service.resolve(`KBT-1-${task.number}`)).toMatchObject({itemId:task.id,reference:`KBT-1-${task.number}`});
  expect(await f.service.resolve(`KBC-1-${group.number}`)).toMatchObject({itemId:group.id,reference:`KBC-1-${group.number}`});
- await expect(f.service.resolve(`KBC-1-${task.number}`)).rejects.toMatchObject({code:'REFERENCE_NOT_FOUND'});
+ expect(await f.service.resolve(`KBC-1-${task.number}`)).toMatchObject({itemId:task.id,reference:`KBT-1-${task.number}`});
 });
 
 it('turns a confirmed coordination plan into execution children without dispatching its parent',async()=>{

@@ -85,26 +85,23 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
 function createItem(state: KanbanState, command: Extract<KanbanCommand, { type: 'create-item' }>, actor: KanbanActor, now: number, token: string): void {
     const {id: requestedId, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose,taskType} = command.item;
     const id = requestedId ?? allocateTaskId(state);
-    const input = {id, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose,taskType:taskType??(purpose==='planning'||command.planning?.execution==='children'?'coordination' as const:'execution' as const)}, board = state.board;
+    const input = {id, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose:purpose??(!command.planning?.parentId&&taskType!=='execution'?'planning' as const:undefined),taskType:taskType??(command.planning?.parentId?'execution' as const:'coordination' as const)}, board = state.board;
     requireValue(taskType===undefined||['coordination','execution'].includes(taskType),'INVALID_TASK_TYPE');
     requireValue(purpose===undefined||purpose==='planning','INVALID_ITEM_PURPOSE');
-    requireValue(taskType!=='execution'||purpose!=='planning'&&command.planning?.execution!=='children','INVALID_TASK_TYPE');
+    requireValue(input.taskType!=='execution'||purpose!=='planning'&&command.planning?.execution!=='children','INVALID_TASK_TYPE');
     identity(input.id); text(input.title); text(input.responsibility); text(input.acceptance);
     requireValue(!board.items.some(i => i.id === input.id) && !state.archiveIndex?.some(i => i.id === input.id), 'ITEM_EXISTS');
     const item: KanbanItem = { ...input, origin: {kind: 'direct', principal: principal(actor)}, status: 'backlog', revision: 1, createdAt: now, readyAt: now, updatedAt: now, workUnits: 0, participants: [] };
-    item.launch = {startAt: now + (purpose==='planning'?0:TASK_START_DELAY_MS)};
+    item.launch = {startAt: now + (input.purpose==='planning'?0:TASK_START_DELAY_MS)};
     requireValue(command.launch?.mode === undefined || ['automatic', 'manual'].includes(command.launch.mode), 'INVALID_LAUNCH_MODE');
     requireValue(command.launch?.paused === undefined || typeof command.launch.paused === 'boolean', 'INVALID_TASK_PAUSE');
     if (command.launch?.mode) item.launch!.mode = command.launch.mode;
     if (command.launch?.paused) item.control = {id: 'initial-' + token, action: 'pause', state: 'paused'};
     item.planning = command.planning ?? {...plan(item), kind: board.defaultWorkType ?? 'task'};
+    item.planning={...item.planning,execution:input.taskType==='coordination'?'children':'direct'};
     const references = item.externalRefs ?? []; item.externalRefs = [];
     for (const reference of references) attachReference(item, reference);
     validateCandidates(board, item, executable(board, item)); validatePlan(state, item, item.planning);
-    if(item.planning.parentId) {
-        const parent=board.items.find(parent=>parent.id===item.planning!.parentId)!;
-        if(parent.planning?.execution!=='children') {parent.taskType='coordination';parent.planning={...plan(parent),execution:'children'};parent.updatedAt=now;parent.revision++;}
-    }
     if (actor.sessionId) participant(item.participants, actor.sessionId, actor.agentId, 'creator', true, now); board.items.push(item);
     if (command.stage === 'open') setStage(state, item, 'open', now);
 }

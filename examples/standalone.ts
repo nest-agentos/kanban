@@ -9,8 +9,9 @@ try {
     await api.boards.create({id: 'research', title: 'Research', scope: {kind: 'system'},
         members: [{kind: 'human', id: 'owner', responsibility: 'Research'}],
         policy: {requireEstimate: false, review: 'assignee'}});
+    await api.execute('research',{operationId:'management',expectedRevision:(await api.boards.get('research')).revision,command:{type:'create-item',item:{id:'management',title:'Manage research',responsibility:'Coordinate',acceptance:'All work accepted'}}});
     await api.execute('research', {operationId: 'create', expectedRevision: (await api.boards.get('research')).revision,
-        command: {type: 'create-item', stage: 'open', item: {id: 'experiment', title: 'Experiment', responsibility: 'Collect evidence', acceptance: 'Evidence recorded'}}});
+        command: {type: 'create-item', stage: 'open', item: {id: 'experiment', title: 'Experiment', responsibility: 'Collect evidence', acceptance: 'Evidence recorded'},planning:{kind:'task',parentId:'management',priority:2,dependencies:[],references:[]}}});
     await api.execute('research', {operationId: 'claim', expectedRevision: (await api.boards.get('research')).revision,
         command: {type: 'claim', itemId: 'experiment'}});
     const item = (await api.items.get('research', 'experiment')).item;

@@ -11,7 +11,8 @@ async function fixture(autoAccept=false) {
     const service=api('manager'),worker=api('worker');let serial=0;
     await service.create({id:'b',title:'Work',scope:{kind:'system'},members:[{kind:'service',id:'manager',responsibility:'Manage',roles:['coordinator','reviewer']},{kind:'service',id:'worker',responsibility:'Build',roles:['worker']}],policy:{requireEstimate:false,review:autoAccept?'assignee':'independent'}});
     const run=async(command:KanbanCommand,actor:KanbanModuleHandle=service)=>actor.execute('b',{operationId:`op-${++serial}`,expectedRevision:(await actor.read('b')).revision,command});
-    await run({type:'publish-plan',plan:{schema:'kanban.plan/1',id:'p',revision:1,sealed:true,items:['first','second'].map((id,i)=>({id,title:id,responsibility:'Work',acceptance:'Done',assignee:{kind:'service',id:'worker'},dependsOn:i?['first']:[]}))}});
+    await run({type:'create-item',item:{id:'management-root',taskType:'coordination',title:'Manage work',responsibility:'Coordinate',acceptance:'All children accepted'}});
+    await run({type:'publish-plan',plan:{schema:'kanban.plan/1',rootItemId:'management-root',id:'p',revision:1,sealed:true,items:['first','second'].map((id,i)=>({id,title:id,responsibility:'Work',acceptance:'Done',assignee:{kind:'service',id:'worker'},dependsOn:i?['first']:[]}))}});
     const executor:KanbanExecutionPort={prepare:vi.fn(async dispatch=>({dispatchId:dispatch.id})),start:vi.fn(async()=>({outcome:'running'})),inspect:vi.fn(async()=>({outcome:'unknown',code:'RECEIPT_MISSING'}))};
     const bridge=async(autoDispatch=false,port=executor)=>{
         const bridge=await createKanbanExecutionBridge({executionReference:(id,revision)=>({system:'external-execution',id,revision}),fs,directory:'/bridge',boardId:'b',service,worker:async()=>worker,executor:port,authorize:async()=>{},log,autoDispatch,shutdownTimeoutMs:5});

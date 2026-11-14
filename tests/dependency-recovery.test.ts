@@ -11,9 +11,9 @@ async function fixture(group=false){
  await service.create({id:'b',title:'Recovery',scope:{kind:'system'},members:[{kind:'human',id:'owner',responsibility:'Manage',roles:['coordinator','reviewer','worker']},{kind:'human',id:'inspector',responsibility:'Review',roles:['coordinator','reviewer']}],policy:{requireEstimate:false,review:'independent'}});
  const inspector=createKanbanModule({store,actor:{kind:'human',id:'inspector'},authorize:async()=>{},verifyOutputs:async()=>true,log(){}});
  let serial=0;const run=(command:KanbanCommand)=>service.read('b').then(board=>service.execute('b',{operationId:'op-'+ ++serial,expectedRevision:board.revision,command}));
- if(group)await run({type:'create-item',item:{id:'group',title:'Group',responsibility:'Coordinate',acceptance:'Children accepted'},planning:{kind:'task',priority:2,dependencies:[],references:[]}});
+ await run({type:'create-item',item:{id:'group',title:'Group',responsibility:'Coordinate',acceptance:'Children accepted'},planning:{kind:'task',priority:2,dependencies:[],references:[]}});
  const definition=(id:string,dependsOn:string[]=[])=>({id,title:id,responsibility:'Work',acceptance:'Verified',workType:group?'subtask':'task',assignee:{kind:'human' as const,id:'owner'},dependsOn,outputs:['result']});
- const plan:KanbanWorkPlan={schema:'kanban.plan/1',id:'p',revision:1,sealed:true,...(group?{rootItemId:'group'}:{}),items:[definition('source'),{...definition('verify',['source']),inputs:{result:{fromItemId:'source',output:'result'}}},definition('unrelated')]};await run({type:'publish-plan',plan});
+ const plan:KanbanWorkPlan={schema:'kanban.plan/1',id:'p',revision:1,sealed:true,rootItemId:'group',items:[definition('source'),{...definition('verify',['source']),inputs:{result:{fromItemId:'source',output:'result'}}},definition('unrelated')]};await run({type:'publish-plan',plan});
  const output=(label:string)=>({name:'result',ref:label,sha256:'a'.repeat(64),bytes:1});
  const finish=async(item:string,id:string)=>{await run({type:'prepare-dispatch',itemId:item,dispatchId:id});const d=(await service.workflow('b')).dispatches[id];await run({type:'observe-execution',dispatchId:id,fence:d.fence,outcome:'succeeded',outputs:[output(id)]});await inspector.execute('b',{operationId:'review-'+ ++serial,expectedRevision:(await service.read('b')).revision,command:{type:'accept-execution',dispatchId:id,accept:true}});};
  await finish('source','old-source');await run({type:'prepare-dispatch',itemId:'verify',dispatchId:'old-verify'});const d=(await service.workflow('b')).dispatches['old-verify'];await run({type:'observe-execution',dispatchId:d.id,fence:d.fence,outcome:'failed',code:'VERIFICATION_FAILED',executionSessionId:'original-session'});await finish('unrelated','unrelated-run');
@@ -39,7 +39,7 @@ it('rejects a stale preview and prevents graph mutation or archiving during drai
  await f.run({type:'request-control',itemId:'verify',controlId:'other-control',action:'cancel'});
  await expect(runtime.restartTask('b',{operationId:'stale',itemId:'source',version:preview.version,confirmed:true})).rejects.toMatchObject({code:'RESTART_PREVIEW_CHANGED'});
  const fresh=await runtime.previewTaskRestart('b','source');await runtime.restartTask('b',{operationId:'fresh',itemId:'source',version:fresh.version,confirmed:true});
- await expect(f.run({type:'archive-items',itemIds:['source'],reason:'Hide'})).rejects.toMatchObject({code:'DEPENDENCY_RESTART_PENDING'});
+ await expect(f.run({type:'archive-items',itemIds:['group'],reason:'Hide'})).rejects.toMatchObject({code:'TASK_CLEANUP_EXECUTION_UNSETTLED'});
  await expect(f.run({type:'create-item',item:{id:'new',title:'New',responsibility:'Work',acceptance:'Done'},planning:{kind:'task',priority:2,dependencies:['source'],references:[]}})).rejects.toMatchObject({code:'DEPENDENCY_RESTART_PENDING'});await runtime.quiesce();
 });
 it('atomically inserts a repair from a group proposal and continues only after formal repair acceptance',async()=>{

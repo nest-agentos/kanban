@@ -14,6 +14,7 @@ async function fixture(related?: import('../src/activity').KanbanSessionSource['
     const service=createKanbanActivityModule({referenceSystem: 'external-job',store,actor:{kind:'human',id:'owner'},authorize:async()=>{},log,executionSessions:{source:{inspect,related},now:()=>now}});closes.push(()=>service.dispose());
     await service.create({id:'b',title:'Board',scope:{kind:'system'},members:[{kind:'human',id:'owner',responsibility:'Manage',roles:['coordinator','worker','reviewer']},{kind:'human',id:'visitor',responsibility:'Observe',roles:['reviewer']}],policy:{requireEstimate:false}});
     const run=async(command:KanbanCommand,actor=service)=>actor.execute('b',{operationId:`op-${++serial}`,expectedRevision:(await actor.read('b')).revision,command});
+    await run({type:'create-item',item:{id:'management-root',taskType:'coordination',title:'Manage work',responsibility:'Coordinate',acceptance:'All children accepted'}});
     const item=async(id:string)=>run({type:'create-item',item:{id,title:id,responsibility:'Work',acceptance:'Done'}});
     const bind=async(itemId:string,sessionId:string)=>run({type:'link-reference',itemId,reference:executionReference(sessionId,`binding-${++serial}`)});
     const state=(id:string,phase:KanbanExecutionSession['state'],age:number)=>states.set(id,{sessionId:id,title:id,state:phase,lastActivityAt:now-age,observedAt:now,stale:false});
@@ -37,7 +38,7 @@ it('groups continuation attempts under their original Session and keeps hooks an
     ] : []);
     const f = await fixture(related);
     for (const id of ['original', 'planner', 'hook', 'fix', 'child-session']) f.state(id, 'running', 0);
-    await f.run({type:'publish-plan',plan:{schema:'kanban.plan/1',id:'p',revision:1,sealed:true,items:[{id:'work',title:'Work',responsibility:'Build',acceptance:'Done',assignee:{kind:'human',id:'owner'},dependsOn:[]}]}});
+    await f.run({type:'publish-plan',plan:{schema:'kanban.plan/1',rootItemId:'management-root',id:'p',revision:1,sealed:true,items:[{id:'work',title:'Work',responsibility:'Build',acceptance:'Done',assignee:{kind:'human',id:'owner'},dependsOn:[]}]}});
     await f.run({type:'prepare-dispatch',itemId:'work',dispatchId:'d1'});
     await f.run({type:'link-reference',itemId:'work',reference:executionReference('original','d1')});
     await f.run({type:'observe-execution',dispatchId:'d1',fence:(await f.service.workflow('b')).dispatches.d1.fence,outcome:'failed'});
@@ -66,7 +67,7 @@ it('retains known associations and a safe error code when supplemental history i
 });
 it('does not present a previous attempt Session as the current executor while a new attempt is being prepared',async()=>{
     const f=await fixture();f.state('old','running',0);
-    await f.run({type:'publish-plan',plan:{schema:'kanban.plan/1',id:'p',revision:1,sealed:true,items:[{id:'work',title:'Work',responsibility:'Build',acceptance:'Done',assignee:{kind:'human',id:'owner'},dependsOn:[]}]}});
+    await f.run({type:'publish-plan',plan:{schema:'kanban.plan/1',rootItemId:'management-root',id:'p',revision:1,sealed:true,items:[{id:'work',title:'Work',responsibility:'Build',acceptance:'Done',assignee:{kind:'human',id:'owner'},dependsOn:[]}]}});
     await f.run({type:'prepare-dispatch',itemId:'work',dispatchId:'old-d'});await f.run({type:'link-reference',itemId:'work',reference:executionReference('old','old-d')});
     const fence=(await f.service.workflow('b')).dispatches['old-d'].fence;
     await f.run({type:'observe-execution',dispatchId:'old-d',fence,outcome:'failed'});await f.run({type:'unblock-item',itemId:'work'});await f.run({type:'prepare-dispatch',itemId:'work',dispatchId:'new-d'});
@@ -93,7 +94,7 @@ it('keeps stale state on transport failure without treating it as running or rec
 });
 it('rejects unauthorized binding and replacement of a Session belonging to an unsettled dispatch',async()=>{
     const f=await fixture();f.state('s1','running',0);f.state('s2','running',0);
-    await f.run({type:'publish-plan',plan:{schema:'kanban.plan/1',id:'p',revision:1,sealed:true,items:[{id:'work',title:'Work',responsibility:'Build',acceptance:'Done',assignee:{kind:'human',id:'owner'},dependsOn:[]}]}});
+    await f.run({type:'publish-plan',plan:{schema:'kanban.plan/1',rootItemId:'management-root',id:'p',revision:1,sealed:true,items:[{id:'work',title:'Work',responsibility:'Build',acceptance:'Done',assignee:{kind:'human',id:'owner'},dependsOn:[]}]}});
     const visitor=createKanbanActivityModule({referenceSystem: 'external-job',store:f.store,actor:{kind:'human',id:'visitor'},authorize:async()=>{},log:f.log,executionSessions:{source:{inspect:f.inspect}}});closes.push(()=>visitor.dispose());
     await expect(f.run({type:'link-reference',itemId:'work',reference:executionReference('s1','manual')},visitor)).rejects.toMatchObject({code:'EXECUTION_SESSION_ASSIGNMENT_DENIED'});
     await f.run({type:'prepare-dispatch',itemId:'work',dispatchId:'d'});await f.run({type:'link-reference',itemId:'work',reference:executionReference('s1','d')});
@@ -103,7 +104,7 @@ it('rejects unauthorized binding and replacement of a Session belonging to an un
 
 it('retains the original primary Session binding after independent acceptance',async()=>{
     const f=await fixture();f.state('original','completed',0);f.state('other','running',0);
-    await f.run({type:'publish-plan',plan:{schema:'kanban.plan/1',id:'p',revision:1,sealed:true,items:[{id:'work',title:'Work',responsibility:'Build',acceptance:'Done',assignee:{kind:'human',id:'owner'},dependsOn:[]}]}});
+    await f.run({type:'publish-plan',plan:{schema:'kanban.plan/1',rootItemId:'management-root',id:'p',revision:1,sealed:true,items:[{id:'work',title:'Work',responsibility:'Build',acceptance:'Done',assignee:{kind:'human',id:'owner'},dependsOn:[]}]}});
     await f.run({type:'prepare-dispatch',itemId:'work',dispatchId:'d'});await f.run({type:'link-reference',itemId:'work',reference:executionReference('original','d')});
     const dispatch=(await f.service.workflow('b')).dispatches.d;await f.run({type:'observe-execution',dispatchId:'d',fence:dispatch.fence,outcome:'succeeded'});
     await f.store.update('b','reviewer-fixture','reviewer-fixture',state=>{state!.board.members!.push({kind:'human',id:'independent',responsibility:'Review',roles:['coordinator','reviewer']});return state!;});

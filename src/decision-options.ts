@@ -1,6 +1,10 @@
 import type {KanbanProjectRecord} from './contracts/context';
 import {requireValue} from './rules';
 
+export function validateDecisionPriority(priority:unknown):void {
+    requireValue(priority===undefined||typeof priority==='number'&&Number.isInteger(priority)&&priority>=0&&priority<=4,'INVALID_RECORD_PRIORITY');
+}
+
 /** Delivery preferences are immutable inputs to each execution snapshot. */
 export function validateDecisionOptions(value: Pick<KanbanProjectRecord, 'verificationLevel' | 'deliveryMode'>, kind: string): void {
     requireValue(value.verificationLevel === undefined || kind === 'decision' && ['full', 'quick', 'none'].includes(value.verificationLevel), 'INVALID_VERIFICATION_LEVEL');

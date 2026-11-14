@@ -1,5 +1,5 @@
 import type {IFileSystem} from '@nestos/vfs-core';
-import {boardAllowsStart,executableWorkItem,type KanbanActor,type KanbanBoard,type KanbanItem,type KanbanService,type KanbanArtifactRef,type KanbanAutomationCatalog} from '../contracts';
+import {boardAllowsStart,kanbanTaskType,type KanbanActor,type KanbanBoard,type KanbanItem,type KanbanService,type KanbanArtifactRef,type KanbanAutomationCatalog} from '../contracts';
 import {taskDue} from '../contracts/task-projection';
 import {createKanbanExecutionBridge,type KanbanExecutionPort,type KanbanExecutionBridgeOptions} from '../execution';
 import type {KanbanAutomationJournal} from './automation-journal';
@@ -65,8 +65,8 @@ async function planNext(options:KanbanAutomationOptions,board:KanbanBoard,active
     if(!options.analyze)return;
     const workflow=await options.service.workflow(board.id),planned=new Set(Object.values(workflow.plans).flatMap(plan=>plan.itemIds));
     const candidates=board.items.filter(item=>!planned.has(item.id)&&['backlog','open'].includes(item.status)&&!item.owner&&!item.blocked
-        &&boardAllowsStart(board,item)&&(item.analysis?.state!=='failed'||item.analysis.code==='IDEMPOTENCY_CONFLICT')&&(item.purpose==='planning'&&!!item.externalRefs?.length||executableWorkItem(board,item))
-        &&(!item.control||item.control.action==='resume'&&item.control.state==='resumed')&&(item.launch?.admittedAt!==undefined||taskDue(item,Date.now())));
+        &&boardAllowsStart(board,item)&&(item.analysis?.state!=='failed'||item.analysis.code==='IDEMPOTENCY_CONFLICT')&&(kanbanTaskType(item)==='coordination'&&!item.planning?.parentId&&item.purpose==='planning'||['analyzing','unknown','clarification','blocked'].includes(item.analysis?.state??''))
+        &&(!item.control||item.control.action==='resume'&&item.control.state==='resumed')&&(item.launch?.admittedAt!==undefined||taskDue(item,Date.now()))).sort((a,b)=>(a.planning?.priority??2)-(b.planning?.priority??2));
     for(const item of candidates) {
         if(!active())return;if(!await dependenciesComplete(options.service,board,item))continue;
         const service=options.serviceFor(board.automation!.coordinator);
@@ -109,12 +109,13 @@ async function estimateFor(journal: KanbanAutomationJournal, boardId: string, it
 export async function dependencyResults(options: KanbanAutomationOptions, boardId: string, item: KanbanItem): Promise<unknown> {
     const workflow = await options.service.workflow(boardId), results: Array<{itemId: string; outputs: Array<{reference: KanbanArtifactRef; value: unknown}>}> = [];
     for (const itemId of item.planning?.dependencies ?? []) {
-        const dispatch = Object.values(workflow.dispatches).filter(dispatch => dispatch.itemId === itemId).sort((a,b)=>b.attempt-a.attempt)[0];
-        requireValue(!dispatch||dispatch.outcome==='accepted','DEPENDENCY_OUTPUT_INVALID');
-        const outputs: Array<{reference: KanbanArtifactRef; value: unknown}> = [];
-        for (const output of dispatch?.outputs ?? []) {
-            requireValue(await options.journal.verify(dispatch?.outputs ?? [], dispatch?.id), 'DEPENDENCY_OUTPUT_INVALID');
-            outputs.push({reference: output, value: JSON.parse((await options.journal.get<string>('artifact:' + output.sha256))!)});
+        const childIds=Object.values(workflow.plans).filter(plan=>plan.rootItemId===itemId).flatMap(plan=>plan.itemIds);
+        const ids=childIds.length?[...new Set(childIds)]:[itemId],outputs:Array<{reference:KanbanArtifactRef;value:unknown}>=[];
+        for(const id of ids) {
+            const dispatch=Object.values(workflow.dispatches).filter(row=>row.itemId===id).sort((a,b)=>b.attempt-a.attempt)[0];
+            requireValue(!dispatch||dispatch.outcome==='accepted','DEPENDENCY_OUTPUT_INVALID');
+            if(dispatch?.outputs?.length)requireValue(await options.journal.verify(dispatch.outputs,dispatch.id),'DEPENDENCY_OUTPUT_INVALID');
+            for(const output of dispatch?.outputs??[])outputs.push({reference:output,value:JSON.parse((await options.journal.get<string>('artifact:'+output.sha256))!)});
         }
         results.push({itemId, outputs});
     }

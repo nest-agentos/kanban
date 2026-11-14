@@ -14,7 +14,7 @@ export function taskDue(item:Item,now:number):boolean {
 /** Ordered evidence projection shared by storage queries, CLI and UI. Session idle never proves acceptance. */
 export function projectKanbanTask(item:Item,workflow?:KanbanWorkflowState,now=Date.now(),all:Related[]=[]):KanbanTaskProjection {
     const dispatch=Object.values(workflow?.dispatches??{}).filter(d=>d.itemId===item.id&&d.executionEpoch===item.executionEpoch).sort((a,b)=>b.attempt-a.attempt)[0];
-    const fact=(item.restartPending?{phase:'cancelling' as const,reason:'DEPENDENCY_RESTART_PENDING',actions:[]}:undefined)??terminalFact(item)??controlFact(item)??repairFact(item,all)??issueFact(item,dispatch)??groupFact(item,workflow,now,all)??failureFact(item,dispatch)??executionFact(item,dispatch)??waitingFact(item,now,all,workflow);
+    const fact=(item.restartPending?{phase:'cancelling' as const,reason:'DEPENDENCY_RESTART_PENDING',actions:[]}:undefined)??terminalFact(item)??controlFact(item)??repairFact(item,all)??issueFact(item,dispatch)??failureFact(item,dispatch)??executionFact(item,dispatch)??analysisFact(item)??groupFact(item,workflow,now,all)??waitingFact(item,now,all,workflow);
     const extra: KanbanTaskProjection['actions'] = [];
     if (!['completed','cancelled'].includes(item.status) && item.control?.action !== 'cancel') {
         if (!fact.actions?.includes('cancel')) extra.push('cancel');

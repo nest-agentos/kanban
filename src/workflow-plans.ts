@@ -22,15 +22,16 @@ export function publishPlan(state: KanbanState, plan: KanbanWorkPlan, actor: Kan
     }
     requireValue(plan.mode===undefined||plan.mode==='append'&&!!plan.rootItemId,'INVALID_WORK_PLAN');
     requireValue(plan.coordination===undefined||typeof plan.coordination==='boolean','INVALID_WORK_PLAN');
+    requireValue(plan.rootItemId,'PLAN_ROOT_REQUIRED');
     if(plan.rootItemId) {
         const root=state.board.items.find(item=>item.id===plan.rootItemId);
-        requireValue(root&&!root.owner&&!root.deletedAt&&root.control?.action!=='cancel','PLAN_ROOT_UNAVAILABLE');
+        requireValue(root&&root.taskType==='coordination'&&!root.planning?.parentId&&!root.owner&&!root.deletedAt&&root.control?.action!=='cancel','PLAN_ROOT_UNAVAILABLE');
         if(plan.mode==='append') {
             requireValue(!previous&&root.planning?.execution==='children'&&['backlog','open','completed'].includes(root.status),'PLAN_ROOT_UNAVAILABLE');
             requireValue(plan.items.every(item=>!state.board.items.some(existing=>existing.id===item.id)&&!state.archiveIndex?.some(existing=>existing.id===item.id)),'APPEND_REQUIRES_NEW_ITEMS');
             if(root.status==='completed'){root.status='backlog';delete root.closedAt;delete root.resultRef;root.revision++;}
         }else requireValue(['backlog','open'].includes(root.status),'PLAN_ROOT_UNAVAILABLE');
-        delete root.purpose;root.taskType='coordination';
+        delete root.purpose;
         if(plan.coordination===true)root.planning={...planning(root),coordination:true};
         if(root.planning?.execution!=='children')apply({type:'plan-item',itemId:root.id,planning:{...planning(root),execution:'children'}});
     }
@@ -38,13 +39,15 @@ export function publishPlan(state: KanbanState, plan: KanbanWorkPlan, actor: Kan
     for (const item of ordered) {
         const digest = sha256HexSync(JSON.stringify(item));
         requireValue(!Object.values(workflow.plans).some(other => other.id !== plan.id && other.itemIds.includes(item.id)), 'ITEM_IN_OTHER_PLAN');
-        const exists=state.board.items.some(old => old.id === item.id)||state.archiveIndex?.some(old=>old.id===item.id);
+        const existing=state.board.items.find(old=>old.id===item.id);
+        requireValue(!existing||existing.taskType==='execution'&&existing.planning?.parentId===plan.rootItemId,'PLAN_ITEM_OUTSIDE_ROOT');
+        const exists=!!existing||state.archiveIndex?.some(old=>old.id===item.id);
         if (exists && previous?.definitions[item.id]?.digest !== digest) {
             requireValue(!previous?.definitions[item.id], 'PLAN_ITEM_CHANGED_REQUIRES_NEW_ID');
             adoptItem(state, item, apply);
         }
         if (!exists) apply({type:'create-item', item:{id:item.id,title:item.title,responsibility:item.responsibility,acceptance:item.acceptance,eligiblePrincipals:[item.assignee],externalRefs:item.externalRefs},
-            planning:{kind:item.workType??state.board.defaultWorkType ?? 'task',priority:2,dependencies:item.dependsOn,references:[],...(plan.rootItemId ? {parentId:plan.rootItemId}: {})}});
+            planning:{kind:item.workType??state.board.defaultWorkType ?? 'task',priority:state.board.items.find(root=>root.id===plan.rootItemId)?.planning?.priority??2,dependencies:item.dependsOn,references:[],...(plan.rootItemId ? {parentId:plan.rootItemId}: {})}});
         definitions[item.id] = {digest, inputs:item.inputs, outputs:item.outputs ?? []};
     }
     workflow.plans[plan.id] = {schema:plan.schema,id:plan.id,revision:plan.revision,decisionId:plan.decisionId,rootItemId:plan.rootItemId,sealed:plan.sealed,itemIds:ordered.map(item=>item.id),definitions};

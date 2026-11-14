@@ -55,7 +55,8 @@ it('archives completed cross-board work without requiring local task links or ch
     await f.command({type:'review-record',recordId:'cross',accept:true});
     await f.service.create({id:'target',title:'Target',scope:{kind:'system'},members:[{kind:'human',id:'owner',roles:['worker','reviewer'],responsibility:'Work'},{kind:'human',id:'reviewer',roles:['reviewer'],responsibility:'Review'}],policy:{requireEstimate:false}});
     let serial=0;const target=async(command:KanbanCommand)=>f.service.execute('target',{operationId:'target-'+ ++serial,expectedRevision:(await f.service.read('target')).revision,command});
-    await target({type:'create-item',item:{id:'task',title:'Target task',responsibility:'Work',acceptance:'Done'},stage:'open'});
+    await target({type:'create-item',item:{id:'management-root',taskType:'coordination',title:'Manage work',responsibility:'Coordinate',acceptance:'All children accepted'}});
+    await target({type:'create-item',item:{id:'task',title:'Target task',responsibility:'Work',acceptance:'Done'},planning:{kind:'task',parentId:'management-root',priority:2,dependencies:[],references:[]},stage:'open'});
     if(!(await f.service.item('target','task')).item.owner)await target({type:'claim',itemId:'task'});
     const item=(await f.service.item('target','task')).item;
     await target({type:'submit',itemId:'task',token:item.owner!.token,resultRef:'verified'});

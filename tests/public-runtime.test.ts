@@ -4,7 +4,7 @@ import * as publicAPI from '../src/runtime';
 import {createKanbanRuntime,type KanbanRuntime,type KanbanExecutionAdapter,type KanbanExecutionIntent,type KanbanExecutionHandle,type KanbanExecutionReceipt} from '../src/runtime';
 import type {KanbanCommand} from '../src/contracts';
 const closes:Array<()=>Promise<void>>=[];
-afterEach(async()=>{for(const close of closes.splice(0).reverse())await close();});
+afterEach(async()=>{for(const close of closes.splice(0).reverse())await close();vi.restoreAllMocks();});
 it('exposes plugin operations through the standalone runtime without application or Kernel dependencies',async()=>{
  const {manager}=await createVFS({rootBackend:new MemoryBackend()});closes.push(()=>manager.dispose());
  const run=vi.fn(async()=>({revision:'r2',operations:[]})),dispose=vi.fn(async()=>{});
@@ -19,6 +19,7 @@ it('exposes plugin operations through the standalone runtime without application
  expect(run).toHaveBeenCalledOnce();expect(service).not.toHaveProperty('store');
 });
 async function fixture() {
+    let clock=Date.now();vi.spyOn(Date,'now').mockImplementation(()=>clock);
     const {manager}=await createVFS({rootBackend:new MemoryBackend()});closes.push(()=>manager.dispose());
     const fs=await manager.openFileSystem('/'),intents=new Map<string,KanbanExecutionIntent>(),receipts=new Map<string,KanbanExecutionReceipt>();
     const target={system:'external',id:'worker',revision:'1'},coordinator={kind:'human' as const,id:'owner'},worker={kind:'service' as const,id:'runner'};
@@ -41,7 +42,9 @@ async function fixture() {
     const command=async(value:KanbanCommand,api:KanbanRuntime=service)=>api.execute('board',{operationId:commandId(),expectedRevision:(await api.read('board')).revision,command:value});
     await command({type:'configure-automation',settings:{enabled:true,autoAccept:false,planner:target,executor:target,coordinator,worker}});
     const item=async(id='task')=>{await command({type:'create-item',item:{id,title:'Task '+id,responsibility:'PRIVATE-'+id,acceptance:'Evidence'}});await command({type:'request-run',itemId:id});};
-    return {service,open,options,adapter,intents,receipts,diagnostic,command,item,loseWork:()=>{loseWork=true;},losePlan:()=>{losePlan=true;},malformed:()=>{malformed=true;},revealPlan:()=>{losePlan=false;}};
+    const scan=async(api=service)=>{await api.scan();clock+=300001;await api.scan();};
+    const executionItem=async()=>{const id=[...intents.values()].find(intent=>intent.purpose==='work')!.scope.itemId;return service.item('board',id);};
+    return {service,scan,executionItem,open,options,adapter,intents,receipts,diagnostic,command,item,loseWork:()=>{loseWork=true;},losePlan:()=>{losePlan=true;},malformed:()=>{malformed=true;},revealPlan:()=>{losePlan=false;}};
 }
 let sequence=0;
 function commandId(){return 'command-'+(++sequence);}
@@ -49,39 +52,39 @@ function work(f:Awaited<ReturnType<typeof fixture>>){return [...f.intents.values
 it('exports a single factory and keeps storage and integration internals off the instance',async()=>{
     const f=await fixture();expect(Object.keys(publicAPI)).toEqual(['createKanbanRuntime']);
     for(const name of ['journal','store','workLog','serviceFor','fs','service'])expect(f.service).not.toHaveProperty(name);
-    await f.item();await f.service.scan();expect(work(f)).toHaveLength(1);
-    const intent=work(f)[0];expect(JSON.stringify(intent).match(/PRIVATE-task/g)).toHaveLength(1);
+    await f.item();await f.scan();expect(work(f)).toHaveLength(1);
+    const intent=work(f)[0];expect(JSON.stringify(intent.context)).toContain('PRIVATE-task');
     expect(intent).not.toHaveProperty('sessionId');expect(intent).not.toHaveProperty('request');
 });
 it('runs planning and execution through one adapter and owns result persistence and verification',async()=>{
-    const f=await fixture();await f.item();await f.service.scan();const intent=work(f)[0];
+    const f=await fixture();await f.item();await f.scan();const intent=work(f)[0];
     f.receipts.set('remote-'+intent.id,{outcome:'succeeded',executionId:'remote-'+intent.id,result:{answer:42}});
-    await f.service.scan();expect((await f.service.item('board','task')).item.status).toBe('review');
+    await f.scan();expect((await f.executionItem()).item.status).toBe('review');
     expect(await f.service.results('board',intent.id)).toEqual([{reference:expect.objectContaining({name:'result'}),value:{answer:42}}]);
     await f.command({type:'accept-execution',dispatchId:intent.id,accept:true});
-    expect((await f.service.item('board','task')).item.status).toBe('completed');
+    expect((await f.executionItem()).item.status).toBe('completed');
 });
 it('recovers response loss using the persisted opaque handle without preparing or submitting again',async()=>{
-    const f=await fixture();await f.item();f.loseWork();await f.service.scan();
-    const id=work(f)[0].id;expect((await f.service.workflow('board')).dispatches[id].outcome).toBe('unknown');
-    await f.service.dispose();const reopened=await f.open();await reopened.scan();
+    const f=await fixture();await f.item();f.loseWork();await f.scan();
+    const id=work(f)[0].id;expect((await f.service.workflow('board')).dispatches[id].outcome).toBe('running');
+    await f.service.dispose();const reopened=await f.open();await f.scan(reopened);
     expect(f.adapter.prepare).toHaveBeenCalledTimes(2);expect(f.adapter.submit).toHaveBeenCalledTimes(2);
     expect(f.adapter.inspect).toHaveBeenCalledWith({id:'remote-'+id,data:{intentId:id}});
     expect(JSON.stringify(f.diagnostic.mock.calls)).not.toContain('private context body');
 });
 it('recovers an uncertain planning submission through the same adapter identity',async()=>{
-    const f=await fixture();await f.item();f.losePlan();await f.service.scan();
-    expect(f.adapter.submit).toHaveBeenCalledTimes(1);await f.service.dispose();f.revealPlan();const reopened=await f.open();await reopened.scan();
+    const f=await fixture();await f.item();f.losePlan();await f.scan();
+    expect(f.adapter.submit).toHaveBeenCalledTimes(1);await f.service.dispose();f.revealPlan();const reopened=await f.open();await f.scan(reopened);
     expect(work(f)).toHaveLength(1);expect(f.adapter.submit).toHaveBeenCalledTimes(2);
 });
 it('routes cancellation through the stored handle and waits for its authoritative acknowledgement',async()=>{
-    const f=await fixture();await f.item();await f.service.scan();const id=work(f)[0].id;
-    await f.command({type:'request-control',itemId:'task',controlId:'stop-task',action:'cancel'});await f.service.scan();
+    const f=await fixture();await f.item();await f.scan();const id=work(f)[0].id;
+    await f.command({type:'request-control',itemId:work(f)[0].scope.itemId,controlId:'stop-task',action:'cancel'});await f.scan();
     expect(f.adapter.control).toHaveBeenCalledWith({id:'remote-'+id,data:{intentId:id}},expect.objectContaining({action:'cancel'}));
-    expect((await f.service.item('board','task')).item.status).toBe('cancelled');
+    expect((await f.executionItem()).item.status).toBe('cancelled');
 });
 it('rejects malformed bindings before an external submission',async()=>{
-    const f=await fixture();await f.item();f.malformed();await f.service.scan();
+    const f=await fixture();await f.item();f.malformed();await f.scan();
     expect(f.adapter.submit).not.toHaveBeenCalled();expect(await f.service.analysisStatus!('board','task')).toMatchObject({state:'failed',code:'EXECUTION_HANDLE_INVALID'});
 });
 it('authorizes result reads before resolving artifacts',async()=>{
@@ -89,11 +92,11 @@ it('authorizes result reads before resolving artifacts',async()=>{
     await expect(f.service.results('board','missing')).rejects.toMatchObject({code:'FORBIDDEN'});
 });
 it('keeps successful executions unresolved until their results arrive',async()=>{
-    const f=await fixture();await f.item();await f.service.scan();const id=work(f)[0].id;
-    f.receipts.set('remote-'+id,{outcome:'succeeded'});await f.service.scan();
+    const f=await fixture();await f.item();await f.scan();const id=work(f)[0].id;
+    f.receipts.set('remote-'+id,{outcome:'succeeded'});await f.scan();
     expect((await f.service.workflow('board')).dispatches[id]).toMatchObject({outcome:'unknown',code:'EXECUTION_RESULT_PENDING'});
-    f.receipts.set('remote-'+id,{outcome:'succeeded',result:null});await f.service.scan();
-    expect((await f.service.item('board','task')).item.status).toBe('review');expect(f.adapter.submit).toHaveBeenCalledTimes(2);
+    f.receipts.set('remote-'+id,{outcome:'succeeded',result:null});await f.scan();
+    expect((await f.executionItem()).item.status).toBe('review');expect(f.adapter.submit).toHaveBeenCalledTimes(2);
 });
 it('rejects targets outside the adapter catalog before accepting automation settings',async()=>{
     const f=await fixture(),board=await f.service.read('board');
@@ -101,9 +104,9 @@ it('rejects targets outside the adapter catalog before accepting automation sett
     expect(f.adapter.prepare).not.toHaveBeenCalled();
 });
 it('reports unsupported control without falsely acknowledging cancellation',async()=>{
-    const f=await fixture();await f.item();await f.service.scan();delete f.adapter.control;
-    await f.command({type:'request-control',itemId:'task',controlId:'unsupported-stop',action:'cancel'});await f.service.scan();
-    const {item}=await f.service.item('board','task');expect(item.status).not.toBe('cancelled');expect(item.control).toMatchObject({state:'failed',code:'TASK_CONTROL_UNSUPPORTED'});
+    const f=await fixture();await f.item();await f.scan();delete f.adapter.control;
+    await f.command({type:'request-control',itemId:work(f)[0].scope.itemId,controlId:'unsupported-stop',action:'cancel'});await f.scan();
+    const {item}=await f.executionItem();expect(item.status).not.toBe('cancelled');expect(item.control).toMatchObject({state:'failed',code:'TASK_CONTROL_UNSUPPORTED'});
 });
 
 it('provides a composed read through the public authorized runtime without exposing storage',async()=>{

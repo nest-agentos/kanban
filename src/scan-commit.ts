@@ -35,10 +35,11 @@ export function applyDiscovery(state: KanbanState, batch: KanbanDiscoveryBatch, 
 function createItem(state: KanbanState, change: KanbanDiscoveryChange, actor: KanbanActor, now: number, autoCreate: boolean, runId: string): KanbanItem | undefined {
     text(change.title); text(change.responsibility); text(change.acceptance);
     const item: KanbanItem = {origin: {kind: 'discovery', principal: principal(actor), runId}, id: change.itemId, title: change.title, responsibility: change.responsibility, acceptance: change.acceptance,
-        eligibleAgentIds: change.eligibleAgentIds, eligiblePrincipals: change.eligiblePrincipals, status: 'proposed', revision: 1,
+        taskType:change.planning?.parentId?'execution':'coordination',purpose:change.planning?.parentId?undefined:'planning',eligibleAgentIds: change.eligibleAgentIds, eligiblePrincipals: change.eligiblePrincipals, status: 'proposed', revision: 1,
         createdAt: now, readyAt: now, updatedAt: now, workUnits: 0, participants: [], sources: []};
     item.launch={startAt:now+TASK_START_DELAY_MS};
     item.planning = change.planning ?? {...plan(item), kind: state.board.defaultWorkType ?? 'task'};
+    item.planning={...item.planning,execution:item.taskType==='coordination'?'children':'direct'};
     const fingerprint = workFingerprint(item); item.origin!.fingerprint = fingerprint;
     validateCandidates(state.board, item, executable(state.board, item));
     if (state.archiveIndex?.some(old => old.discoveryFingerprint === fingerprint)) return undefined;

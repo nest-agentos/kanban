@@ -78,5 +78,6 @@ function fixCommand(fix:SavedFix,policy:{kind:string;inheritSystems:string[]}):K
     const plan={schema:'kanban.plan/1' as const,id:snapshot.operationId,revision:1,sealed:true,mode:'append' as const,rootItemId:fix.itemId,items:definition.children!};
     if(definition.repair)return {type:'insert-repair-dependency',itemId:definition.repair.itemId,expectedItemRevision:definition.repair.revision,plan};
     if(definition.children)return {type:'publish-plan',plan};
-    return {type:'create-item',item:{id:snapshot.operationId,title:definition.title,responsibility:definition.responsibility,acceptance:definition.acceptance,externalRefs:fix.item.externalRefs?.filter(ref=>policy.inheritSystems.includes(ref.system))},planning:{kind:policy.kind,priority:fix.item.planning?.priority??2,dependencies:definition.dependencies,references:[]}};
+    requireValue(fix.item.planning?.parentId,'EXECUTION_PARENT_REQUIRED');
+    return {type:'create-item',item:{taskType:'execution',id:snapshot.operationId,title:definition.title,responsibility:definition.responsibility,acceptance:definition.acceptance,externalRefs:fix.item.externalRefs?.filter(ref=>policy.inheritSystems.includes(ref.system))},planning:{parentId:fix.item.planning?.parentId,kind:policy.kind,priority:fix.item.planning?.priority??2,dependencies:definition.dependencies,references:[]}};
 }

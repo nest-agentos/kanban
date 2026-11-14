@@ -1,14 +1,14 @@
 import {applyRecordRevision} from './record-revision';
-import {validateDecisionOptions} from './decision-options';
+import {validateDecisionOptions,validateDecisionPriority} from './decision-options';
 import {sha256HexSync} from './utils';
 import type {KanbanActor, KanbanCommand, KanbanProjectRecord, KanbanRecordPage, KanbanRecordQuery} from './contracts';
 import type {KanbanState} from './ports';
 import {identity, requireValue, text} from './rules';
 import {principal, principalKey} from './identity';
 import {requireReviewer, validateSources} from './amendments';
-export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record' | 'begin-record-edit' | 'save-record-edit' | 'end-record-edit'}>;
+export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record' | 'begin-record-edit' | 'save-record-edit' | 'end-record-edit' | 'set-record-priority'}>;
 export function isRecordCommand(command: KanbanCommand): command is RecordCommand {
-    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record', 'begin-record-edit', 'save-record-edit', 'end-record-edit'].includes(command.type);
+    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record', 'begin-record-edit', 'save-record-edit', 'end-record-edit', 'set-record-priority'].includes(command.type);
 }
 export function applyRecord(state: KanbanState, command: RecordCommand, actor: KanbanActor, now: number, forceDraft = false): void {
     if (['begin-record-edit','save-record-edit','end-record-edit'].includes(command.type)) {applyRecordRevision(state,command as import('./contracts/record-revision').KanbanRecordRevisionCommand,actor,now);return;}
@@ -16,6 +16,12 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
     const record = state.records?.find(record => record.id === command.recordId); requireValue(record, 'RECORD_NOT_FOUND');
     requireValue(record.deletedAt === undefined, 'RECORD_DELETED');
     if(command.type==='begin-record-edit'||command.type==='save-record-edit'||command.type==='end-record-edit')return;
+    if(command.type==='set-record-priority') {
+        requireReviewer(state.board,actor);requireValue(record.kind==='decision'&&record.archivedAt===undefined,'DECISION_NOT_EDITABLE');
+        validateDecisionPriority(command.priority===null?undefined:command.priority);
+        if(command.priority===null)delete record.priority;else record.priority=command.priority;
+        record.updatedAt=now;record.revision++;return;
+    }
     if(command.type==='revise-record') {
         requireReviewer(state.board,actor);requireValue(principal(actor).kind==='human','FORBIDDEN');
         requireValue(record.kind==='decision'&&['draft','cancelled'].includes(record.status),'RECORD_CANCEL_REQUIRED');
@@ -62,8 +68,9 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
 }
 function append(state: KanbanState, command: Extract<RecordCommand, {type: 'append-record'}>, actor: KanbanActor, now: number, forceDraft: boolean): void {
     validateSources(command.record.sources);
-    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,discussionSessionId,completion = command.record.completion ?? (command.record.kind === 'decision' ? 'automatic' : undefined),verificationLevel,deliveryMode} = command.record;
-    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(discussionSessionId ? {discussionSessionId} : {}), ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{}), ...(verificationLevel?{verificationLevel}:{}), ...(deliveryMode?{deliveryMode}:{})}); identity(input.id); text(input.title); text(input.content);
+    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,discussionSessionId,completion = command.record.completion ?? (command.record.kind === 'decision' ? 'automatic' : undefined),verificationLevel,deliveryMode,priority} = command.record;
+    validateDecisionPriority(priority);requireValue(priority===undefined||kind==='decision','INVALID_RECORD_PRIORITY');
+    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(discussionSessionId ? {discussionSessionId} : {}), ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{}), ...(verificationLevel?{verificationLevel}:{}), ...(deliveryMode?{deliveryMode}:{}),...(priority!==undefined?{priority}:{})}); identity(input.id); text(input.title); text(input.content);
     requireValue(completion===undefined||kind==='decision'&&['manual','automatic'].includes(completion),'INVALID_COMPLETION_POLICY');
     if(completion)input.completion=completion;
     if(discussionSessionId!==undefined)identity(discussionSessionId);
@@ -125,7 +132,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
 }
 
 export function recordFingerprint(record: import('./contracts').KanbanRecordInput): string {
-    return sha256HexSync(JSON.stringify({kind: record.kind, title: record.title, content: record.content, rationale: record.rationale ?? null, verificationLevel: record.verificationLevel ?? null, deliveryMode: record.deliveryMode ?? null,
+    return sha256HexSync(JSON.stringify({...(record.priority!==undefined?{priority:record.priority}:{}),kind: record.kind, title: record.title, content: record.content, rationale: record.rationale ?? null, verificationLevel: record.verificationLevel ?? null, deliveryMode: record.deliveryMode ?? null,
         itemIds: [...record.itemIds].sort(), sources: record.sources.map(source => JSON.stringify([source.sessionId, source.messageId, source.role])).sort(), ...(record.coordination?{coordination:record.coordination}: {}), ...(record.externalRefs ? {externalRefs: record.externalRefs} : {})}));
 }
 

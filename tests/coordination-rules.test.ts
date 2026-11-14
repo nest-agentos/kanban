@@ -1,7 +1,7 @@
 import {expect,it} from 'vitest';
 import type {KanbanBoard,KanbanItem} from '../src/contracts';
 import {compileCoordinationProposal,validateCoordinationResult,itemWithinRoots,itemsWithinRoots,managementTaskOwner} from '../src/runtime/coordination-rules';
-const parent={id:'parent',title:'Research',responsibility:'Coordinate research',acceptance:'Reviewed',planning:{kind:'group'}} as KanbanItem;
+const parent={id:'parent',taskType:'coordination',title:'Research',responsibility:'Coordinate research',acceptance:'Reviewed',planning:{kind:'group'}} as KanbanItem;
 const board={items:[parent],policy:{requireEstimate:false},workTypes:[{id:'group',label:'Group',rank:0,executable:false},{id:'study',label:'Study',rank:1,executable:true}],automation:{worker:{kind:'service',id:'researcher'}}} as KanbanBoard;
 const task=(key:string,dependsOn:string[]=[])=>({key,title:key,responsibility:'Study',acceptance:'Review evidence',dependsOn});
 const proposal=(tasks:unknown[])=>({schema:'kanban.coordination-proposal/1',type:'append',tasks});

@@ -28,7 +28,8 @@ it('deletes the logical resource, persists audit and associations, and prevents 
 });
 it('blocks active responsibility and host uncertainty without changing state', async () => {
     const f = await fixture();
-    await f.run({type: 'create-item', item: {id: 'task', title: 'Task', responsibility: 'Work', acceptance: 'Done'}, stage: 'open'});
+    await f.run({type:'create-item',item:{id:'management-root',taskType:'coordination',title:'Manage work',responsibility:'Coordinate',acceptance:'All children accepted'}});
+    await f.run({type: 'create-item', item: {id: 'task', title: 'Task', responsibility: 'Work', acceptance: 'Done'},planning:{kind:'task',parentId:'management-root',priority:2,dependencies:[],references:[]}, stage: 'open'});
     await f.run({type: 'claim', itemId: 'task'});
     await expect(f.run({type: 'delete-board'})).rejects.toMatchObject({code: 'BOARD_EXECUTION_ACTIVE'});
     expect(await f.service.catalog()).toHaveLength(1);

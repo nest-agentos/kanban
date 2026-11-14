@@ -24,7 +24,8 @@ async function fixture() {
     let sequence = 0;
     const command = async (command: KanbanCommand) => service.execute('board', {operationId: 'op-' + ++sequence,
         expectedRevision: (await service.read('board')).revision, command});
-    await command({type: 'publish-plan', plan: {schema: 'kanban.plan/1', id: 'plan', revision: 1, sealed: true,
+    await command({type:'create-item',item:{id:'management-root',taskType:'coordination',title:'Manage work',responsibility:'Coordinate',acceptance:'All children accepted'}});
+    await command({type: 'publish-plan', plan: {schema: 'kanban.plan/1', rootItemId: 'management-root', id: 'plan', revision: 1, sealed: true,
         items: ['one', 'two', 'unrelated'].map(id => ({id, title: 'Same title', responsibility: 'Work', acceptance: 'Evidence', assignee: actor, dependsOn: [], outputs: []}))}});
     for (const id of ['one', 'two']) {
         await command({type: 'prepare-dispatch', itemId: id, dispatchId: 'dispatch-' + id});

@@ -11,7 +11,8 @@ async function fixture() {
     await managerApi.create({id:'b',title:'Work',scope:{kind:'system'},members:[{kind:'service',id:'manager',responsibility:'Manage',roles:['coordinator','reviewer']},{kind:'service',id:'worker',responsibility:'Build',roles:['worker']},{kind:'human',id:'reviewer',responsibility:'Review',roles:['reviewer']},{kind:'service',id:'other-manager',responsibility:'Other',roles:['coordinator']}],policy:{requireEstimate:false,review:'independent'}});
     let serial=0;
     const run=async(service:KanbanModuleHandle,command:KanbanCommand)=>service.execute('b',{operationId:`op-${++serial}`,expectedRevision:(await service.read('b')).revision,command});
-    const plan:KanbanWorkPlan={schema:'kanban.plan/1',id:'plan',revision:1,sealed:true,items:[
+    await run(managerApi,{type:'create-item',item:{id:'management-root',taskType:'coordination',title:'Manage work',responsibility:'Coordinate',acceptance:'All children accepted'}});
+    const plan:KanbanWorkPlan={schema:'kanban.plan/1',rootItemId:'management-root',id:'plan',revision:1,sealed:true,items:[
         {id:'api',title:'Implement',responsibility:'Implement the contract',acceptance:'Tests pass',assignee:{kind:'service',id:'worker'},dependsOn:['schema'],inputs:{schema:{fromItemId:'schema',output:'schema'}}},
         {id:'schema',title:'Contract',responsibility:'Define contract',acceptance:'Reviewed',assignee:{kind:'service',id:'worker'},dependsOn:[],outputs:['schema']},
     ]};
@@ -75,12 +76,12 @@ it('does not reassign unknown work or accept stale callbacks, and blocks confirm
     expect((await f.managerApi.workflow('b')).dispatches.retry.attempt).toBe(2);
     await expect(f.run(f.managerApi,{type:'observe-execution',dispatchId:'d',fence,outcome:'succeeded'})).rejects.toMatchObject({code:'STALE_EXECUTION_RESULT'});
 });
-it('extends a settled plan while preserving archived dependencies and their accepted artifacts',async()=>{
+it('extends a settled plan while preserving accepted dependencies and their accepted artifacts',async()=>{
     const f=await fixture();f.plan.items=f.plan.items.filter(item=>item.id==='schema');await f.run(f.managerApi,{type:'publish-plan',plan:f.plan});
     await f.run(f.worker,{type:'prepare-dispatch',itemId:'schema',dispatchId:'d'});
     const fence=(await f.managerApi.workflow('b')).dispatches.d.fence,artifact={name:'schema',ref:'artifact:one',sha256:'a'.repeat(64),bytes:10};
     await f.run(f.managerApi,{type:'observe-execution',dispatchId:'d',fence,outcome:'succeeded',outputs:[artifact]});await f.run(f.managerApi,{type:'accept-execution',dispatchId:'d',accept:true});
-    await f.run(f.managerApi,{type:'archive-items',itemIds:['schema'],reason:'Complete'});
+    await expect(f.run(f.managerApi,{type:'archive-items',itemIds:['schema'],reason:'Complete'})).rejects.toMatchObject({code:'SUBTASK_CLEANUP_VIA_GROUP'});
     f.plan.revision=2;f.plan.items.push({id:'next',title:'Next',responsibility:'Build',acceptance:'Done',assignee:{kind:'service',id:'worker'},dependsOn:['schema'],inputs:{schema:{fromItemId:'schema',output:'schema'}}});
     await f.run(f.managerApi,{type:'publish-plan',plan:f.plan});await f.run(f.worker,{type:'prepare-dispatch',itemId:'next',dispatchId:'next-d'});
     expect((await f.managerApi.workflow('b')).dispatches['next-d'].inputs.schema).toEqual(artifact);
@@ -116,17 +117,17 @@ it('enforces the confirmed decision manager when publishing a plan',async()=>{
     expect((await f.managerApi.record('b','decision')).coordination?.executor).toEqual({kind:'service',id:'worker'});
 });
 it('rolls back plan, outbox, numbering and receipt together when persistence fails mid-transaction',async()=>{
-    const f=await fixture(),before=await f.store.read('b'),seq=f.fs.meta.seq!,records=f.backend.records,set=records.setRecordField.bind(records);
+    const f=await fixture(),before=await f.store.read('b'),beforeEvents=await f.managerApi.events('b'),seq=f.fs.meta.seq!,records=f.backend.records,set=records.setRecordField.bind(records);
     const request={operationId:'atomic-plan',expectedRevision:before!.board.revision,command:{type:'publish-plan' as const,plan:f.plan}};
     const spy=vi.spyOn(records,'setRecordField').mockImplementation(async(path,key,value)=>{
         await set(path,key,value);
         if(key.includes('event/')) throw Object.assign(new Error('simulated commit failure'),{code:'STORAGE_UNAVAILABLE'});
     });
     await expect(f.managerApi.execute('b',request)).rejects.toMatchObject({code:'EIO'});spy.mockRestore();
-    expect(await f.store.read('b')).toEqual(before);expect(await f.managerApi.events('b')).toEqual([]);
+    expect(await f.store.read('b')).toEqual(before);expect(await f.managerApi.events('b')).toEqual(beforeEvents);
     expect(await seq.getEntry('/kanban/boards.seq','receipt/b/atomic-plan')).toBeNull();
     await f.managerApi.execute('b',request);await f.managerApi.execute('b',request);
-    expect((await f.managerApi.read('b')).items).toHaveLength(2);
+    expect((await f.managerApi.read('b')).items).toHaveLength(3);
     expect((await f.managerApi.events('b')).filter(event=>event.kind==='publish-plan')).toHaveLength(1);
 });
 it('rejects malformed model-produced definitions with specific errors before publishing state',async()=>{
@@ -139,10 +140,10 @@ it('rejects malformed model-produced definitions with specific errors before pub
 });
 it('adopts existing unassigned work atomically without changing its identity or removing manual dependencies', async () => {
     const f = await fixture();
-    await f.run(f.managerApi, {type: 'create-item', item: {id: 'first', title: 'First', responsibility: 'Prepare', acceptance: 'Verified'}});
-    await f.run(f.managerApi, {type: 'create-item', item: {id: 'second', title: 'Second', responsibility: 'Deliver', acceptance: 'Verified'}, planning: {kind: 'task', priority: 1, dependencies: ['first'], references: []}});
+    await f.run(f.managerApi, {type: 'create-item', item: {id: 'first', title: 'First', responsibility: 'Prepare', acceptance: 'Verified'},planning:{kind:'task',parentId:'management-root',priority:2,dependencies:[],references:[]}});
+    await f.run(f.managerApi, {type: 'create-item', item: {id: 'second', title: 'Second', responsibility: 'Deliver', acceptance: 'Verified'}, planning: {kind: 'task',parentId:'management-root', priority: 1, dependencies: ['first'], references: []}});
     const original = (await f.managerApi.item('b', 'second')).item;
-    const plan: KanbanWorkPlan = {schema: 'kanban.plan/1', id: 'adopt', revision: 1, sealed: true, items: [{id: original.id, title: original.title,
+    const plan: KanbanWorkPlan = {schema: 'kanban.plan/1', rootItemId: 'management-root', id: 'adopt', revision: 1, sealed: true, items: [{id: original.id, title: original.title,
         responsibility: original.responsibility, acceptance: original.acceptance, expectedRevision: original.revision, assignee: {kind: 'service', id: 'worker'}, dependsOn: []}]};
     const before = await f.store.read('b');
     await expect(f.run(f.managerApi, {type: 'publish-plan', plan})).rejects.toMatchObject({code: 'EXISTING_DEPENDENCY_REQUIRED'});
@@ -191,7 +192,7 @@ it('publishes typed subtasks atomically while keeping their parent non-executabl
 it('rolls back invalid subtask plans without converting the parent or creating partial children',async()=>{
     const f=await fixture();await f.run(f.managerApi,{type:'create-item',item:{id:'parent',title:'Parent',responsibility:'Deliver',acceptance:'Verified'}});
     const before=await f.store.read('b');
-    await expect(f.run(f.managerApi,{type:'publish-plan',plan:{...f.plan,rootItemId:'parent'}})).rejects.toMatchObject({code:'INVALID_PARENT_KIND'});
+    await expect(f.run(f.managerApi,{type:'publish-plan',plan:{...f.plan,rootItemId:'parent',items:[{...f.plan.items[0],dependsOn:['missing'],inputs:undefined}]}})).rejects.toMatchObject({code:'DEPENDENCY_NOT_FOUND'});
     expect(await f.store.read('b')).toEqual(before);
 });
 it('appends new children atomically to a completed coordinator without replacing existing tasks or plans',async()=>{
@@ -247,24 +248,24 @@ it('persists decision preferences, revises them only before execution, and rejec
 });
 it('holds related unstarted tasks durably and atomically applies only the confirmed revisions',async()=>{
  const f=await fixture(),reviewer=createKanbanModule({store:f.store,actor:{kind:'human',id:'reviewer'},authorize:async()=>{},log(){}});
- for(const id of ['a','b'])await f.run(f.managerApi,{type:'create-item',item:{id,title:id,responsibility:'Before',acceptance:'Evidence'},planning:{kind:'task',priority:2,dependencies:[],references:[]}});
+ for(const id of ['a','b'])await f.run(f.managerApi,{type:'create-item',item:{id,title:id,responsibility:'Before',acceptance:'Evidence'},planning:{kind:'task',parentId:'management-root',priority:2,dependencies:[],references:[]}});
  await f.run(f.managerApi,{type:'append-record',record:{id:'d',kind:'decision',title:'Decision',content:'Before',rationale:'Evidence',itemIds:['a','b'],sources:[]}});
  expect((await reviewer.record('b','d')).completion).toBe('automatic');
- const revision=(await reviewer.record('b','d')).revision,items=(await reviewer.read('b')).items;
+ const revision=(await reviewer.record('b','d')).revision,items=(await reviewer.read('b')).items.filter(item=>['a','b'].includes(item.id));
  await f.run(reviewer,{type:'begin-record-edit',recordId:'d',recordRevision:revision,editId:'discussion-edit',items:items.map(item=>({id:item.id,revision:item.revision}))});
- const held=(await reviewer.read('b')).items;expect(held.every(item=>item.launch?.editing?.persistent)).toBe(true);
+ const held=(await reviewer.read('b')).items.filter(item=>['a','b'].includes(item.id));expect(held.every(item=>item.launch?.editing?.persistent)).toBe(true);
  await expect(f.run(f.worker,{type:'claim',itemId:'a'})).rejects.toMatchObject({code:'EDIT_LEASE_ACTIVE'});
  await expect(f.run(reviewer,{type:'save-record-edit',recordId:'d',recordRevision:revision,editId:'discussion-edit',title:'Decision',content:'Changed',rationale:'Evidence',items:items.map(item=>({id:item.id,revision:item.revision,title:item.title,responsibility:'Changed',acceptance:item.acceptance}))})).rejects.toMatchObject({code:'ITEM_REVISION_CONFLICT'});
- expect((await reviewer.read('b')).items.every(item=>item.launch?.editing?.persistent)).toBe(true);
+ expect((await reviewer.read('b')).items.filter(item=>['a','b'].includes(item.id)).every(item=>item.launch?.editing?.persistent)).toBe(true);
  await f.run(reviewer,{type:'save-record-edit',recordId:'d',recordRevision:revision,editId:'discussion-edit',title:'Decision',content:'Changed',rationale:'Evidence',items:held.map(item=>({id:item.id,revision:item.revision,title:item.title,responsibility:'Changed',acceptance:item.acceptance}))});
- expect((await reviewer.read('b')).items.every(item=>item.responsibility==='Changed'&&!item.launch?.editing)).toBe(true);
+ expect((await reviewer.read('b')).items.filter(item=>['a','b'].includes(item.id)).every(item=>item.responsibility==='Changed'&&!item.launch?.editing)).toBe(true);
 });
 it('rolls back every hold when a selected task has already started',async()=>{
  const f=await fixture(),reviewer=createKanbanModule({store:f.store,actor:{kind:'human',id:'reviewer'},authorize:async()=>{},log(){}});
- for(const id of ['a','b'])await f.run(f.managerApi,{type:'create-item',item:{id,title:id,responsibility:'Before',acceptance:'Evidence'}});
+ for(const id of ['a','b'])await f.run(f.managerApi,{type:'create-item',item:{id,title:id,responsibility:'Before',acceptance:'Evidence'},planning:{kind:'task',parentId:'management-root',priority:2,dependencies:[],references:[]}});
  await f.run(f.managerApi,{type:'set-stage',itemId:'b',stage:'open'});await f.run(f.worker,{type:'claim',itemId:'b'});
  await f.run(f.managerApi,{type:'append-record',record:{id:'d',kind:'decision',title:'Decision',content:'Before',rationale:'Evidence',itemIds:['a','b'],sources:[]}});
  const before=await f.store.read('b'),record=await reviewer.record('b','d');
- await expect(f.run(reviewer,{type:'begin-record-edit',recordId:'d',recordRevision:record.revision,editId:'discussion-edit',items:(await reviewer.read('b')).items.map(item=>({id:item.id,revision:item.revision}))})).rejects.toMatchObject({code:'TASK_DEFINITION_FROZEN'});
+ await expect(f.run(reviewer,{type:'begin-record-edit',recordId:'d',recordRevision:record.revision,editId:'discussion-edit',items:(await reviewer.read('b')).items.filter(item=>['a','b'].includes(item.id)).map(item=>({id:item.id,revision:item.revision}))})).rejects.toMatchObject({code:'TASK_DEFINITION_FROZEN'});
  expect(await f.store.read('b')).toEqual(before);
 });

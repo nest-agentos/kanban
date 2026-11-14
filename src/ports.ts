@@ -1,6 +1,7 @@
 import type { KanbanActor, KanbanBoard, KanbanCommand, KanbanEvent, KanbanArchivedItem, KanbanItemSummary } from './contracts';
 
 export interface KanbanState {
+    hierarchyVersion?:1;
     workflow?: import('./contracts').KanbanWorkflowState;
     numbering?: {item: number; log: number; decision: number};
     presetVersions?: Record<string, number>;

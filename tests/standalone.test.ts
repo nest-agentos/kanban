@@ -16,17 +16,18 @@ it('uses the grouped public API through delivery, archive, replay and reopen wit
         members: [{kind: 'human', id: 'owner', responsibility: 'Research'}], policy: {requireEstimate: false, review: 'assignee'}});
     let serial = 0;
     const run = async (command: KanbanCommand) => api.execute('research', {operationId: `op-${++serial}`, expectedRevision: (await api.boards.get('research')).revision, command});
-    await run({type: 'create-item', item: {id: 'experiment', title: 'Experiment', responsibility: 'Collect evidence', acceptance: 'Evidence recorded'}, stage: 'open'});
+    await run({type:'create-item',item:{id:'management-root',taskType:'coordination',title:'Manage work',responsibility:'Coordinate',acceptance:'All children accepted'}});
+    await run({type: 'create-item', item: {id: 'experiment', title: 'Experiment', responsibility: 'Collect evidence', acceptance: 'Evidence recorded'},planning:{kind:'task',parentId:'management-root',priority:2,dependencies:[],references:[]}, stage: 'open'});
     await run({type: 'claim', itemId: 'experiment'});
     const item = (await api.items.get('research', 'experiment')).item;
     const request = {operationId: 'delivery', expectedRevision: (await api.boards.get('research')).revision,
         command: {type: 'submit' as const, itemId: item.id, token: item.owner!.token, resultRef: 'lab:evidence'}};
     await api.execute('research', request); await api.execute('research', request);
     expect((await api.events('research')).filter(event => event.kind === 'submit')).toHaveLength(1);
-    await run({type: 'archive-items', itemIds: [item.id], reason: 'Retain evidence'});
+    await run({type: 'archive-items', itemIds: ['management-root'], reason: 'Retain evidence'});
     await api.quiesce();
     const reopened = createKanban(options);
-    expect((await reopened.items.query('research', {view: 'archive'})).total).toBe(1);
+    expect((await reopened.items.query('research', {view: 'archive'})).total).toBe(2);
     expect((await reopened.items.get('research', item.id)).item.resultRef).toBe('lab:evidence');
     const board = await reopened.boards.get('research');
     await reopened.execute(board.id, {operationId: 'restore', expectedRevision: board.revision, command: {type: 'restore-item', itemId: item.id}});
@@ -37,9 +38,10 @@ it('accepts generic Agent IDs while preserving optional execution identity fenci
     const actor: KanbanActor = {kind: 'agent', id: 'external-agent'};
     const api = createKanbanModule({...options, actor});
     await api.create({id: 'b', title: 'External agent', scope: {kind: 'system'}, members: [{kind: 'agent', id: 'external-agent', responsibility: 'Work'}], policy: {requireEstimate: false}});
-    await api.execute('b', {operationId: 'create', expectedRevision: 1, command: {type: 'create-item', item: {id: 'i', title: 'Work', responsibility: 'Deliver', acceptance: 'Review'}, stage: 'open'}});
+    await api.execute('b',{operationId:'management',expectedRevision:1,command:{type:'create-item',item:{id:'management-root',taskType:'coordination',title:'Manage work',responsibility:'Coordinate',acceptance:'All children accepted'}}});
+    await api.execute('b', {operationId: 'create', expectedRevision: 2, command: {type: 'create-item', item: {id: 'i', title: 'Work', responsibility: 'Deliver', acceptance: 'Review'},planning:{kind:'task',parentId:'management-root',priority:2,dependencies:[],references:[]}, stage: 'open'}});
     const board = await api.execute('b', {operationId: 'claim', expectedRevision: (await api.read('b')).revision, command: {type: 'claim', itemId: 'i'}});
-    const token = board.items[0].owner!.token;
+    const token = board.items.find(item=>item.id==='i')!.owner!.token;
     const otherExecution = createKanbanModule({...options, actor: {...actor, sessionId: 'other-execution'}});
     await expect(otherExecution.execute('b', {operationId: 'wrong-owner', expectedRevision: board.revision, command: {type: 'renew', itemId: 'i', token}})).rejects.toMatchObject({code: 'OWNER_MISMATCH'});
     const denied = createKanbanModule({...options, actor, authorize: async () => {throw Object.assign(new Error('secret content'), {code: 'FORBIDDEN'});}});

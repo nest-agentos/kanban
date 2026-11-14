@@ -1,4 +1,5 @@
 export {SeqKanbanStore} from './store';
+export {migrateTaskHierarchy} from './hierarchy-migration';
 export {ConditionalKanbanStore} from './conditional-store';
 export type {KanbanStore} from './ports';
 export type {KanbanBodyStore} from './storage-codec';

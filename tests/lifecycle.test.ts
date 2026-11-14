@@ -13,7 +13,8 @@ async function fixture() {
     await service.create({id:'b', title:'Board', scope:{kind:'system'}, members:[{...actor, responsibility:'Manage', roles:['coordinator','reviewer','worker']}], policy:{requireEstimate:false}});
     let n = 0;
     const run = async (command:KanbanCommand) => service.execute('b', {operationId:'op-' + ++n, expectedRevision:(await service.read('b')).revision, command});
-    await run({type:'publish-plan', plan:{schema:'kanban.plan/1',id:'p',revision:1,sealed:true,items:[{id:'t',title:'Task',responsibility:'Work',acceptance:'Verify',assignee:actor,dependsOn:[]}]}});
+    await run({type:'create-item',item:{id:'management-root',taskType:'coordination',title:'Manage work',responsibility:'Coordinate',acceptance:'All children accepted'}});
+    await run({type:'publish-plan', plan:{schema:'kanban.plan/1',rootItemId:'management-root',id:'p',revision:1,sealed:true,items:[{id:'t',title:'Task',responsibility:'Work',acceptance:'Verify',assignee:actor,dependsOn:[]}]}});
     return {service,run,fs};
 }
 it('cancels the original dispatch through a control receipt, deletes logically and preserves history and identity', async () => {
@@ -22,14 +23,14 @@ it('cancels the original dispatch through a control receipt, deletes logically a
     expect((await f.service.item('b','t')).task?.phase).toBe('cancelling');
     await f.run({type:'control-receipt',itemId:'t',controlId:'cancel',state:'accepted'});
     expect((await f.service.item('b','t')).item.owner).toBeDefined();
-    await expect(f.run({type:'delete-item',itemId:'t'})).rejects.toMatchObject({code:'TASK_CLEANUP_EXECUTION_UNSETTLED'});
+    await expect(f.run({type:'delete-item',itemId:'management-root'})).rejects.toMatchObject({code:'TASK_CLEANUP_EXECUTION_UNSETTLED'});
     await f.run({type:'control-receipt',itemId:'t',controlId:'cancel',state:'cancelled'});
     expect((await f.service.item('b','t')).item).toMatchObject({status:'cancelled',control:{state:'cancelled'}});
     expect((await f.service.item('b','t')).item.owner).toBeUndefined();
     expect((await f.service.workflow('b')).dispatches.original.outcome).toBe('cancelled');
-    await f.run({type:'delete-item',itemId:'t'});
+    await f.run({type:'delete-item',itemId:'management-root'});
     expect((await f.service.query('b',{view:'all'})).items).toEqual([]);
-    expect((await f.service.query('b',{view:'all',includeDeleted:true})).items).toHaveLength(1);
+    expect((await f.service.query('b',{view:'all',includeDeleted:true})).items).toHaveLength(2);
     expect((await f.service.overview('b')).visible).toBe(0);
     expect((await f.service.catalog())[0].items).toEqual([]);
     expect((await f.service.item('b','t')).item.deletedAt).toBeTypeOf('number');

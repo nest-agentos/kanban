@@ -1,3 +1,4 @@
+import {archiveItems} from './archives';
 import type {KanbanActor, KanbanCommand, KanbanContent, KanbanContentItem} from './contracts';
 import type {KanbanModuleOptions, KanbanState, KanbanStore} from './ports';
 import {createBoardState} from './board';
@@ -87,14 +88,16 @@ function insertItem(state: KanbanState, entry: KanbanContentItem, detach: boolea
     const command = structuredClone(entry.command), parentId = command.planning?.parentId;
     if (detach && parentId) {
         const parent = state.board.items.find(item => item.id === parentId);
-        if (!parent || ['completed', 'cancelled'].includes(parent.status)) delete command.planning!.parentId;
+        if (!parent || ['completed', 'cancelled'].includes(parent.status)) {delete command.planning!.parentId;command.item.taskType='coordination';command.planning!.execution='children';}
     }
     const itemId = command.item.id;
     apply(command);
     if (entry.blocked) apply({type: 'block-item', itemId, reason: entry.blocked});
     if (entry.completion) {
-        apply({type: 'close-plan', itemId, resultRef: entry.completion.resultRef});
-        if (entry.completion.archiveReason) apply({type: 'archive-items', itemIds: [itemId], reason: entry.completion.archiveReason});
+        // Initial content imports historical examples; it never settles live execution.
+        const item=state.board.items.find(row=>row.id===itemId)!;
+        item.status='completed';item.resultRef=entry.completion.resultRef;item.closedAt=item.updatedAt;item.revision++;
+        if (entry.completion.archiveReason) archiveItems(state,[itemId],entry.completion.archiveReason,item.updatedAt);
     }
 }
 function report(options: KanbanContentOptions, start: number, result: 'success' | 'failure', code?: string): void {

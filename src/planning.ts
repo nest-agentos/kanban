@@ -2,6 +2,7 @@ import type {KanbanItem, KanbanItemSummary, KanbanPlanning} from './contracts';
 import type {KanbanState} from './ports';
 import {workType, executable} from './configuration';
 import {identity, requireValue, text} from './rules';
+import {kanbanTaskType} from './contracts/task-type';
 
 export function plan(item: KanbanItem): KanbanPlanning {
     return item.planning ?? {kind: 'task', priority: 2, dependencies: [], references: []};
@@ -24,16 +25,20 @@ export function validatePlan(state: KanbanState, item: KanbanItem, value: Kanban
     if (value.area !== undefined) identity(value.area); if (value.milestone !== undefined) identity(value.milestone);
     requireValue(value.coordination===undefined||typeof value.coordination==='boolean','INVALID_EXECUTION_MODE');
     requireValue(value.execution===undefined||['direct','children'].includes(value.execution),'INVALID_EXECUTION_MODE');
-    const type = workType(state.board, value.kind);
+    workType(state.board, value.kind);
     if (value.dueAt !== undefined) requireValue(Number.isFinite(value.dueAt) && value.dueAt >= 0, 'INVALID_DUE_DATE');
     const all = catalog(state), parent = all.find(i => i.id === value.parentId);
+    const responsibility=kanbanTaskType(item);
+    requireValue(responsibility!=='coordination'||!value.parentId,'MANAGEMENT_MUST_BE_ROOT');
+    requireValue(responsibility!=='execution'||!!value.parentId,'EXECUTION_PARENT_REQUIRED');
+    requireValue(responsibility!=='execution'||value.execution!=='children','EXECUTION_CANNOT_HAVE_CHILDREN');
     if (value.parentId) {
         identity(value.parentId); requireValue(parent && !parent.archivedAt && !parent.deletedAt && !terminal(parent) && parent.control?.action !== 'cancel' && !['claimed','review'].includes(parent.status), 'PARENT_UNAVAILABLE');
-        requireValue(parent.id !== item.id && workType(state.board, parent.planning.kind).rank < type.rank, 'INVALID_PARENT_KIND');
+        requireValue(parent.id !== item.id && kanbanTaskType(parent)==='coordination'&&!parent.planning.parentId, 'EXECUTION_PARENT_REQUIRED');
     }
     requireValue(value.coordination===undefined||typeof value.coordination==='boolean','INVALID_EXECUTION_MODE');
     requireValue(value.execution==='children'||!all.some(child=>child.planning.parentId===item.id),'CHILDREN_REQUIRE_AGGREGATION');
-    requireValue(!all.some(child => child.planning.parentId === item.id && workType(state.board, child.planning.kind).rank <= type.rank), 'INVALID_CHILD_KIND');
+    requireValue(responsibility==='coordination'||!all.some(child=>child.planning.parentId===item.id),'EXECUTION_CANNOT_HAVE_CHILDREN');
     for (const id of value.dependencies) requireValue(id !== item.id && all.some(i => i.id === id), 'INVALID_DEPENDENCY');
     const visited = new Set<string>(), pending = [...value.dependencies];
     while (pending.length) {

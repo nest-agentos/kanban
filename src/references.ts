@@ -1,4 +1,4 @@
-import {kanbanTaskType,kanbanReference, type KanbanReferenceTarget} from './contracts';
+import {kanbanReference, type KanbanReferenceTarget} from './contracts';
 import type {KanbanReadView, KanbanStore} from './ports';
 import {requireValue} from './rules';
 
@@ -12,7 +12,7 @@ export async function resolveReference(reference: string, store: KanbanStore, re
     requireValue(board.number === boardNumber, 'INVALID_NUMBERING');
     const target: KanbanReferenceTarget = {boardId: id, scope: board.scope, reference: kanbanReference(board)};
     if (match[2]||type==='C'||type==='T') {
-        const item = [...view.items, ...(view.state.archiveIndex ?? [])].find(item => item.number === number&&(!type||kanbanTaskType(item)===(type==='C'?'coordination':'execution')));
+        const item = [...view.items, ...(view.state.archiveIndex ?? [])].find(item => item.number === number);
         requireValue(item, 'REFERENCE_NOT_FOUND'); target.itemId = item.id; target.reference = kanbanReference(board, item);
     } else if (type) {
         const record = view.records.find(record => record.kind === (type === 'L' ? 'log' : 'decision') && record.number === number);

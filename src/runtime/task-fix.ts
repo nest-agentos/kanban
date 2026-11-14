@@ -82,14 +82,17 @@ class TaskFix<Instruction> {
         }
     }
     private async stopCreatedTask(fix: SavedFix): Promise<boolean> {
-        let item;
-        try {item = (await this.options.service.item(fix.boardId, fix.snapshot!.operationId)).item;}
-        catch (error) {if ((error as {code?: string}).code === 'ITEM_NOT_FOUND') return true; throw error;}
-        if (['completed','cancelled'].includes(item.status)) return true;
-        const controlId = 'fix-cancel-' + fix.id;
-        await journalCommand(this.options.journal, this.options.service, fix.boardId, controlId,
-            {type:'request-control', itemId:item.id, controlId, action:'cancel'});
-        return false;
+        const ids=fix.snapshot!.definition.children?.map(item=>item.id)??[fix.snapshot!.operationId];let settled=true;
+        for(const id of ids) {
+            let item;
+            try {item=(await this.options.service.item(fix.boardId,id)).item;}
+            catch(error){if((error as {code?:string}).code==='ITEM_NOT_FOUND')continue;throw error;}
+            if(['completed','cancelled'].includes(item.status))continue;
+            const controlId='fix-cancel-'+fix.id+'-'+id;
+            await journalCommand(this.options.journal,this.options.service,fix.boardId,controlId,{type:'request-control',itemId:id,controlId,action:'cancel'});
+            settled=false;
+        }
+        return settled;
     }
     intercept=async(sessionId:string,input:Instruction):Promise<boolean>=>{
         const id=await this.options.journal.get<string>('fix-session:'+sessionId);if(!id)return false;

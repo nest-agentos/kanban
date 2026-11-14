@@ -199,7 +199,7 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
 }
 
 function decisionSignature(record: KanbanProjectRecord): string {
-    return sha256HexSync(JSON.stringify([record.title, record.content, record.rationale, record.externalRefs,record.completion,record.verificationLevel,record.deliveryMode,record.executionEpoch]));
+    return sha256HexSync(JSON.stringify([record.title, record.content, record.rationale, record.externalRefs,record.completion,record.verificationLevel,record.deliveryMode,record.executionEpoch,record.priority]));
 }
 function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: KanbanRecordRunRequest, id: string): SavedRun {
     const placement = request.placement ?? 'current-board';
@@ -207,7 +207,7 @@ function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: Kanban
     requireValue(placement === 'new-board' || board.automation?.enabled, 'AUTOMATION_PAUSED');
     const types = board.workTypes ?? DEFAULT_KANBAN_WORK_TYPES;
     const task = types.find(type => type.id === (board.defaultWorkType ?? 'task') && type.executable) ?? types.find(type => type.executable);
-    const parent = types.find(type=>type.id==='coordination'&&!type.executable)??types.filter(type => !type.executable && type.rank < (task?.rank ?? 0)).sort((a, b) => b.rank - a.rank)[0];
+    const parent = types.find(type=>type.id==='coordination'&&!type.executable)??types.find(type => !type.executable);
     requireValue(task&&parent,'DECISION_WORK_TYPES_REQUIRED');
     const itemIds = ['work-' + id + '-0'];
     return {id, sourceBoardId: board.id, recordId: record.id, recordRevision: record.revision,
@@ -245,13 +245,13 @@ async function materialize(options: Options, run: SavedRun): Promise<void> {
     const group = !!run.rootItemId && !run.itemIds?.includes(run.rootItemId);
     if (group) await once(options, run, 'root', {type: 'create-item', item: {id: run.rootItemId!, title: run.record.title,
         responsibility: run.record.content, acceptance: run.record.rationale ?? run.record.content,purpose:'planning'},
-        planning: {kind: run.parentKind!, priority: 2, dependencies: [], references: []}});
+        planning: {kind: run.parentKind!, priority: run.record.priority ?? 2, dependencies: [], references: []}});
     const scopes=run.sharedCoordination?[run.record.externalRefs??refs]:refs.map(reference=>[reference]);
     for (const [index, references] of scopes.entries()) {
         await once(options, run, 'item-' + index, {type: 'create-item', item: {id: run.itemIds?.[index] ?? 'work-' + index,
             title: run.record.title, responsibility: run.record.content, acceptance: run.record.rationale ?? run.record.content,purpose:'planning',
             externalRefs: [...references, {system: options.resources.decisionSystem ?? 'kanban-decision', id: run.id}]},
-            ...(run.taskKind ? {planning: {kind: run.taskKind, priority: 2, dependencies: [], references: [], ...(group ? {parentId: run.rootItemId} : {})}} : {})});
+            ...(run.taskKind ? {planning: {kind: run.taskKind, priority: run.record.priority ?? 2, dependencies: [], references: [], ...(group ? {parentId: run.rootItemId} : {})}} : {})});
     }
     await markPlanning(options,run);
     if(run.boardId!==run.sourceBoardId && run.settings)await once(options,run,'settings',{type:'configure-board-settings',settings:run.settings});

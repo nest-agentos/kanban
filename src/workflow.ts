@@ -113,5 +113,5 @@ export function refreshReady(state: KanbanState): void {
     if(!state.workflow) return; const all=catalog(state), included=new Set(Object.values(state.workflow.plans).filter(plan=>plan.sealed).flatMap(plan=>plan.itemIds));
     state.workflow.completedPlans=Object.values(state.workflow.plans).filter(plan=>plan.sealed&&plan.itemIds.every(id=>all.find(item=>item.id===id)?.status==='completed')).map(plan=>plan.id);
     state.workflow.ready=state.board.items.filter(item=>included.has(item.id)&&!item.restartPending&&executableWorkItem(state.board,item)&&['backlog','open'].includes(item.status)&&!item.owner&&!item.blocked&&(!item.control || item.control.action==='resume' && item.control.state==='resumed')
-        &&(item.planning?.dependencies ?? []).every(id=>all.find(other=>other.id===id)?.status==='completed')).map(item=>item.id);
+        &&(item.planning?.dependencies ?? []).every(id=>all.find(other=>other.id===id)?.status==='completed')).sort((a,b)=>(a.planning?.priority??2)-(b.planning?.priority??2)).map(item=>item.id);
 }

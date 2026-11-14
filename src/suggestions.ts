@@ -3,7 +3,7 @@ import type {KanbanSuggestion, KanbanSuggestionPage, KanbanSuggestionQuery} from
 import type {KanbanState} from './ports';
 import {recordSummary} from './project-records';
 import {catalog, terminal} from './planning';
-import {workType} from './configuration';
+import {kanbanTaskType} from './contracts/task-type';
 import {identity, requireValue} from './rules';
 
 export function validateSuggestionQuery(query: KanbanSuggestionQuery): number {
@@ -36,10 +36,9 @@ export function suggestFromState(state: KanbanState, query: KanbanSuggestionQuer
         return suggestionPage(state.board.revision, [...ids].map(id => ({id, label: id})), query);
     }
     const blocked = query.kind === 'dependency' && query.excludeItemId ? dependents(items, query.excludeItemId) : new Set<string>();
-    const rank = query.kind === 'parent' ? workType(state.board, query.childKind ?? state.board.defaultWorkType ?? 'task').rank : undefined;
     const rows = items.filter(item => item.id !== query.excludeItemId && !blocked.has(item.id)
         && (query.kind !== 'dependency' || item.status !== 'cancelled')
-        && (rank === undefined || item.archivedAt === undefined && !terminal(item) && workType(state.board, item.planning.kind).rank < rank))
+        && (query.kind!=='parent'||item.archivedAt===undefined&&!terminal(item)&&kanbanTaskType(item)==='coordination'&&!item.planning.parentId))
         .map(item => ({id: item.id, label: item.title, status: item.status, archived: item.archivedAt !== undefined,
             detail: [kanbanReference(state.board, item), item.planning.area, item.planning.milestone].filter(Boolean).join(' · ')}));
     return suggestionPage(state.board.revision, rows, query);

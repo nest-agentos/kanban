@@ -19,6 +19,7 @@ export function assertDefinitionEditable(item: KanbanItem, now: number, editId?:
 }
 export function applyTaskCommand(state: KanbanState, command: KanbanTaskCommand, actor: KanbanActor, now: number): void {
     const item = state.board.items.find(i => i.id === command.itemId); requireValue(item, 'ITEM_NOT_FOUND');
+    if(command.type==='mark-planning'||command.type==='finish-planning')requireValue(item.taskType!=='execution'&&!item.planning?.parentId,'EXECUTION_CANNOT_HAVE_CHILDREN');
     item.launch ??= {startAt: taskStartAt(item)};
     if(command.type==='finish-planning'){requireCoordinator(state,actor);const children=catalog(state).filter(row=>row.planning.parentId===item.id&&row.deletedAt===undefined);requireValue(children.length>0&&children.every(row=>row.purpose!=='planning'),'ANALYSIS_CLARIFICATION_PENDING');item.taskType='coordination';delete item.purpose;}
     else if(command.type==='mark-planning'){requireCoordinator(state,actor);requireValue(!item.owner&&['backlog','open'].includes(item.status),'PLAN_ROOT_UNAVAILABLE');requireValue(!Object.values(state.workflow?.plans??{}).some(plan=>plan.rootItemId===item.id||plan.itemIds.includes(item.id)),'ITEM_IN_OTHER_PLAN');item.taskType='coordination';item.purpose='planning';}

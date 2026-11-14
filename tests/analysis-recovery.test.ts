@@ -7,7 +7,7 @@ afterEach(async () => {for (const close of closes.splice(0)) await close();});
 async function fixture() {
     const {manager} = await createVFS({rootBackend: new MemoryBackend()}); closes.push(() => manager.dispose());
     const journal = new KanbanAutomationJournal(await manager.openFileSystem('/')); await journal.open();
-    const item = {id: 'task', revision: 1, title: 'Work', status: 'backlog'}, board = {id: 'board', revision: 1, automation: {enabled: true}, items: [item]};
+    const item = {id: 'task',taskType:'coordination', revision: 1, title: 'Work', status: 'backlog'}, board = {id: 'board', revision: 1, automation: {enabled: true}, items: [item]};
     const port = {prepare: vi.fn(async ({id}: {id: string}) => ({id})), prepareExecution: vi.fn(async () => {}), submit: vi.fn(async () => {}),
         inspect: vi.fn(async () => ({state: 'running' as const}))};
     const service = {read: async () => board, execute: vi.fn(async () => {})};
