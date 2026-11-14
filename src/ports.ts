@@ -50,7 +50,7 @@ export interface KanbanModuleOptions {
     verifyRelease?(input: {actor: KanbanActor; board: KanbanBoard; item: import('./contracts').KanbanItem}): Promise<boolean>;
     now?: () => number;
     id?: () => string;
-    log(event: { operationId: string; boardId?: string; sessionId?: string; stage: string; result: 'success' | 'failure'; code?: string; durationMs: number }): void;
+    log(event: { count?:number;readCount?:number;bytes?:number; operationId: string; boardId?: string; sessionId?: string; stage: string; result: 'success' | 'failure'; code?: string; durationMs: number }): void;
 }
 export class KanbanError extends Error {
     constructor(readonly code: string) { super(code); this.name = 'KanbanError'; }

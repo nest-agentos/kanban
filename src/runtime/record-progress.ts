@@ -2,7 +2,7 @@ import type {KanbanRecordPage,KanbanRecordSummary,KanbanRecordProgress} from '..
 import type {KanbanAutomationJournal} from './automation-journal';
 import {randomUUID} from '../utils';
 import {safeCode} from './diagnostics';
-import {currentRecordRun,currentGroupProgress,type RecordRun} from './record-progress-groups';
+import {currentGroupProgress,type RecordRun} from './record-progress-groups';
 import {withRecordInteractions} from './record-interactions';
 
 type Run=RecordRun;
@@ -10,11 +10,10 @@ type Run=RecordRun;
 export async function withRecordProgress(page:KanbanRecordPage,board:string,journal:KanbanAutomationJournal,service?:Pick<import('../contracts').KanbanClient,'query'|'queryActivity'>):Promise<KanbanRecordPage> {
     if(!page.items.some(row=>row.kind==='decision'))return page;
     const started=Date.now(),operationId=randomUUID();
-    let runs:Run[];
-    try {runs=await journal.get<Run[]>('record-runs:'+board)??[];}
+    let currentRuns:Map<string,Run>;
+    try {currentRuns=await journal.currentRuns(board,page.items);}
     catch(error){journal.diagnostic({operationId,boardId:board,stage:'record.progress.read',result:'failure',code:safeCode(error,'RECORD_PROGRESS_READ_FAILED'),durationMs:Date.now()-started});throw error;}
     journal.diagnostic({operationId,boardId:board,stage:'record.progress.read',result:'success',count:page.items.length,durationMs:Date.now()-started});
-    const currentRuns=new Map(page.items.flatMap(record=>{const run=currentRecordRun(record,runs);return run?[[record.id,run] as const]:[];}));
     let projected=new Map<string,KanbanRecordSummary>();
     if(service)try {
         projected=await currentGroupProgress(page.items,currentRuns,board,service);

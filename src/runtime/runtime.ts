@@ -1,3 +1,4 @@
+import {recordReadSource} from './record-read-source';
 import {decisionSnapshot} from './decision-page';
 import {createOperationPluginRegistry} from './operation-plugins';
 import {recordArchival} from './record-archive';
@@ -55,7 +56,7 @@ function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeConte
         controlRecord:async(board,request)=>{if(request.action==='archive')return archival.archive(board,request);if(!records)throw Object.assign(new Error('Record control unavailable'),{code:'RECORD_CONTROL_UNAVAILABLE'});return records.controlRecord(board,request);},
         ...(automation?{automationCatalog:automation.automationCatalog,analysisStatus:automation.analysisStatus}:{}),
         records:async(board:string,query?:import('../contracts').KanbanRecordQuery)=>{
-            let page=await withRecordProgress(await workLog.records(service,board,query),board,journal,service);
+            let page=await withRecordProgress(await workLog.records(service,board,query),board,journal,options.createService?service:recordReadSource(service,options));
             for(const extension of extensions)if(extension.projectRecords)page=await extension.projectRecords(board,page);
             return withRecordAttention(page,board,journal);
         },

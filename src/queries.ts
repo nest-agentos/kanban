@@ -102,3 +102,5 @@ function progressByParent(state: KanbanState, all: KanbanItemSummary[]): Map<str
 function childProgress(items:KanbanItemSummary[]):import('./contracts/planning').KanbanProgress {
     return taskProgress(items.map(item=>item.task?.phase));
 }
+
+export {order as compareKanbanItems};

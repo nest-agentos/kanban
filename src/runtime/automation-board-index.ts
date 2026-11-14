@@ -22,12 +22,12 @@ export async function updateBoardIndex(tx: ISeqFileTransaction, key: string, pre
     for (const old of previous) if (!next.has(old)) await tx.deleteEntry(indexPath, old);
     for (const index of next) if (!oldKeys.has(index)) await tx.setEntry(indexPath, index, key);
 }
-export async function migrateBoardIndex(tx: ISeqFileTransaction, source: string, indexPath = boardIndexPath, diagnostic: (event: KanbanRuntimeDiagnostic) => void = () => {}): Promise<void> {
+export async function migrateBoardIndex(tx: ISeqFileTransaction, source: string, indexPath = boardIndexPath, diagnostic: (event: KanbanRuntimeDiagnostic) => void = () => {},decode:(key:string,raw:string)=>Promise<unknown>=async(_key,raw)=>JSON.parse(raw)): Promise<void> {
     if (await tx.getEntry(indexPath, 'version') === '1') return;
     const started = Date.now(), operationId = randomUUID(); let count = 0;
     try {
         for (const keyPrefix of families) await tx.walkEntries(source, async entry => {
-            await updateBoardIndex(tx, entry.key, [], JSON.parse(entry.value), indexPath); count++; return true;
+            await updateBoardIndex(tx, entry.key, [], await decode(entry.key,entry.value), indexPath); count++; return true;
         }, {keyPrefix});
         await tx.setEntry(indexPath, 'version', '1');
         diagnostic({operation: 'kanban.board.index', operationId, stage: 'migrate', result: 'success', count, durationMs: Date.now() - started});

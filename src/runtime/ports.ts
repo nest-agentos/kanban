@@ -2,6 +2,7 @@ import type {KanbanExternalReference} from '../contracts';
 
 export interface KanbanRuntimeDiagnostic {
     operationId: string; stage: string; result: 'started' | 'success' | 'failure'; durationMs: number;
+    readCount?:number; writeCount?:number; bytes?:number;
     code?: string; operation?: string; boardId?: string; itemId?: string; count?: number;
 }
 export interface KanbanJournalOptions {

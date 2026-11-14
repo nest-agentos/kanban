@@ -1,7 +1,9 @@
 import {expect,it,vi} from 'vitest';
 import {recordProgress,recordFinalization} from '../src/record-progress';
 import {recordAttention} from '../src/attention';
-import {withRecordProgress} from '../src/runtime/record-progress';
+import {withRecordProgress as readProgress} from '../src/runtime/record-progress';
+import {currentRecordRun} from '../src/runtime/record-progress-groups';
+const withRecordProgress:typeof readProgress=(page,board,journal,service)=>readProgress(page,board,{...journal,currentRuns:async()=>{const runs=await journal.get<any[]>('record-runs:'+board)??[];return new Map(page.items.flatMap(record=>{const run=currentRecordRun(record,runs);return run?[[record.id,run] as const]:[];}));}} as any,service);
 import type {KanbanRecordSummary,KanbanTaskPhase} from '../src/contracts';
 const record={id:'decision',kind:'decision',status:'confirmed',createdAt:1,updatedAt:2,itemIds:['root'],sessionIds:[]} as KanbanRecordSummary;
 const fact=(id:string,phase:KanbanTaskPhase,at=5)=>({item:{id,title:id,status:phase==='completed'?'completed':'open',createdAt:1,updatedAt:at,planning:{kind:'work',dependencies:[],references:[],priority:1},sessionIds:[]} as any,task:{phase,actions:[],sessionId:'session-'+id,reason:phase==='error'?'BUILD_FAILED':undefined}});

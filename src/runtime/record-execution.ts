@@ -72,14 +72,14 @@ export function createRecordExecution(options: Options) {
         },
         recordSessions: async(boardId:string,recordId:string,query?:{includeArchived?:boolean})=> {
             await options.service.record(boardId, recordId);
-            const runs = await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? [];
+            const runs = await options.journal.runSummaries(boardId,recordId);
             const targets = new Map(runs.filter(run=>run.recordId===recordId&&(query?.includeArchived||run.archivedAt===undefined)).flatMap(run => (run.itemIds ?? []).map(id => [JSON.stringify([run.boardId,id]), {board:run.boardId,id}] as const)));
             const sessions = await Promise.all([...targets.values()].map(row => options.planningSession?.(row.board,row.id)));
             return sessions.filter((row): row is NonNullable<typeof row> => !!row);
         },
         recordExecutions: async (boardId: string, recordId: string) => {
             await options.service.record(boardId, recordId);
-            const runs = await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? [];
+            const runs = await options.journal.runSummaries(boardId,recordId);
             return runs.filter(run => run.recordId === recordId).map(view);
         },
         async scan() {
@@ -87,7 +87,7 @@ export function createRecordExecution(options: Options) {
             const errors: unknown[] = [];
             for (const board of await options.service.catalog()) {
                 if (stopped) return;
-                for (const run of await options.journal.get<SavedRun[]>('record-runs:' + board.id) ?? []) {
+                for (const run of await options.journal.activeRuns<SavedRun>(board.id)) {
                     if (stopped) return;
                     if (!['completed', 'failed', 'cancelled'].includes(run.state)) {try {await resume(run);} catch (error) {errors.push(error);}}
                 }
@@ -118,7 +118,7 @@ async function prepare(options: Options, boardId: string, request: KanbanRecordR
     if (frozen) {
         requireValue(frozen.sourceBoardId === boardId && frozen.recordId === request.recordId && (frozen.requestRevision ?? frozen.recordRevision) === request.expectedRevision
             && (!frozen.placement || frozen.placement === (request.placement ?? 'current-board')), 'IDEMPOTENCY_CONFLICT');
-        const current = (await options.journal.get<SavedRun[]>('record-runs:' + boardId))?.find(run => run.id === frozen.id);
+        const current = await options.journal.run<SavedRun>(boardId,frozen.id);
         requireValue(current, 'RECORD_EXECUTION_CHECKPOINT_MISSING');
         return freezeOperation(options, request, current);
     }
@@ -264,15 +264,10 @@ async function once(options: Options, run: SavedRun, stage: string, command: Kan
     await journalCommand(options.journal, options.service, run.boardId, key, command);
 }
 async function save(options: Options, run: SavedRun): Promise<SavedRun> {
-    const rows = await options.journal.update<SavedRun[]>('record-runs:' + run.sourceBoardId, previous => {
-        const current = previous ?? [];
-        requireValue(current.some(row => row.id === run.id), 'RECORD_EXECUTION_CHECKPOINT_MISSING');
-        return current.map(row => row.id !== run.id || row.state===run.state&&row.code===run.code&&row.stage===run.stage&&row.completion===run.completion ? row:run);
-    });
-    return rows.find(row => row.id === run.id)!;
+    return options.journal.saveRun(run.sourceBoardId,run);
 }
 
-function view(run: SavedRun): KanbanRecordExecution {
+function view(run: KanbanRecordExecution): KanbanRecordExecution {
     const {id, recordId, recordRevision, boardId, rootItemId, itemIds, state, createdAt, updatedAt,archivedAt,stage,code,completion} = run;
     return {id, recordId, recordRevision, boardId, ...(rootItemId?{rootItemId}:{}),...(itemIds?{itemIds}:{}), state,createdAt,updatedAt,...(completion?{completion}:{}),...(stage?{stage}:{}),...(archivedAt!==undefined?{archivedAt}:{}), ...(code ? {code} : {})};
 }

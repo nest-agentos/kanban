@@ -1,3 +1,4 @@
+import {forEachRecordScope} from './record-read-scopes';
 import type {KanbanClient,KanbanRecordExecution,KanbanRecordSummary,KanbanItemSummary} from '../contracts';
 import {recordProgress} from '../record-progress';
 
@@ -20,11 +21,11 @@ export async function currentGroupProgress(records:KanbanRecordSummary[],runs:Ma
     const targets=new Map<string,Set<string>>();
     for(const record of selected){const run=runs.get(record.id)!;const ids=targets.get(run.boardId)??new Set<string>();for(const id of groupIds(run))ids.add(id);targets.set(run.boardId,ids);}
     const facts=new Map<string,KanbanItemSummary[]>();
-    for(const [target,ids] of targets){
+    await forEachRecordScope(targets,async([target,ids])=>{
         const list=[...ids],items:KanbanItemSummary[]=[];
         for(let offset=0;offset<list.length;offset+=200){const page=await service.query(target,{ids:list.slice(offset,offset+200),view:'all',includeDeleted:true,limit:200});items.push(...page.items);}
         facts.set(target,items);
-    }
+    });
     return new Map(selected.map(record=>{
         const run=runs.get(record.id)!,ids=groupIds(run),items=(facts.get(run.boardId)??[]).filter(item=>ids.includes(item.id)&&item.deletedAt===undefined);
         const progress=recordProgress({...record,itemIds:ids},items.flatMap(item=>item.task?[{item,task:item.task}]:[]));

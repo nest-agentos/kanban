@@ -1,3 +1,9 @@
+import {randomUUID} from '../utils';
+import {safeCode} from './diagnostics';
+import type {RecordRun} from './record-progress-groups';
+import {activeRunHistory,readRun,runSummaries,checkpointRun,isRunMarker,readRunHistory,writeRunHistory,readCurrentRuns,migrateRunStorage} from './record-run-storage';
+import type {ISeqFileTransaction} from '@nestos/vfs-core';
+import type {KanbanRecordSummary} from '../contracts';
 import {normalizeVirtualPath, type IFileSystem} from '@nestos/vfs-core';
 import type {KanbanJournalOptions, KanbanRuntimeDiagnostic} from './ports';
 import {sha256HexSync} from '../utils';
@@ -11,29 +17,62 @@ export class KanbanAutomationJournal {
     readonly directory: string;
     readonly indexPath: string;
     private readonly path: string;
+    private readonly runsPath:string;
     private readonly artifactScheme: string;
     constructor(private readonly fs: IFileSystem, private readonly options: KanbanJournalOptions = {}) {
         this.directory = normalizeVirtualPath(options.directory ?? '/kanban/runtime');
+        this.runsPath=this.directory+'/record-runs.seq';
         this.path = this.directory + '/automation.seq'; this.indexPath = this.directory + '/automation-board-index.seq';
         this.artifactScheme = options.artifactScheme ?? 'kanban-artifact:';
     }
     diagnostic(event: KanbanRuntimeDiagnostic): void {this.options.diagnostic?.(event);}
     async open(): Promise<void> {
         requireValue(this.fs.meta.seq?.transaction, 'TRANSACTION_REQUIRED');
-        for (const name of ['automation.seq', 'automation-board-index.seq']) {
+        for (const name of ['automation.seq', 'automation-board-index.seq','record-runs.seq']) {
             try {await this.fs.driver.createFile({parentPath: this.directory, name, type: 'seqfile', recursive: true});}
             catch (error) {if ((error as {code?: string}).code !== 'EEXIST') throw error;}
         }
         if (await this.fs.meta.seq!.getEntry(this.indexPath, 'version') !== '1')
-            await this.fs.meta.seq!.transaction!(tx => migrateBoardIndex(tx, this.path, this.indexPath, event => this.diagnostic(event)));
+            await this.fs.meta.seq!.transaction!(tx => migrateBoardIndex(tx, this.path, this.indexPath, event => this.diagnostic(event),(key,raw)=>this.decode(key,raw,tx)));
+        if(await this.fs.meta.seq!.getEntry(this.runsPath,'version')!=='1')
+            await this.migrateRuns();
+    }
+    private async migrateRuns():Promise<void> {
+        const started=Date.now(),operationId=randomUUID();
+        try {
+            const count=await this.fs.meta.seq!.transaction!(tx=>migrateRunStorage(tx,this.path,this.runsPath));
+            this.diagnostic({operationId,stage:'record.runs.migrate',result:'success',count,durationMs:Date.now()-started});
+        }catch(error){this.diagnostic({operationId,stage:'record.runs.migrate',result:'failure',code:safeCode(error,'RECORD_RUN_MIGRATION_FAILED'),durationMs:Date.now()-started});throw error;}
+    }
+    currentRuns(board:string,records:KanbanRecordSummary[]) {
+        return readCurrentRuns(this.fs.meta.seq!,this.runsPath,board,records,event=>this.diagnostic(event));
+    }
+    runSummaries(board:string,recordId?:string) {return runSummaries(this.fs.meta.seq!,this.runsPath,board,recordId);}
+    activeRuns<T>(board:string):Promise<T[]> {return activeRunHistory(this.fs.meta.seq!,this.runsPath,board);}
+    run<T>(board:string,id:string):Promise<T|undefined> {return readRun(this.fs.meta.seq!,this.runsPath,board,id);}
+    saveRun<T extends RecordRun>(board:string,value:T):Promise<T> {
+        const operationId=randomUUID(),started=Date.now();
+        const work=this.fs.meta.seq!.transaction!(tx=>checkpointRun(tx,this.runsPath,board,value)).then(result=>{
+            this.diagnostic({operationId,boardId:board,stage:'record.runs.checkpoint',result:'success',count:1,writeCount:result.writeCount,durationMs:Date.now()-started});return result.value;
+        }).catch(error=>{this.diagnostic({operationId,boardId:board,stage:'record.runs.checkpoint',result:'failure',code:safeCode(error,'RECORD_RUN_CHECKPOINT_FAILED'),durationMs:Date.now()-started});throw error;}).finally(()=>{this.writes.delete(work);});
+        this.writes.add(work);return work;
+    }
+    private async decode<T>(key:string,raw:string|null,tx?:ISeqFileTransaction):Promise<T|undefined> {
+        if(raw===null)return;
+        return (isRunMarker(key,raw)?await readRunHistory(tx??this.fs.meta.seq!,this.runsPath,key,JSON.parse(raw).count):JSON.parse(raw)) as T;
+    }
+    private async write(tx:ISeqFileTransaction,key:string,previous:unknown,value:unknown,encoded:string):Promise<void> {
+        await updateBoardIndex(tx,key,boardIndexKeys(key,previous),value,this.indexPath);
+        if(key.startsWith('record-runs:'))await writeRunHistory(tx,this.runsPath,this.path,key,(previous??[]) as never,value as never);
+        else await tx.setEntry(this.path,key,encoded);
     }
     async get<T>(key: string): Promise<T | undefined> {
-        const raw = await this.fs.meta.seq!.getEntry(this.path, key); return raw ? JSON.parse(raw) as T : undefined;
+        const raw = await this.fs.meta.seq!.getEntry(this.path, key); return this.decode<T>(key,raw);
     }
     async getMany<T>(keys: string[]): Promise<Array<T | undefined>> {
         if (!keys.length) return [];
         const rows = await this.fs.meta.seq!.getEntries(this.path, keys);
-        return keys.map(key => rows[key] === undefined ? undefined : JSON.parse(rows[key]) as T);
+        return Promise.all(keys.map(key=>this.decode<T>(key,rows[key]??null)));
     }
     async findForBoard<T>(family: string, boardId: string, matches: (value: T) => boolean): Promise<Array<{key: string; value: T}>> {
         const keys: string[] = [];
@@ -43,14 +82,11 @@ export class KanbanAutomationJournal {
         const values = await this.getMany<T>(keys);
         return values.flatMap((value, index) => value !== undefined && matches(value) ? [{key: keys[index], value}] : []);
     }
-    async find<T>(keyPrefix: string, matches: (value: T, key: string) => boolean): Promise<Array<{key: string; value: T}>> {
-        const rows: Array<{key: string; value: T}> = [];
-        await this.fs.meta.seq!.walkEntries(this.path, entry => {
-            const value = JSON.parse(entry.value) as T;
-            if (matches(value, entry.key)) rows.push({key: entry.key, value});
-            requireValue(rows.length <= 1000, 'SESSION_RELATION_LIMIT'); return true;
-        }, {keyPrefix});
-        return rows;
+    async find<T>(keyPrefix:string,matches:(value:T,key:string)=>boolean):Promise<Array<{key:string;value:T}>> {
+        const saved:Array<{key:string;raw:string}>=[];
+        await this.fs.meta.seq!.walkEntries(this.path,entry=>{saved.push({key:entry.key,raw:entry.value});return true;},{keyPrefix});
+        const rows=await Promise.all(saved.map(async row=>({key:row.key,value:(await this.decode<T>(row.key,row.raw))!})));
+        const result=rows.filter(row=>matches(row.value,row.key));requireValue(result.length<=1000,'SESSION_RELATION_LIMIT');return result;
     }
     update<T>(key: string, change: (previous: T | undefined) => T): Promise<T> {
         const pending = this.commit(key, change).finally(() => {this.writes.delete(pending);});
@@ -61,11 +97,10 @@ export class KanbanAutomationJournal {
         requireValue(changes.length<=128&&new Set(changes.map(row=>row.key)).size===changes.length,'INVALID_JOURNAL_BATCH');
         const pending=this.fs.meta.seq!.transaction!(async tx=>{
             for(const {key,change}of changes){
-                const raw=await tx.getEntry(this.path,key),previous=raw?JSON.parse(raw):undefined,value=change(previous),encoded=JSON.stringify(value);
+                const raw=await tx.getEntry(this.path,key),previous=await this.decode(key,raw,tx),value=change(previous),encoded=JSON.stringify(value);
                 requireValue(encoded!==undefined,'INVALID_JOURNAL_VALUE');
-                if(raw===encoded)continue;
-                await updateBoardIndex(tx,key,boardIndexKeys(key,previous),value,this.indexPath);
-                await tx.setEntry(this.path,key,encoded);
+                if(JSON.stringify(previous)===encoded)continue;
+                await this.write(tx,key,previous,value,encoded);
             }
         }).finally(()=>{this.writes.delete(pending);});
         this.writes.add(pending);return pending;
@@ -82,12 +117,11 @@ export class KanbanAutomationJournal {
     }
     private async commit<T>(key: string, change: (previous: T | undefined) => T): Promise<T> {
         return this.fs.meta.seq!.transaction!(async tx => {
-            const raw = await tx.getEntry(this.path, key), previous = raw ? JSON.parse(raw) as T : undefined;
-            const previousIndex = boardIndexKeys(key, previous), value = change(previous);
+            const raw = await tx.getEntry(this.path, key), previous = await this.decode<T>(key,raw,tx);
+            const value = change(previous);
             const encoded = JSON.stringify(value);
-            if (encoded === raw) return structuredClone(value);
-            await updateBoardIndex(tx, key, previousIndex, value, this.indexPath);
-            await tx.setEntry(this.path, key, encoded); return structuredClone(value);
+            if (encoded === JSON.stringify(previous)) return structuredClone(value);
+            await this.write(tx,key,previous,value,encoded!); return structuredClone(value);
         });
     }
     async artifact(dispatchId: string, value: unknown): Promise<KanbanArtifactRef[]> {

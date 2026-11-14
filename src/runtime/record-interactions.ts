@@ -1,3 +1,4 @@
+import {forEachRecordScope} from './record-read-scopes';
 import type {KanbanClient,KanbanRecordPage,KanbanRecordSummary,KanbanSessionItemSummary} from '../contracts';
 import type {KanbanAutomationJournal} from './automation-journal';
 import {randomUUID} from '../utils';
@@ -10,17 +11,18 @@ function targets(record:KanbanRecordSummary):string[] {
 /** Read current bound Session metadata in batches; waiting cannot settle or restart a task. */
 export async function withRecordInteractions(page:KanbanRecordPage,board:string,service:Pick<KanbanClient,'queryActivity'>|undefined,journal:KanbanAutomationJournal):Promise<KanbanRecordPage> {
     if(!service?.queryActivity)return page;
+    const queryActivity=service.queryActivity.bind(service);
     const scopes=new Map<string,Set<string>>(),rows=new Map<string,KanbanSessionItemSummary[]>();
     for(const record of page.items){const id=record.progress?.boardId??board,ids=scopes.get(id)??new Set<string>();for(const item of targets(record))ids.add(item);if(ids.size)scopes.set(id,ids);}
-    for(const [id,ids] of scopes){
+    await forEachRecordScope(scopes,async([id,ids])=>{
         const started=Date.now(),operationId=randomUUID(),items:KanbanSessionItemSummary[]=[];
         try {
             const list=[...ids];
-            for(let offset=0;offset<list.length;offset+=200)items.push(...(await service.queryActivity(id,{ids:list.slice(offset,offset+200),view:'all',limit:200})).items);
+            for(let offset=0;offset<list.length;offset+=200)items.push(...(await queryActivity(id,{ids:list.slice(offset,offset+200),view:'all',limit:200})).items);
             rows.set(id,items);
             journal.diagnostic({operationId,boardId:id,stage:'record.interactions.read',result:'success',count:items.length,durationMs:Date.now()-started});
         }catch(error){journal.diagnostic({operationId,boardId:id,stage:'record.interactions.read',result:'failure',code:safeCode(error,'RECORD_INTERACTIONS_READ_FAILED'),durationMs:Date.now()-started});}
-    }
+    });
     return {...page,items:page.items.map(record=>project(record,rows.get(record.progress?.boardId??board)??[]))};
 }
 function project(record:KanbanRecordSummary,rows:KanbanSessionItemSummary[]):KanbanRecordSummary {

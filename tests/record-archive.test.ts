@@ -32,7 +32,7 @@ it('archives settled records without cancellation or resource disposal and retai
 it('rejects active runtime work and stale record revisions through both archive entry points',async()=>{
     const f=await fixture(),record=await f.service.record('b','done');
     await expect(f.service.controlRecord!('b',{recordId:'done',operationId:'stale',action:'archive',expectedRevision:0})).rejects.toMatchObject({code:'REVISION_CONFLICT'});
-    await f.journal.update('record-runs:b',()=>[{recordId:'done',state:'running',record:{executionEpoch:'old'}}]);
+    await f.journal.update('record-runs:b',()=>[{id:'run-done',recordId:'done',boardId:'b',createdAt:1,updatedAt:2,state:'running',record:{executionEpoch:'old'}}]);
     await expect(f.service.controlRecord!('b',{recordId:'done',operationId:'running',action:'archive',expectedRevision:record.revision})).rejects.toMatchObject({code:'RECORD_EXECUTION_UNSETTLED'});
     await expect(f.command({type:'archive-record',recordId:'done'})).rejects.toMatchObject({code:'RECORD_EXECUTION_UNSETTLED'});
     expect((await f.service.record('b','done')).archivedAt).toBeUndefined();
