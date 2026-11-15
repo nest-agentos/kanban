@@ -14,6 +14,10 @@ export async function verifyRuntimeLifecycle(service:KanbanService,journal:Kanba
     if(command.type==='cancel-record'||command.type==='delete-record'||command.type==='restart-record'||command.type==='revise-record') {
         const runs=await journal.runSummaries(board.id);
         if(runs?.some(run=>run.recordId===command.recordId&&!['completed','failed','cancelled'].includes(run.state)))throw new KanbanError('RECORD_EXECUTION_UNSETTLED');
+        if(command.type==='delete-record'&&runs.some(run=>run.recordId===command.recordId)){
+            const record=await service.record(board.id,command.recordId);
+            if(!['cancelled','rejected','superseded'].includes(record.status))throw new KanbanError('RECORD_CANCEL_REQUIRED');
+        }
     }
 }
 export function runtimeLifecycle(service:KanbanService & {quiesce():Promise<void>;dispose():Promise<void>},journal:KanbanAutomationJournal,extensions:KanbanRuntimeExtension[],beforeScan:()=>Promise<void>) {

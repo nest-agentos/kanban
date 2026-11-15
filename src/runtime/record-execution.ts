@@ -77,9 +77,12 @@ export function createRecordExecution(options: Options) {
             return resume(run);
         },
         controlRecord: async (boardId: string, request: Parameters<NonNullable<KanbanClient['controlRecord']>>[1]) => {
+            const started=Date.now();
             if(request.action==='archive')return archival.archive(boardId,request);
             if(request.action==='dismiss-attention'){requireValue(options.dismissAttention,'RECORD_CONTROL_UNAVAILABLE');return options.dismissAttention(boardId,request);}
-            await requestRecordControl(options.service, options.journal, boardId, {...request,action:request.action});
+            if(await requestRecordControl(options.service, options.journal, boardId, {...request,action:request.action})==='settled'){
+                options.log({operationId:request.operationId,boardId,stage:'record.delete.unstarted',result:'success',durationMs:Date.now()-started});return;
+            }
             if((await options.journal.get<RecordControl>(recordControlKey(boardId,request.recordId)))?.settled)return;
             for (const run of await options.journal.get<SavedRun[]>('record-runs:' + boardId) ?? []) if (run.recordId===request.recordId&&!['completed','failed','cancelled'].includes(run.state)) {
                 await pending.get(run.id)?.catch(() => {}); await resume(run);

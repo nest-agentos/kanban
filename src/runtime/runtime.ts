@@ -1,3 +1,4 @@
+import {requestRecordControl} from './record-controls';
 import {recordReadSource} from './record-read-source';
 import {decisionSnapshot} from './decision-page';
 import {createOperationPluginRegistry} from './operation-plugins';
@@ -53,7 +54,11 @@ function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeConte
     const client:import('../contracts').KanbanClient={...service,...capabilities,decisionSnapshot:(board,query)=>decisionSnapshot(client,board,query,options.log),previewTaskRestart:restarts.previewTaskRestart,restartTask:restarts.restartTask,
         ...(records?{...records,recordExecutions:async(board:string,id:string)=>(await workLog.record(service,board,id)).kind==='decision'?records.recordExecutions(board,id):[]}:{}),
         archiveRecords:archival.archiveRecords,
-        controlRecord:async(board,request)=>{if(request.action==='archive')return archival.archive(board,request);if(!records)throw Object.assign(new Error('Record control unavailable'),{code:'RECORD_CONTROL_UNAVAILABLE'});return records.controlRecord(board,request);},
+        controlRecord:async(board,request)=>{if(request.action==='archive')return archival.archive(board,request);if(!records){
+            const record=request.action==='delete'?await service.record(board,request.recordId):undefined;
+            if(record&&!record.itemIds.length&&['draft','confirmed'].includes(record.status)&&!(await journal.runSummaries(board,record.id)).length){await requestRecordControl(service,journal,board,{...request,action:'delete'});return;}
+            throw Object.assign(new Error('Record control unavailable'),{code:'RECORD_CONTROL_UNAVAILABLE'});
+        }return records.controlRecord(board,request);},
         ...(automation?{automationCatalog:automation.automationCatalog,analysisStatus:automation.analysisStatus}:{}),
         records:async(board:string,query?:import('../contracts').KanbanRecordQuery)=>{
             let page=await withRecordProgress(await workLog.records(service,board,query),board,journal,options.prepareRecordReads?.(service)??(options.createService?service:recordReadSource(service,options)));

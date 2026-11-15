@@ -20,9 +20,9 @@ it('archives settled records without cancellation or resource disposal and retai
     const f=await fixture(),before=await f.service.record('b','done');
     const request={operationId:'batch',records:[{recordId:'done',expectedRevision:before.revision},{recordId:'draft',expectedRevision:1}]};
     const result=await f.service.archiveRecords!('b',request);
-    expect(result.items).toEqual([{recordId:'done',outcome:'archived'},{recordId:'draft',outcome:'failed',code:'RECORD_EXECUTION_UNSETTLED'}]);
+    expect(result.items).toEqual([{recordId:'done',outcome:'archived'},{recordId:'draft',outcome:'archived'}]);
     expect(await f.service.record('b','done')).toMatchObject({status:'rejected',archivedAt:expect.any(Number),content:before.content,sources:before.sources});
-    expect((await f.service.records('b')).items.map(row=>row.id)).toEqual(['draft']);
+    expect((await f.service.records('b')).items).toEqual([]);
     expect((await f.service.records('b',{includeArchived:true})).items.map(row=>row.id).sort()).toEqual(['done','draft']);
     expect(await f.journal.get('record-control:'+JSON.stringify(['b','done']))).toBeUndefined();
     expect(await f.service.archiveRecords!('b',request)).toEqual(result);
@@ -94,4 +94,35 @@ it('drains accepted batches before shutdown and refuses new archive requests dur
     let closed=false;const closing=archival.quiesce().then(()=>{closed=true;});
     await expect(archival.archiveRecords('b',{...request,operationId:'late'})).rejects.toMatchObject({code:'SERVICE_STOPPING'});
     expect(closed).toBe(false);release();expect((await work).items[0].outcome).toBe('archived');await closing;expect(closed).toBe(true);
+});
+
+it('archives confirmed decisions with no execution while preserving their confirmation state',async()=>{
+    const f=await fixture();await f.command({type:'review-record',recordId:'draft',accept:true});
+    const record=await f.service.record('b','draft');
+    await f.service.controlRecord!('b',{recordId:'draft',operationId:'unstarted-confirmed',action:'archive',expectedRevision:record.revision});
+    expect(await f.service.record('b','draft')).toMatchObject({status:'confirmed',archivedAt:expect.any(Number)});
+});
+it('deletes unstarted decisions without creating cancellation work or touching sessions',async()=>{
+    const {requestRecordControl,recordControlKey}=await import('../src/runtime/record-controls');
+    for(const confirmed of [false,true]){
+        const f=await fixture();if(confirmed)await f.command({type:'review-record',recordId:'draft',accept:true});
+        const record=await f.service.record('b','draft');
+        expect(await requestRecordControl(f.service,f.journal,'b',{recordId:record.id,operationId:'delete-unstarted',action:'delete',expectedRevision:record.revision})).toBe('settled');
+        expect(await f.service.record('b',record.id)).toMatchObject({status:confirmed?'confirmed':'draft',deletedAt:expect.any(Number)});
+        expect(await f.journal.get(recordControlKey('b',record.id))).toBeUndefined();
+    }
+});
+it('does not classify a persisted execution intent without materialized tasks as unstarted',async()=>{
+    const {requestRecordControl}=await import('../src/runtime/record-controls');
+    const f=await fixture();await f.command({type:'review-record',recordId:'draft',accept:true});
+    await f.journal.update('record-runs:b',()=>[{id:'pending',recordId:'draft',sourceBoardId:'b',boardId:'b',state:'unknown',createdAt:1,updatedAt:1,record:{revision:1}}]);
+    expect(await requestRecordControl(f.service,f.journal,'b',{recordId:'draft',operationId:'cancel-unknown',action:'delete'})).toBe('pending');
+    expect((await f.service.record('b','draft')).deletedAt).toBeUndefined();
+    await expect(f.command({type:'delete-record',recordId:'draft'})).rejects.toMatchObject({code:'RECORD_EXECUTION_UNSETTLED'});
+});
+
+it('allows unstarted deletion through the public client without an execution plugin',async()=>{
+    const f=await fixture(),record=await f.service.record('b','draft');
+    await f.service.controlRecord!('b',{recordId:record.id,operationId:'public-delete-unstarted',action:'delete',expectedRevision:record.revision});
+    expect(await f.service.record('b',record.id)).toMatchObject({status:'draft',deletedAt:expect.any(Number)});
 });

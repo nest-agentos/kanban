@@ -15,6 +15,7 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
     if (command.type === 'append-record') {append(state, command, actor, now, forceDraft); return;}
     const record = state.records?.find(record => record.id === command.recordId); requireValue(record, 'RECORD_NOT_FOUND');
     requireValue(record.deletedAt === undefined, 'RECORD_DELETED');
+    if(command.type==='review-record'||command.type==='link-record')requireValue(record.archivedAt===undefined,'RECORD_ARCHIVED');
     if(command.type==='begin-record-edit'||command.type==='save-record-edit'||command.type==='end-record-edit')return;
     if(command.type==='configure-record-delivery') {
         requireReviewer(state.board,actor);requireValue(principal(actor).kind==='human','FORBIDDEN');
@@ -54,14 +55,14 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
         if(command.type==='delete-record')cleanupLinkedTasks(state,record,now);
         if(command.type==='archive-record'){
             requireValue(command.recordRevision===undefined||record.revision===command.recordRevision,'REVISION_CONFLICT');
-            requireValue(record.status!=='draft'&&record.status!=='cancelling','RECORD_EXECUTION_UNSETTLED');
+            requireValue(record.status!=='cancelling'&&(record.status!=='draft'||!record.itemIds.length),'RECORD_EXECUTION_UNSETTLED');
             requireValue(linkedRecordTasks(state,record).every(item=>['completed','cancelled'].includes(item.status)),'RECORD_EXECUTION_UNSETTLED');
         }
         if (command.type === 'request-record-cancellation') record.status = record.status === 'cancelled' ? 'cancelled' : 'cancelling';
         else if (command.type === 'cancel-record') record.status = 'cancelled';
         else if(command.type==='archive-record')record.archivedAt=now;
         else if(command.type==='restart-record'){requireValue(record.status==='cancelled','RECORD_CANCEL_REQUIRED');identity(command.epoch);record.executionEpoch=command.epoch;record.status='confirmed';delete record.archivedAt;}
-        else {requireValue(['cancelled', 'rejected', 'superseded'].includes(record.status), 'RECORD_CANCEL_REQUIRED'); record.deletedAt = now;}
+        else {requireValue(['cancelled', 'rejected', 'superseded'].includes(record.status)||!record.itemIds.length&&['draft','confirmed'].includes(record.status), 'RECORD_CANCEL_REQUIRED'); record.deletedAt = now;}
     } else if (command.type === 'link-record') {
         requireValue(!['cancelling','cancelled'].includes(record.status), 'RECORD_CANCELLING');
         validateItems(state, [command.itemId]);

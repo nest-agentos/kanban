@@ -46,11 +46,18 @@ async function requestItemControl(service: KanbanClient, journal: KanbanAutomati
     control.controls = saved.controls;
 }
 export async function requestRecordControl(service: KanbanClient, journal: KanbanAutomationJournal, boardId: string,
-    request: {recordId: string; operationId: string; action: RecordControl['action']|'delete'|'restart';expectedRevision?:number}): Promise<void> {
+    request: {recordId: string; operationId: string; action: RecordControl['action']|'delete'|'restart';expectedRevision?:number}): Promise<'settled'|'pending'> {
     requireValue(/^[\w-]{1,128}$/.test(request.operationId) && ['pause','resume','cancel','delete','restart'].includes(request.action), 'INVALID_RECORD_CONTROL');
     const board = await service.read(boardId), actor = await service.currentPrincipal(), record = await service.record(boardId, request.recordId);
     requireValue(actor.kind === 'human' && board.members?.some(m => m.kind === actor.kind && m.id === actor.id && m.roles?.includes('coordinator')), 'COORDINATOR_REQUIRED');
     requireValue(record.kind==='decision','DECISION_REQUIRED');
+    requireValue(request.expectedRevision===undefined||request.expectedRevision===record.revision,'REVISION_CONFLICT');
+    if(request.action==='delete'&&record.deletedAt!==undefined)return 'settled';
+    if(request.action==='delete'&&!record.itemIds.length&&['draft','confirmed'].includes(record.status)
+        &&!(await journal.runSummaries(boardId,record.id)).length){
+        await journalCommand(journal,service,boardId,'record-delete-unstarted:'+JSON.stringify([boardId,record.id,request.operationId]),{type:'delete-record',recordId:record.id});
+        return 'settled';
+    }
     const after=['delete','restart'].includes(request.action)?request.action as RecordControl['after']:undefined,action=after?'cancel':request.action as RecordControl['action'];
     await journal.update<RecordControl>(recordControlKey(boardId, record.id), old => {
         if (old?.operationId === request.operationId) {requireValue(old.action===action&&old.after===after,'IDEMPOTENCY_CONFLICT'); return old;}
@@ -61,4 +68,5 @@ export async function requestRecordControl(service: KanbanClient, journal: Kanba
         return {boardId, recordId: record.id, operationId: request.operationId, action,after, controls: old?.controls ?? {}};
     });
     if(action==='cancel'&&record.deletedAt===undefined)await journalCommand(journal, service, boardId, 'record-cancelling:' + JSON.stringify([boardId,record.id,request.operationId]), {type:'request-record-cancellation',recordId:record.id});
+    return 'pending';
 }
