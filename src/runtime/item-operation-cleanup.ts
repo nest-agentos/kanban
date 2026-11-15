@@ -9,7 +9,7 @@ export async function finishReviewCleanup(options:ReviewCleanupPorts,board:strin
     if(!options.cleanup)return true;
     const key=reviewCleanupKey(board,item,options.scopeId),previous=await options.journal.get<ReviewCleanup>(key);
     if(previous?.runId===runId&&previous.state==='succeeded')return true;
-    if(previous?.runId===runId&&previous.reviewState==='pending'){await options.cleanupReview?.({...previous,boardId:board,itemId:item,scopeId:options.scopeId});return false;}
+    if(previous?.runId===runId&&previous.reviewState==='pending'){await submitReview(options,key,{...previous,boardId:board,itemId:item,scopeId:options.scopeId});return false;}
     if(previous?.runId===runId&&previous.state==='failed'&&!retry)return false;
     const attempt=previous?.runId===runId?previous.attempt+(retry&&previous.retryFresh?1:0):0;
     const operationId='review-cleanup-'+sha256HexSync(JSON.stringify([board,item,runId,attempt])).slice(0,40);
@@ -23,10 +23,20 @@ export async function finishReviewCleanup(options:ReviewCleanupPorts,board:strin
         const code=safeCode(error,'OPERATION_CLEANUP_FAILED');
         if(options.cleanupReview&&previous?.reviewState!=='reviewed'){
             const review=await options.journal.update<ReviewCleanup>(key,old=>({...old!,state:'running',code:undefined,reviewState:'pending',reviewCode:code}));
-            await options.cleanupReview({...review,boardId:board,itemId:item,scopeId:options.scopeId});
-            options.log({operationId,stage:'operation.cleanup.review',result:'success',code,durationMs:Date.now()-started});return false;
+            await submitReview(options,key,{...review,boardId:board,itemId:item,scopeId:options.scopeId});return false;
         }
         await options.journal.update<ReviewCleanup>(key,old=>({...old!,state:'failed',code,retryFresh:(error as {cleanupPrecondition?:boolean;outcome?:string})?.cleanupPrecondition===true||(error as {outcome?:string})?.outcome==='not-committed'}));
         options.log({operationId,stage:'operation.cleanup',result:'failure',code,durationMs:Date.now()-started});return false;
     }
+}
+
+async function submitReview(options:ReviewCleanupPorts,key:string,input:ReviewCleanup&{boardId:string;itemId:string;scopeId?:string}):Promise<void>{
+ const started=Date.now();
+ try{await options.cleanupReview?.(input);options.log({operationId:input.operationId,stage:'operation.cleanup.review.submit',result:'success',durationMs:Date.now()-started});}
+ catch(error){
+  const code=safeCode(error,'CLEANUP_REVIEW_UNAVAILABLE');
+  options.log({operationId:input.operationId,stage:'operation.cleanup.review.submit',result:'failure',code,durationMs:Date.now()-started});
+  if(!(error as {cleanupReviewUnavailable?:boolean})?.cleanupReviewUnavailable)throw error;
+  await options.journal.update<ReviewCleanup>(key,old=>({...old!,state:'failed',reviewState:'reviewed',code}));
+ }
 }

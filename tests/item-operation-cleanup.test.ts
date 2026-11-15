@@ -37,3 +37,9 @@ it('retains the pending review and stable identity when queue acknowledgement is
  expect(f.cleanupReview.mock.calls[0]).toEqual(f.cleanupReview.mock.calls[1]);
  expect(await f.journal.get(reviewCleanupKey('board','item','scope'))).toMatchObject({state:'running',reviewState:'pending'});
 });
+it('reports a verified missing review capability instead of waiting forever',async()=>{
+ const f=await fixture();f.cleanup.mockRejectedValue(Object.assign(Error('dirty'),{code:'WORKTREE_DIRTY'}));
+ f.cleanupReview.mockRejectedValue(Object.assign(Error('no original manager'),{code:'MANAGEMENT_SESSION_NOT_READY',cleanupReviewUnavailable:true}));
+ expect(await finishReviewCleanup(f,'board','item','merge')).toBe(false);
+ expect(await f.journal.get(reviewCleanupKey('board','item','scope'))).toMatchObject({state:'failed',reviewState:'reviewed',code:'MANAGEMENT_SESSION_NOT_READY'});
+});
