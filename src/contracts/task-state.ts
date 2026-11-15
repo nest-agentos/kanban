@@ -20,7 +20,9 @@ export interface KanbanTaskProjection {
     phase: KanbanTaskPhase; reason?: string; startAt?: number; sessionId?: string; dispatchId?: string;
     actions: Array<'delete' | 'run' | 'edit' | 'cancel' | 'pause' | 'resume' | 'fix' | 'open-session' | 'resolve' | 'review'>;
 }
+export interface KanbanExecutionCheckWaiver {id:string;dispatchId:string;checks:string[];reason:string;acceptance:string;actor:import('./contracts').KanbanActor;at:number}
 export type KanbanTaskCommand =
+    | {type:'waive-execution-checks';itemId:string;dispatchId:string;expectedItemRevision:number;waiver:Pick<KanbanExecutionCheckWaiver,'id'|'checks'|'reason'>}
     | {type:'mark-planning'|'finish-planning';itemId:string}
     | {type: 'reopen-item'; itemId: string; reopenId: string}
     | {type: 'begin-edit'; itemId: string; editId: string; leaseMs: number}

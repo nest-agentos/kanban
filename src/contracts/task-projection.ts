@@ -1,7 +1,7 @@
 import {taskCleanupAllowed} from './task-cleanup';
 import type {KanbanDispatch,KanbanItem,KanbanItemSummary,KanbanWorkflowState,KanbanTaskProjection,KanbanTaskPhase} from './index';
 
-type Item=Pick<KanbanItem,'acceptanceResult'|'repairPending'|'executionEpoch'|'restartPending'|'deletedAt'|'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>;
+type Item=Pick<KanbanItem,'acceptanceResult'|'repairPending'|'executionEpoch'|'restartPending'|'deletedAt'|'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>&Pick<KanbanItemSummary,'executionCheckWaivers'>;
 type Related=Pick<KanbanItemSummary,'id'|'status'>&Partial<KanbanItemSummary>;
 type Fact={phase:KanbanTaskPhase;reason?:string;actions?:KanbanTaskProjection['actions']};
 export const TASK_START_DELAY_MS=300000;
@@ -95,6 +95,7 @@ function dependencyReason(id:string,all:Related[],workflow?:KanbanWorkflowState)
 function completionOutcome(item: Item, all: Related[], seen = new Set<string>()): KanbanTaskProjection['completion'] {
     if (seen.has(item.id)) return;
     seen = new Set(seen).add(item.id);
+    if(item.executionCheckWaivers?.length)return 'mixed';
     if (item.acceptanceResult?.outcome === 'waived') return 'waived';
     if (item.planning?.execution === 'children') {
         const children = all.filter(row => row.planning?.parentId === item.id && row.deletedAt === undefined);

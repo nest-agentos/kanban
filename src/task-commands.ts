@@ -1,3 +1,4 @@
+import {waiveExecutionChecks} from './execution-check-waiver';
 import {boardAllowsStart} from './contracts/board-control';
 import {sha256HexSync} from './utils';
 import type {KanbanActor, KanbanCommand, KanbanItem, KanbanTaskCommand} from './contracts';
@@ -9,7 +10,7 @@ import {validatePlan, catalog} from './planning';
 import {attachReference} from './planning-commands';
 import {requireCoordinator} from './workflow-plans';
 
-const types = ['mark-planning','finish-planning','reopen-item', 'set-launch-mode', 'retry-analysis', 'begin-edit', 'end-edit', 'save-edit', 'request-run', 'admit-item', 'report-analysis', 'request-control', 'control-receipt', 'report-issue', 'resolve-issue'];
+const types = ['waive-execution-checks','mark-planning','finish-planning','reopen-item', 'set-launch-mode', 'retry-analysis', 'begin-edit', 'end-edit', 'save-edit', 'request-run', 'admit-item', 'report-analysis', 'request-control', 'control-receipt', 'report-issue', 'resolve-issue'];
 export function taskCommand(command: KanbanCommand): command is KanbanTaskCommand {return types.includes(command.type);}
 export function assertDefinitionEditable(item: KanbanItem, now: number, editId?: string, actor?: KanbanActor): void {
     requireValue(!item.restartPending,'DEPENDENCY_RESTART_PENDING');
@@ -45,6 +46,7 @@ export function applyTaskCommand(state: KanbanState, command: KanbanTaskCommand,
         item.analysis = structuredClone(command.status);
     } else if (command.type === 'request-control') {requestControl(state, item, command); if (command.action === 'cancel') cancelChildren(state, item, command.controlId);}
     else if (command.type === 'control-receipt') applyControlReceipt(state, item, command, actor, now);
+    else if(command.type==='waive-execution-checks')waiveExecutionChecks(state,command,actor,now);
     else issues(state, item, command, actor);
     item.updatedAt = now; item.revision++;
 }

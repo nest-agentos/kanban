@@ -26,7 +26,7 @@ export type {KanbanDeletionPreview, KanbanDeletionRequest} from './deletion';
 export {boardAllowsStart, boardControlPhase} from './board-control';
 export type {KanbanBoardControl} from './board-control';
 
-export type {KanbanLaunch, KanbanTaskControl, KanbanTaskIssue, KanbanTaskPhase, KanbanTaskProjection, KanbanTaskCommand, KanbanFixSession} from './task-state';
+export type {KanbanExecutionCheckWaiver, KanbanLaunch, KanbanTaskControl, KanbanTaskIssue, KanbanTaskPhase, KanbanTaskProjection, KanbanTaskCommand, KanbanFixSession} from './task-state';
 
 export {projectKanbanTask,taskStartAt,taskDue,taskEditing,TASK_START_DELAY_MS} from './task-projection';
 
