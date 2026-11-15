@@ -29,6 +29,7 @@ export function createRecordConversations(options:Options):KanbanRecordConversat
 class RecordConversations {
     private stopped=false;
     private readonly pending=new Map<string,Promise<unknown>>();
+    private readonly restoring=new Set<string>();
     private readonly watches=new Map<string,Promise<()=>Promise<void>>>();
     private readonly watchKeys=new Map<string,string>();
     constructor(private readonly options:Options) {}
@@ -128,8 +129,12 @@ class RecordConversations {
     recordConversations=async(boardId:string)=>{await this.options.service.read(boardId);return (await this.options.journal.find<SavedRecordConversation>('record-conversation:',value=>value.boardId===boardId&&value.clearedAt===undefined)).map(row=>publicView(row.value));};
     scan=async()=>{
         for(const row of await this.options.journal.find<SavedRecordConversation>('record-conversation:',value=>!!value.binding&&value.clearedAt===undefined)) {
-            if(!this.active()||this.pending.size>=2)return;
-            if(!this.watches.has(row.value.id)||this.watchKeys.get(row.value.id)!==(this.options.port.watchKey?.(row.value)??row.value.id))void this.startRecordConversation(row.value.boardId,{operationId:row.value.id}).catch(()=>{});
+            if(!this.active())return;
+            const saved=row.value;
+            if(this.pending.has(saved.id)||this.watches.has(saved.id)&&this.watchKeys.get(saved.id)===(this.options.port.watchKey?.(saved)??saved.id))continue;
+            if(this.restoring.size>=2)return;
+            this.restoring.add(saved.id);
+            void this.startRecordConversation(saved.boardId,{operationId:saved.id}).catch(()=>{}).finally(()=>this.restoring.delete(saved.id));
         }
     };
     quiesce=async()=>{this.stopped=true;await Promise.allSettled([...this.pending.values()]);await Promise.allSettled([...this.watches.values()].map(async opened=>(await opened)()));await this.options.port.close();};

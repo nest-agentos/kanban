@@ -136,3 +136,13 @@ it('moves an observation lease when its route changes without replacing the nati
  expect(firstClose).toHaveBeenCalledOnce();expect(secondClose).not.toHaveBeenCalled();expect(f.port.start).toHaveBeenCalledOnce();
  expect((await runtime.recordConversations('board'))[0]).toMatchObject({sessionId:'native',resourceId:'/native/original'});
 });
+it('restores another retained observer while two existing conversations are processing requests',async()=>{
+ const f=await fixture(),runtime=createRecordConversations(f.options);closes.push(()=>runtime.quiesce());
+ await runtime.startRecordConversation('board',{operationId:'busy-a'});await runtime.startRecordConversation('board',{operationId:'busy-b'});
+ let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);
+ f.port.advance.mockImplementation(async(value:any)=>{if(value.id.startsWith('busy-'))await gate;return {state:'clarifying' as const};});
+ const pending=[runtime.startRecordConversation('board',{operationId:'busy-a'}),runtime.startRecordConversation('board',{operationId:'busy-b'})];
+ await f.journal.update('record-conversation:retained',()=>({id:'retained',boardId:'board',state:'confirmed',phase:'submitting',binding:{private:'same'},sessionId:'original-retained',resourceId:'/native/retained',createdAt:1}));
+ try{await runtime.scan();await vi.waitFor(()=>expect(f.port.watch).toHaveBeenCalledWith(expect.objectContaining({id:'retained',sessionId:'original-retained'}),expect.any(Function)),{timeout:1000});expect(f.port.start).toHaveBeenCalledTimes(2);}
+ finally{release();await Promise.all(pending);}
+});
