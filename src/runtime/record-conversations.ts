@@ -9,6 +9,7 @@ export interface RecordConversationPort {
     prepare(id:string,boardId:string,resources?:KanbanRecordConversation['resources'],primaryResource?:KanbanRecordConversation['primaryResource']):Promise<unknown>;
     start(binding:unknown,first:boolean,active:()=>boolean):Promise<{sessionId:string;resourceId:string}>;
     advance(conversation:SavedRecordConversation,active:()=>boolean):Promise<Partial<Pick<SavedRecordConversation,'recordId'|'state'|'code'|'pendingReports'|'purpose'>>>;
+    watchKey?(conversation:SavedRecordConversation):string;
     watch(conversation:SavedRecordConversation,wake:()=>void):Promise<()=>Promise<void>>;
     verifyDraftRemoval?(conversation:SavedRecordConversation):Promise<void>;
     referenceUnavailable?(conversation:SavedRecordConversation):Promise<boolean>;
@@ -29,6 +30,7 @@ class RecordConversations {
     private stopped=false;
     private readonly pending=new Map<string,Promise<unknown>>();
     private readonly watches=new Map<string,Promise<()=>Promise<void>>>();
+    private readonly watchKeys=new Map<string,string>();
     constructor(private readonly options:Options) {}
     private active=()=>!this.stopped;
     private serial<T>(id:string,work:()=>Promise<T>):Promise<T> {
@@ -48,9 +50,11 @@ class RecordConversations {
         if(code!=='SERVICE_STOPPING')await this.options.journal.update<SavedRecordConversation>(key(saved.id),old=>old?.clearedAt!==undefined?old:({...old!,state:'error',code,lastActivityAt:Date.now()}));
     }
     private async watch(saved:SavedRecordConversation):Promise<void> {
-        if(this.watches.has(saved.id))return;
+        const key=this.options.port.watchKey?.(saved)??saved.id;
+        if(this.watches.has(saved.id)&&this.watchKeys.get(saved.id)===key)return;
+        await this.closeWatch(saved.id);this.watchKeys.set(saved.id,key);
         const opened=this.options.port.watch(saved,()=>{if(this.active())void this.serial(saved.id,()=>this.advance(saved.id)).catch(()=>{});});this.watches.set(saved.id,opened);
-        try{await opened;}catch(error){this.watches.delete(saved.id);throw error;}
+        try{await opened;}catch(error){this.watches.delete(saved.id);this.watchKeys.delete(saved.id);throw error;}
     }
     startRecordConversation=(boardId:string,request:KanbanRecordConversationRequest):Promise<KanbanRecordConversation>=>this.serial(request.operationId,()=>this.start(boardId,request));
     private async start(boardId:string,request:KanbanRecordConversationRequest):Promise<KanbanRecordConversation> {
@@ -120,12 +124,12 @@ class RecordConversations {
             requireValue(await this.options.port.referenceUnavailable?.(saved),'CONVERSATION_REFERENCE_STILL_AVAILABLE');
         }
     }
-    private async closeWatch(id:string):Promise<void> {const watch=this.watches.get(id);if(watch){await(await watch)();this.watches.delete(id);}}
+    private async closeWatch(id:string):Promise<void> {const watch=this.watches.get(id);if(watch){try{await(await watch)();}finally{this.watches.delete(id);this.watchKeys.delete(id);}}}
     recordConversations=async(boardId:string)=>{await this.options.service.read(boardId);return (await this.options.journal.find<SavedRecordConversation>('record-conversation:',value=>value.boardId===boardId&&value.clearedAt===undefined)).map(row=>publicView(row.value));};
     scan=async()=>{
         for(const row of await this.options.journal.find<SavedRecordConversation>('record-conversation:',value=>!!value.binding&&value.clearedAt===undefined)) {
             if(!this.active()||this.pending.size>=2)return;
-            if(!this.watches.has(row.value.id))void this.startRecordConversation(row.value.boardId,{operationId:row.value.id}).catch(()=>{});
+            if(!this.watches.has(row.value.id)||this.watchKeys.get(row.value.id)!==(this.options.port.watchKey?.(row.value)??row.value.id))void this.startRecordConversation(row.value.boardId,{operationId:row.value.id}).catch(()=>{});
         }
     };
     quiesce=async()=>{this.stopped=true;await Promise.allSettled([...this.pending.values()]);await Promise.allSettled([...this.watches.values()].map(async opened=>(await opened)()));await this.options.port.close();};

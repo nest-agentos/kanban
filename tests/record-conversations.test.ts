@@ -126,3 +126,13 @@ it('batches draft removals with per-entry authorization, receipts and bounded re
  await expect(f.runtime.removeRecordConversations('board',{requests:[request,request]})).rejects.toMatchObject({code:'INVALID_RECORD_CONTROL'});
  await expect(f.runtime.removeRecordConversations('board',{requests:Array.from({length:101},(_,n)=>({...request,conversationId:'draft-'+n}))})).rejects.toMatchObject({code:'INVALID_RECORD_CONTROL'});
 });
+it('moves an observation lease when its route changes without replacing the native Session',async()=>{
+ const f=await fixture(),firstClose=vi.fn(async()=>{}),secondClose=vi.fn(async()=>{});
+ f.port.watch.mockResolvedValueOnce(firstClose).mockResolvedValueOnce(secondClose);
+ const runtime=createRecordConversations({...f.options,port:{...f.port,watchKey:value=>String((value.binding as any).channel??'initial')}});closes.push(()=>runtime.quiesce());
+ await runtime.startRecordConversation('board',{operationId:'retained'});
+ await f.journal.update<any>('record-conversation:retained',old=>({...old,binding:{...old.binding,channel:'coordination'}}));
+ await runtime.scan();await vi.waitFor(()=>expect(f.port.watch).toHaveBeenCalledTimes(2));
+ expect(firstClose).toHaveBeenCalledOnce();expect(secondClose).not.toHaveBeenCalled();expect(f.port.start).toHaveBeenCalledOnce();
+ expect((await runtime.recordConversations('board'))[0]).toMatchObject({sessionId:'native',resourceId:'/native/original'});
+});
