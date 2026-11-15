@@ -16,6 +16,7 @@ export interface KanbanProjectRecord {
     externalRefs?: import('./configuration').KanbanExternalReference[];
     completion?:'manual'|'automatic';
     discussionSessionId?:string;
+    deliveryOptions?:{verificationLevel:'full'|'quick'|'none';deliveryMode:'release'|'source'|'build';revision:number};
     verificationLevel?: 'full' | 'quick' | 'none';
     deliveryMode?: 'release' | 'source' | 'build';
     coordination?: {manager: KanbanPrincipal; executor?: KanbanPrincipal};

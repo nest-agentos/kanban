@@ -1,3 +1,5 @@
+import type {DecisionContext} from './work-context';
+import {kanbanVerificationMode} from '../contracts/verification';
 import {recordArchival} from './record-archive';
 import {cleanupRecordTasks} from './record-cleanup';
 import {advanceRecordControl, requestRecordControl, recordControlKey, type RecordControl} from './record-controls';
@@ -44,6 +46,18 @@ export function createRecordExecution(options: Options) {
             const refs=parent?.externalRefs?.filter(ref=>ref.system===options.resources.system)??[];
             const resources=(await options.resources.list()).filter(resource=>!refs.length||refs.some(ref=>ref.system===resource.reference.system&&ref.id===resource.reference.id));
             return {resources,selected:refs.length===1?refs[0]:undefined,readonly:refs.length===1,required:refs.length===1||options.requiresItemResource?.(board)===true};
+        },
+        recordDelivery:async(boardId:string,itemId:string)=>{
+            const item=(await options.service.item(boardId,itemId)).item;
+            const reference=item.externalRefs?.find(row=>row.system===(options.resources.decisionSystem??'kanban-decision'));if(!reference)return;
+            let context=await options.journal.get<DecisionContext>('record-context:'+reference.id);
+            if(!context){const run=await options.journal.run<SavedRun>(boardId,reference.id);if(run)context={sourceBoardId:run.sourceBoardId,recordId:run.recordId,recordRevision:run.recordRevision,runId:run.id};}
+            if(!context)return;
+            const record=await options.service.record(context.sourceBoardId,context.recordId);
+            const actor=await options.service.currentPrincipal(),source=await options.service.read(context.sourceBoardId);
+            const member=source.members?.some(row=>row.kind===actor.kind&&row.id===actor.id&&row.roles?.some(role=>role==='reviewer'||role==='coordinator'));
+            const editable=actor.kind==='human'&&!!member&&record.archivedAt===undefined&&record.deletedAt===undefined&&record.status!=='cancelling';
+            return {boardId:context.sourceBoardId,recordId:record.id,revision:record.revision,mode:kanbanVerificationMode(record),editable,...(!editable?{code:'DECISION_NOT_EDITABLE'}:{})};
         },
         recordResources: async () => (await options.resources.list()),
         runRecord: async (boardId: string, request: KanbanRecordRunRequest) => {

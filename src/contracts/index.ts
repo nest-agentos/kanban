@@ -65,3 +65,5 @@ export type {KanbanPreparedDecision} from './decision-page';
 
 export {conversationDraftRemovalBlocker} from './record-conversation';
 export type {KanbanRecordDraftRemovalRequest,KanbanRecordDraftRemovalResult} from './record-conversation';
+
+export type {KanbanRecordDelivery} from './verification';

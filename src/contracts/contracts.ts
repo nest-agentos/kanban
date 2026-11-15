@@ -68,6 +68,7 @@ export type KanbanCommand = import('./task-restart').RepairDependencyCommand | i
     | {type: 'delete-record'; recordId: string}
     | {type:'archive-record';recordId:string;recordRevision?:number}
     | {type:'set-record-priority';recordId:string;priority:0|1|2|3|4|null}
+    | {type:'configure-record-delivery';recordId:string;expectedRecordRevision:number;verificationLevel:'full'|'quick'|'none';deliveryMode:'release'|'source'|'build'}
     | {type:'revise-record';recordId:string;title:string;content:string;rationale:string;externalRefs?:import('./configuration').KanbanExternalReference[];completion?:'manual'|'automatic';verificationLevel?:'full'|'quick'|'none';deliveryMode?:'release'|'source'|'build'}
     | {type:'restart-record';recordId:string;epoch:string}
     | {type:'request-board-stop'; controlId:string; intent:'cancel'|'delete'; mode:'drain'|'cancel'}

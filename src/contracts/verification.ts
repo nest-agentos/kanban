@@ -13,7 +13,10 @@ export function kanbanVerificationOptions(mode: string): KanbanVerificationOptio
     if (!Object.prototype.hasOwnProperty.call(options, mode)) throw Object.assign(new Error('Invalid verification mode'), {code: 'INVALID_VERIFICATION_MODE'});
     return {...options[mode as KanbanVerificationMode]};
 }
-export function kanbanVerificationMode(value: KanbanVerificationOptions): KanbanVerificationMode {
+export function kanbanVerificationMode(value: KanbanVerificationOptions & Pick<KanbanProjectRecord,'deliveryOptions'>): KanbanVerificationMode {
+    value=value.deliveryOptions??value;
     if (value.verificationLevel === 'full' || value.verificationLevel === 'quick') return value.verificationLevel;
     return value.deliveryMode === 'source' ? 'source' : value.deliveryMode === 'build' ? 'build' : 'release';
 }
+
+export interface KanbanRecordDelivery {boardId:string;recordId:string;revision:number;mode:KanbanVerificationMode;editable:boolean;code?:string}

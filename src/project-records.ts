@@ -6,9 +6,9 @@ import type {KanbanState} from './ports';
 import {identity, requireValue, text} from './rules';
 import {principal, principalKey} from './identity';
 import {requireReviewer, validateSources} from './amendments';
-export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record' | 'begin-record-edit' | 'save-record-edit' | 'end-record-edit' | 'set-record-priority'}>;
+export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record' | 'begin-record-edit' | 'save-record-edit' | 'end-record-edit' | 'set-record-priority'|'configure-record-delivery'}>;
 export function isRecordCommand(command: KanbanCommand): command is RecordCommand {
-    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record', 'begin-record-edit', 'save-record-edit', 'end-record-edit', 'set-record-priority'].includes(command.type);
+    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record', 'begin-record-edit', 'save-record-edit', 'end-record-edit', 'set-record-priority','configure-record-delivery'].includes(command.type);
 }
 export function applyRecord(state: KanbanState, command: RecordCommand, actor: KanbanActor, now: number, forceDraft = false): void {
     if (['begin-record-edit','save-record-edit','end-record-edit'].includes(command.type)) {applyRecordRevision(state,command as import('./contracts/record-revision').KanbanRecordRevisionCommand,actor,now);return;}
@@ -16,6 +16,16 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
     const record = state.records?.find(record => record.id === command.recordId); requireValue(record, 'RECORD_NOT_FOUND');
     requireValue(record.deletedAt === undefined, 'RECORD_DELETED');
     if(command.type==='begin-record-edit'||command.type==='save-record-edit'||command.type==='end-record-edit')return;
+    if(command.type==='configure-record-delivery') {
+        requireReviewer(state.board,actor);requireValue(principal(actor).kind==='human','FORBIDDEN');
+        requireValue(record.kind==='decision'&&record.archivedAt===undefined&&record.status!=='cancelling','DECISION_NOT_EDITABLE');
+        requireValue(record.revision===command.expectedRecordRevision,'RECORD_DELIVERY_CHANGED');
+        validateDecisionOptions(command,record.kind);
+        requireValue(command.verificationLevel!=='full'||record.verificationLevel==='full'||!record.itemIds.length,'DELIVERY_VERIFICATION_REPLAN_REQUIRED');
+        // Keep the execution identity and original plan immutable; only future delivery uses the override.
+        record.deliveryOptions={verificationLevel:command.verificationLevel,deliveryMode:command.deliveryMode,revision:record.revision+1};
+        record.updatedAt=now;record.revision++;return;
+    }
     if(command.type==='set-record-priority') {
         requireReviewer(state.board,actor);requireValue(record.kind==='decision'&&record.archivedAt===undefined,'DECISION_NOT_EDITABLE');
         validateDecisionPriority(command.priority===null?undefined:command.priority);
