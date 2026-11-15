@@ -125,4 +125,5 @@ it('allows unstarted deletion through the public client without an execution plu
     const f=await fixture(),record=await f.service.record('b','draft');
     await f.service.controlRecord!('b',{recordId:record.id,operationId:'public-delete-unstarted',action:'delete',expectedRevision:record.revision});
     expect(await f.service.record('b',record.id)).toMatchObject({status:'draft',deletedAt:expect.any(Number)});
+    await expect(f.service.controlRecord!('b',{recordId:record.id,operationId:'public-delete-unstarted',action:'delete',expectedRevision:record.revision})).resolves.toBeUndefined();
 });

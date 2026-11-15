@@ -51,8 +51,8 @@ export async function requestRecordControl(service: KanbanClient, journal: Kanba
     const board = await service.read(boardId), actor = await service.currentPrincipal(), record = await service.record(boardId, request.recordId);
     requireValue(actor.kind === 'human' && board.members?.some(m => m.kind === actor.kind && m.id === actor.id && m.roles?.includes('coordinator')), 'COORDINATOR_REQUIRED');
     requireValue(record.kind==='decision','DECISION_REQUIRED');
-    requireValue(request.expectedRevision===undefined||request.expectedRevision===record.revision,'REVISION_CONFLICT');
     if(request.action==='delete'&&record.deletedAt!==undefined)return 'settled';
+    requireValue(request.expectedRevision===undefined||request.expectedRevision===record.revision,'REVISION_CONFLICT');
     if(request.action==='delete'&&!record.itemIds.length&&['draft','confirmed'].includes(record.status)
         &&!(await journal.runSummaries(boardId,record.id)).length){
         await journalCommand(journal,service,boardId,'record-delete-unstarted:'+JSON.stringify([boardId,record.id,request.operationId]),{type:'delete-record',recordId:record.id});
