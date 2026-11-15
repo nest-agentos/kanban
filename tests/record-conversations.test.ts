@@ -91,3 +91,38 @@ it('does not clear formal decisions or accept a reused operation identity for a 
  const saved=(await f.runtime.recordConversations('board'))[0];
  await expect(f.runtime.controlRecordConversation('board',{...request,operationId:'formal-ack',fingerprint:conversationAttentionFingerprint(saved)})).rejects.toMatchObject({code:'CONVERSATION_HAS_RECORD'});
 });
+
+it('removes an available draft only after confirmation and host verification, with stable receipts and retained history',async()=>{
+ const {conversationAttentionFingerprint}=await import('../src/contracts');const f=await controlledFixture(),verify=vi.fn(async()=>{});
+ Object.assign(f.port,{verifyDraftRemoval:verify});const stop=await f.port.watch.mock.results[0].value;
+ const request={conversationId:'discussion',operationId:'remove',action:'remove-draft' as const,fingerprint:conversationAttentionFingerprint(f.value),confirmed:true};
+ await expect(f.runtime.controlRecordConversation('board',{...request,confirmed:false})).rejects.toMatchObject({code:'CONVERSATION_REMOVE_CONFIRM_REQUIRED'});
+ expect(verify).not.toHaveBeenCalled();await f.runtime.controlRecordConversation('board',request);await f.runtime.controlRecordConversation('board',request);
+ expect(verify).toHaveBeenCalledOnce();expect(stop).toHaveBeenCalledOnce();expect(await f.runtime.recordConversations('board')).toEqual([]);
+ expect(await f.journal.get('record-conversation:discussion')).toMatchObject({clearedAt:expect.any(Number),sessionId:'native',state:'clarifying'});
+ await f.runtime.scan();expect(f.port.start).toHaveBeenCalledOnce();
+ await expect(f.runtime.startRecordConversation('board',{operationId:'discussion'})).rejects.toMatchObject({code:'CONVERSATION_REFERENCE_CLEARED'});
+});
+it('rejects draft removal without host evidence, after publication, when stale or without coordinator permission',async()=>{
+ const {conversationAttentionFingerprint}=await import('../src/contracts');const f=await controlledFixture();
+ const request={conversationId:'discussion',operationId:'remove',action:'remove-draft' as const,fingerprint:conversationAttentionFingerprint(f.value),confirmed:true};
+ await expect(f.runtime.controlRecordConversation('board',request)).rejects.toMatchObject({code:'CONVERSATION_DRAFT_REMOVAL_UNAVAILABLE'});
+ const verify=vi.fn(async()=>{throw Object.assign(Error('PRIVATE_BODY'),{code:'CONVERSATION_HAS_RECORD'});});Object.assign(f.port,{verifyDraftRemoval:verify});
+ await expect(f.runtime.controlRecordConversation('board',request)).rejects.toMatchObject({code:'CONVERSATION_HAS_RECORD'});
+ expect(await f.runtime.recordConversations('board')).toHaveLength(1);
+ f.options.service.currentPrincipal.mockResolvedValueOnce({kind:'human',id:'other'});
+ await expect(f.runtime.controlRecordConversation('board',request)).rejects.toMatchObject({code:'COORDINATOR_REQUIRED'});
+ await f.journal.update('record-conversation:discussion',old=>({...old as object,state:'draft'}));
+ await expect(f.runtime.controlRecordConversation('board',request)).rejects.toMatchObject({code:'DECISION_ATTENTION_CHANGED'});
+ expect(JSON.stringify(f.options.log.mock.calls)).not.toContain('PRIVATE_BODY');
+});
+
+it('batches draft removals with per-entry authorization, receipts and bounded requests',async()=>{
+ const {conversationAttentionFingerprint}=await import('../src/contracts');const f=await controlledFixture();Object.assign(f.port,{verifyDraftRemoval:async()=>{}});
+ const request={conversationId:'discussion',operationId:'remove',action:'remove-draft' as const,fingerprint:conversationAttentionFingerprint(f.value),confirmed:true};
+ const batch={requests:[request,{...request,conversationId:'missing',operationId:'missing'}]};
+ expect(await f.runtime.removeRecordConversations('board',batch)).toEqual({items:[{conversationId:'discussion',outcome:'removed'},{conversationId:'missing',outcome:'failed',code:'CONVERSATION_NOT_FOUND'}]});
+ expect(await f.runtime.removeRecordConversations('board',batch)).toEqual({items:[{conversationId:'discussion',outcome:'removed'},{conversationId:'missing',outcome:'failed',code:'CONVERSATION_NOT_FOUND'}]});
+ await expect(f.runtime.removeRecordConversations('board',{requests:[request,request]})).rejects.toMatchObject({code:'INVALID_RECORD_CONTROL'});
+ await expect(f.runtime.removeRecordConversations('board',{requests:Array.from({length:101},(_,n)=>({...request,conversationId:'draft-'+n}))})).rejects.toMatchObject({code:'INVALID_RECORD_CONTROL'});
+});

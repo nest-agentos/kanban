@@ -10,5 +10,14 @@ export interface KanbanRecordConversation {
 }
 
 export interface KanbanRecordConversationControl {
-    conversationId:string;operationId:string;action:'dismiss-attention'|'cleanup-reference';fingerprint:string;confirmed?:boolean;
+    conversationId:string;operationId:string;action:'dismiss-attention'|'cleanup-reference'|'remove-draft';fingerprint:string;confirmed?:boolean;
 }
+
+/** Removing a draft entry never cancels its native Session or removes a formal decision. */
+export function conversationDraftRemovalBlocker(value:KanbanRecordConversation):string|undefined {
+    if(value.recordId||value.purpose==='coordination'||value.state==='confirmed')return 'CONVERSATION_HAS_RECORD';
+    if(value.state==='preparing')return 'CONVERSATION_SUBMISSION_UNSETTLED';
+}
+
+export interface KanbanRecordDraftRemovalRequest {requests:KanbanRecordConversationControl[]}
+export interface KanbanRecordDraftRemovalResult {items:Array<{conversationId:string;outcome:'removed'|'failed'|'unknown';code?:string}>}

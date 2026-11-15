@@ -1,4 +1,5 @@
-import {conversationAttentionFingerprint,type KanbanRecordConversationControl} from '../contracts';
+import type {KanbanRecordDraftRemovalRequest,KanbanRecordDraftRemovalResult} from '../contracts';
+import {conversationDraftRemovalBlocker,conversationAttentionFingerprint,type KanbanRecordConversationControl} from '../contracts';
 import type {KanbanClient,KanbanRecordConversation,KanbanRecordConversationRequest} from '../contracts';
 import type {KanbanAutomationJournal} from './automation-journal';
 import {requireValue} from '../rules';
@@ -9,6 +10,7 @@ export interface RecordConversationPort {
     start(binding:unknown,first:boolean,active:()=>boolean):Promise<{sessionId:string;resourceId:string}>;
     advance(conversation:SavedRecordConversation,active:()=>boolean):Promise<Partial<Pick<SavedRecordConversation,'recordId'|'state'|'code'|'pendingReports'|'purpose'>>>;
     watch(conversation:SavedRecordConversation,wake:()=>void):Promise<()=>Promise<void>>;
+    verifyDraftRemoval?(conversation:SavedRecordConversation):Promise<void>;
     referenceUnavailable?(conversation:SavedRecordConversation):Promise<boolean>;
     close():Promise<void>;
 }
@@ -16,6 +18,7 @@ interface Options {service:KanbanClient;journal:KanbanAutomationJournal;port:Rec
 const key=(id:string)=>'record-conversation:'+id;
 export interface KanbanRecordConversations {
     startRecordConversation(board:string,request:KanbanRecordConversationRequest):Promise<KanbanRecordConversation>;
+    removeRecordConversations(board:string,request:KanbanRecordDraftRemovalRequest):Promise<KanbanRecordDraftRemovalResult>;
     controlRecordConversation(board:string,request:KanbanRecordConversationControl):Promise<void>;
     recordConversations(board:string):Promise<KanbanRecordConversation[]>;
     scan():Promise<void>;quiesce():Promise<void>;
@@ -69,32 +72,53 @@ class RecordConversations {
             return publicView((await this.options.journal.get<SavedRecordConversation>(key(id)))!);
         }catch(error){await this.failure(saved,error,'decision.conversation.start');throw error;}
     }
+    removeRecordConversations=async(board:string,request:KanbanRecordDraftRemovalRequest):Promise<KanbanRecordDraftRemovalResult>=>{
+        requireValue(request&&Array.isArray(request.requests)&&request.requests.length>0&&request.requests.length<=100,'INVALID_RECORD_CONTROL');
+        requireValue(request.requests.every(row=>row&&row.action==='remove-draft'&&typeof row.conversationId==='string'&&typeof row.operationId==='string')&&new Set(request.requests.map(row=>row.conversationId)).size===request.requests.length,'INVALID_RECORD_CONTROL');
+        const items:KanbanRecordDraftRemovalResult['items']=[];
+        for(const row of request.requests){
+            try {await this.controlRecordConversation(board,row);items.push({conversationId:row.conversationId,outcome:'removed'});}
+            catch(error){const code=safeCode(error,'CONVERSATION_CONTROL_FAILED'),unknown=(error as {outcome?:string})?.outcome==='unknown'||['EIO','HTTP_CONNECTION_LOST','ETIMEOUT'].includes(code);
+                items.push({conversationId:row.conversationId,outcome:unknown?'unknown':'failed',code});}
+        }
+        return {items};
+    };
     controlRecordConversation=(boardId:string,request:KanbanRecordConversationControl):Promise<void>=>this.serial(request.conversationId,async()=>{
         const started=Date.now();
         try {await this.control(boardId,request);this.options.log({operationId:request.operationId,boardId,stage:'conversation.reference.'+request.action,result:'success',durationMs:Date.now()-started});}
         catch(error){this.options.log({operationId:request.operationId,boardId,stage:'conversation.reference.'+request.action,result:'failure',code:safeCode(error,'CONVERSATION_CONTROL_FAILED'),durationMs:Date.now()-started});throw error;}
     });
     private async control(boardId:string,request:KanbanRecordConversationControl):Promise<void> {
-        requireValue(/^[a-zA-Z0-9_-]{1,128}$/.test(request.operationId)&&/^[a-f0-9]{64}$/.test(request.fingerprint)&&['dismiss-attention','cleanup-reference'].includes(request.action),'INVALID_RECORD_CONTROL');
+        requireValue(/^[a-zA-Z0-9_-]{1,128}$/.test(request.operationId)&&/^[a-f0-9]{64}$/.test(request.fingerprint)&&['dismiss-attention','cleanup-reference','remove-draft'].includes(request.action),'INVALID_RECORD_CONTROL');
         const [board,actor]=await Promise.all([this.options.service.read(boardId),this.options.service.currentPrincipal()]);
         requireValue(actor.kind==='human'&&board.members?.some(row=>row.kind===actor.kind&&row.id===actor.id&&row.roles?.includes('coordinator')),'COORDINATOR_REQUIRED');
         const receiptKey='conversation-control:'+request.operationId,identity=JSON.stringify([boardId,request.conversationId,request.action,request.fingerprint]);
         const receipt=await this.options.journal.get<string>(receiptKey);
-        if(receipt){requireValue(receipt===identity,'IDEMPOTENCY_CONFLICT');if(request.action==='cleanup-reference')await this.closeWatch(request.conversationId);return;}
+        if(receipt){requireValue(receipt===identity,'IDEMPOTENCY_CONFLICT');if(request.action!=='dismiss-attention')await this.closeWatch(request.conversationId);return;}
         const saved=await this.options.journal.get<SavedRecordConversation>(key(request.conversationId));
         requireValue(saved&&saved.boardId===boardId,'CONVERSATION_NOT_FOUND');requireValue(!saved.recordId,'CONVERSATION_HAS_RECORD');
         requireValue(saved.clearedAt===undefined&&conversationAttentionFingerprint({...saved,attentionFingerprint:undefined})===request.fingerprint,'DECISION_ATTENTION_CHANGED');
-        if(request.action==='cleanup-reference'){
-            requireValue(request.confirmed===true,'CONVERSATION_CLEANUP_CONFIRM_REQUIRED');
-            requireValue(await this.options.port.referenceUnavailable?.(saved),'CONVERSATION_REFERENCE_STILL_AVAILABLE');
-        }
+        await this.verifyRemoval(saved,request);
         await this.options.journal.updateMany([{key:receiptKey,change:old=>{requireValue(!old||old===identity,'IDEMPOTENCY_CONFLICT');return identity;}},
             {key:key(saved.id),change:value=>{
                 const old=value as SavedRecordConversation|undefined;
                 requireValue(old&&old.boardId===boardId&&conversationAttentionFingerprint({...old,attentionFingerprint:undefined})===request.fingerprint&&old.clearedAt===undefined,'DECISION_ATTENTION_CHANGED');
-                return {...old,...(request.action==='cleanup-reference'?{clearedAt:Date.now()}:{attentionDismissal:{fingerprint:request.fingerprint,operationId:request.operationId,at:Date.now()}})};
+                return {...old,...(request.action!=='dismiss-attention'?{clearedAt:Date.now()}:{attentionDismissal:{fingerprint:request.fingerprint,operationId:request.operationId,at:Date.now()}})};
             }}]);
-        if(request.action==='cleanup-reference')await this.closeWatch(saved.id);
+        if(request.action!=='dismiss-attention')await this.closeWatch(saved.id);
+    }
+    private async verifyRemoval(saved:SavedRecordConversation,request:KanbanRecordConversationControl):Promise<void> {
+        if(request.action==='remove-draft'){
+            requireValue(request.confirmed===true,'CONVERSATION_REMOVE_CONFIRM_REQUIRED');
+            const blocker=conversationDraftRemovalBlocker(saved);requireValue(!blocker,blocker??'CONVERSATION_HAS_RECORD');
+            requireValue(saved.phase!=='submitting'||!!saved.sessionId,'CONVERSATION_SUBMISSION_UNSETTLED');
+            requireValue(this.options.port.verifyDraftRemoval,'CONVERSATION_DRAFT_REMOVAL_UNAVAILABLE');
+            await this.options.port.verifyDraftRemoval(saved);
+        }
+        if(request.action==='cleanup-reference'){
+            requireValue(request.confirmed===true,'CONVERSATION_CLEANUP_CONFIRM_REQUIRED');
+            requireValue(await this.options.port.referenceUnavailable?.(saved),'CONVERSATION_REFERENCE_STILL_AVAILABLE');
+        }
     }
     private async closeWatch(id:string):Promise<void> {const watch=this.watches.get(id);if(watch){await(await watch)();this.watches.delete(id);}}
     recordConversations=async(boardId:string)=>{await this.options.service.read(boardId);return (await this.options.journal.find<SavedRecordConversation>('record-conversation:',value=>value.boardId===boardId&&value.clearedAt===undefined)).map(row=>publicView(row.value));};

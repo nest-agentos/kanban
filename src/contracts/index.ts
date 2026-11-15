@@ -62,3 +62,6 @@ export {decisionSort,compareDecisionRows} from './decision-sort';
 
 export {DECISION_SORT_PREFERENCE_KEY} from './decision-page';
 export type {KanbanPreparedDecision} from './decision-page';
+
+export {conversationDraftRemovalBlocker} from './record-conversation';
+export type {KanbanRecordDraftRemovalRequest,KanbanRecordDraftRemovalResult} from './record-conversation';

@@ -63,6 +63,7 @@ export interface KanbanClient extends KanbanService {
     openTaskCommunication?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
     openTaskCoordination?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
     openRecordCoordination?(boardId:string,request:{recordId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
+    removeRecordConversations?(boardId:string,request:import('./record-conversation').KanbanRecordDraftRemovalRequest):Promise<import('./record-conversation').KanbanRecordDraftRemovalResult>;
     controlRecordConversation?(boardId:string,request:import('./record-conversation').KanbanRecordConversationControl):Promise<void>;
     decisionSnapshot?(boardId:string,query?:import('./decision-page').KanbanDecisionQuery):Promise<import('./decision-page').KanbanDecisionSnapshot>;
     recordConversations?(boardId:string):Promise<import('./record-conversation').KanbanRecordConversation[]>;
