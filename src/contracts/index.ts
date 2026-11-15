@@ -6,7 +6,7 @@ export {DEFAULT_KANBAN_WORK_TYPES, executableWorkItem} from './configuration';
 export type {KanbanActor, KanbanEstimate, KanbanPolicy, KanbanParticipant, KanbanAssignment, KanbanItem, KanbanBoard, KanbanEvent, KanbanCommand, KanbanRequest, KanbanBoardSummary, KanbanService, KanbanBoardInput} from './contracts';
 export type {KanbanSuggestionKind, KanbanSuggestionQuery, KanbanSuggestion, KanbanSuggestionPage} from './suggestions';
 export type {KanbanSourceRef, KanbanDiscoveryChange, KanbanDiscoveryBatch} from './source';
-export type {KanbanText, KanbanAmendment, KanbanProjectRecord, KanbanRecordActivity, KanbanRecordParticipationTarget, KanbanRecordProgress, KanbanRecordInput, KanbanRecordSummary, KanbanRecordQuery, KanbanRecordPage} from './context';
+export type {KanbanDecisionDependency, KanbanText, KanbanAmendment, KanbanProjectRecord, KanbanRecordActivity, KanbanRecordParticipationTarget, KanbanRecordProgress, KanbanRecordInput, KanbanRecordSummary, KanbanRecordQuery, KanbanRecordPage} from './context';
 export type {KanbanArtifactRef, KanbanWorkDefinition, KanbanWorkPlan, KanbanPublishedPlan, KanbanDispatch, KanbanWorkflowState, KanbanWorkflowCommand} from './workflow';
 
 export type {KanbanScanSession, KanbanScanText, KanbanScanConnection, KanbanScanPolicy, KanbanScanInput, KanbanDiscoveryResult} from './discovery';

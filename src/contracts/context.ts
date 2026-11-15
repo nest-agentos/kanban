@@ -9,7 +9,9 @@ export interface KanbanAmendment {
 export interface KanbanRecordActivity {
     actor?: KanbanPrincipal; stage: string; result: 'success' | 'failure' | 'cancelled'; dispatchId?: string; code?: string; fields?: Record<string, string | number>;
 }
+export interface KanbanDecisionDependency {boardId:string;recordId:string;title?:string}
 export interface KanbanProjectRecord {
+    dependsOn?:KanbanDecisionDependency[];
     priority?: 0 | 1 | 2 | 3 | 4;
     /** Immutable, host-projected activity; decisions remain in the coordination store. */
     activity?: KanbanRecordActivity;
@@ -28,7 +30,7 @@ export interface KanbanProjectRecord {
     revision: number; createdAt: number; updatedAt: number; reviewedBy?: KanbanPrincipal;
     supersedes?: string; supersededBy?: string;
 }
-export type KanbanRecordInput = Pick<KanbanProjectRecord, 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs' | 'completion' | 'verificationLevel' | 'deliveryMode' | 'discussionSessionId' | 'priority'>;
+export type KanbanRecordInput = Pick<KanbanProjectRecord, 'dependsOn' | 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs' | 'completion' | 'verificationLevel' | 'deliveryMode' | 'discussionSessionId' | 'priority'>;
 export interface KanbanRecordParticipationTarget {
     itemId:string;title:string;resourceId?:string;purpose:'management'|'execution';phase:import('./task-state').KanbanTaskPhase;
 }

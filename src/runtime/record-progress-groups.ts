@@ -11,7 +11,7 @@ function groupIds(run:RecordRun):string[] {
     return [...new Set(run.itemIds?.length?run.itemIds:run.rootItemId?[run.rootItemId]:[])];
 }
 function requiresGroups(record:KanbanRecordSummary,run:RecordRun,board:string):boolean {
-    if(record.status!=='confirmed')return false;
+    if(record.status!=='confirmed'||run.code==='DECISION_DEPENDENCY_WAITING')return false;
     const ids=groupIds(run),projected=record.progress?.groupIds??record.itemIds;
     return !!ids.length&&(run.boardId!==board||record.progress?.reason==='TASK_GROUP_UNAVAILABLE'||ids.length!==projected.length||ids.some(id=>!projected.includes(id)));
 }

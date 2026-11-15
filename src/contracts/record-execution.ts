@@ -4,6 +4,7 @@ import type {KanbanExternalReference} from './configuration';
 export interface KanbanRecordResource {reference: KanbanExternalReference; label: string;group?:string}
 export interface KanbanItemResourceCatalog {resources:KanbanRecordResource[];selected?:KanbanExternalReference;required?:boolean;readonly?:boolean}
 export interface KanbanRecordExecution {
+    dependencies?:Array<import('./context').KanbanDecisionDependency&{state:'waiting'|'completed'|'unavailable'}>;
     id: string; recordId: string; recordRevision: number; boardId: string;
     completion?:import('./task-state').KanbanTaskProjection['completion'];
     rootItemId?: string; itemIds?: string[]; stage?:'planning'|'execution';

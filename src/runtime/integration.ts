@@ -4,6 +4,7 @@ export {journalCommand} from './journal-command';
 export {completeCompositePlans} from './analysis-aggregation';
 export {validateSubtasks, adoptDecomposition, type AnalysisSubtask} from './analysis-decomposition';
 export {createRecordExecution, validateResourceReferences} from './record-execution';
+export {validateDecisionDependencies} from './record-dependencies';
 export {advanceRecordControl, requestRecordControl, recordControlKey, type RecordControl} from './record-controls';
 export {safeCode} from './diagnostics';
 export type {KanbanJournalOptions, KanbanRuntimeDiagnostic, KanbanResourceCatalog, KanbanReferencePolicy} from './ports';

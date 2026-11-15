@@ -10,7 +10,7 @@ type Saved=Record<string,unknown>&RecordRun;
 type Hot=RecordRun&{details:string;epoch?:string;ordinal:number};
 const family='record-runs:';
 const marker=(count:number)=>JSON.stringify({recordRuns:1,count});
-const hotFields=['id','recordId','recordRevision','boardId','rootItemId','itemIds','stage','state','createdAt','updatedAt','archivedAt','code','completion'];
+const hotFields=['id','recordId','recordRevision','boardId','rootItemId','itemIds','stage','state','createdAt','updatedAt','archivedAt','code','completion','dependencies'];
 const prefix=(board:string)=>'run:'+JSON.stringify([board]).slice(0,-1)+',';
 const runKey=(board:string,id:string)=>'run:'+JSON.stringify([board,id]);
 const activeKey=(board:string,id:string)=>'active:'+JSON.stringify([board,id]);
@@ -106,7 +106,7 @@ async function writeCurrent(tx:ISeqFileTransaction,path:string,board:string,prev
 export async function checkpointRun<T extends RecordRun>(tx:ISeqFileTransaction,path:string,board:string,value:T):Promise<{value:T;writeCount:number}> {
     const raw=await tx.getEntry(path,runKey(board,value.id));requireValue(raw,'RECORD_EXECUTION_CHECKPOINT_MISSING');
     const previous=JSON.parse(raw) as Hot,{hot,body}=splitRun(value as Saved,previous.ordinal);
-    if(['state','code','stage','completion'].every(key=>(previous as any)[key]===(hot as any)[key])) {
+    if(['state','code','stage','completion'].every(key=>(previous as any)[key]===(hot as any)[key])&&JSON.stringify(previous.dependencies)===JSON.stringify(hot.dependencies)) {
         const cold=previous.details===hot.details?value:JSON.parse((await tx.getEntry(path,previous.details))!);
         const {details:_details,ordinal:_ordinal,epoch:_epoch,...metadata}=previous;return {value:{...cold,...metadata} as T,writeCount:0};
     }

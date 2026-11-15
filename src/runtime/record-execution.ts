@@ -1,3 +1,5 @@
+import {withRecordProgress} from './record-progress';
+import {validateDecisionDependencies,decisionDependencyStates} from './record-dependencies';
 import type {DecisionContext} from './work-context';
 import {kanbanVerificationMode} from '../contracts/verification';
 import {recordArchival} from './record-archive';
@@ -20,6 +22,7 @@ interface SavedRun extends KanbanRecordExecution {
     sourceBoardId: string; record: KanbanProjectRecord; automation: NonNullable<KanbanBoard['automation']>}
 type RunReceipt = Pick<SavedRun, 'id' | 'sourceBoardId' | 'recordId' | 'recordRevision' | 'requestRevision' | 'placement'> & {schema?: 2};
 interface Options {
+    dependencyRecords?(board:string):Promise<import('../contracts').KanbanRecordSummary[]>;
     dismissAttention?(boardId:string,request:Parameters<NonNullable<KanbanClient['controlRecord']>>[1]):Promise<void>;
     archiveItemResources?(boardId:string,itemId:string,operationId:string):Promise<void>;
     archiveSession?(sessionId:string,operationId:string):Promise<void>;
@@ -87,7 +90,7 @@ export function createRecordExecution(options: Options) {
         recordSessions: async(boardId:string,recordId:string,query?:{includeArchived?:boolean})=> {
             await options.service.record(boardId, recordId);
             const runs = await options.journal.runSummaries(boardId,recordId);
-            const targets = new Map(runs.filter(run=>run.recordId===recordId&&(query?.includeArchived||run.archivedAt===undefined)).flatMap(run => (run.itemIds ?? []).map(id => [JSON.stringify([run.boardId,id]), {board:run.boardId,id}] as const)));
+            const targets = new Map(runs.filter(run=>run.recordId===recordId&&!run.code?.startsWith('DECISION_DEPENDENCY_')&&(query?.includeArchived||run.archivedAt===undefined)).flatMap(run => (run.itemIds ?? []).map(id => [JSON.stringify([run.boardId,id]), {board:run.boardId,id}] as const)));
             const sessions = await Promise.all([...targets.values()].map(row => options.planningSession?.(row.board,row.id)));
             return sessions.filter((row): row is NonNullable<typeof row> => !!row);
         },
@@ -174,7 +177,8 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
     try {
         const control = await options.journal.get<RecordControl>(recordControlKey(run.sourceBoardId, run.recordId));
         if (control && !control.settled && !(control.after==='restart'&&run.record.executionEpoch===control.operationId)) {
-            const state = await advanceRecordControl(options.service, options.journal, run, control);
+            const unstarted=run.record.dependsOn?.length&&!await options.journal.get('record-dependency-admission:'+run.id);
+            const state = await advanceRecordControl(options.service, options.journal, unstarted?{...run,boardId:run.sourceBoardId,itemIds:[],rootItemId:undefined}:run, control);
             const updated = await save(options, {...run, state, updatedAt: Date.now()});
             if (state !== run.state) options.log({operationId:control.operationId, boardId:run.sourceBoardId, stage:'record.control.' + control.action, result:state==='unknown'||state==='blocked'?'failure':'success', code:updated.code, durationMs:Date.now()-started});
             if (control.action === 'resume' && state === 'running') {
@@ -188,6 +192,7 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
             return view(updated);
         }
         await validateResourceReferences(options.resources, run.record);
+        if(!await admitDependencies(options,run,started))return view((await options.journal.get<SavedRun[]>('record-runs:'+run.sourceBoardId))!.find(row=>row.id===run.id)!);
         await materialize(options, run);
         const board = await options.service.read(run.boardId);
         const items = run.itemIds ? await Promise.all(run.itemIds.map(async id => board.items.find(item => item.id === id) ?? (await options.service.item(run.boardId, id)).item)) : board.items;
@@ -213,7 +218,7 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
 }
 
 function decisionSignature(record: KanbanProjectRecord): string {
-    return sha256HexSync(JSON.stringify([record.title, record.content, record.rationale, record.externalRefs,record.completion,record.verificationLevel,record.deliveryMode,record.executionEpoch,record.priority]));
+    return sha256HexSync(JSON.stringify([record.title, record.content, record.rationale, record.externalRefs,record.completion,record.verificationLevel,record.deliveryMode,record.executionEpoch,record.priority,record.dependsOn]));
 }
 function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: KanbanRecordRunRequest, id: string): SavedRun {
     const placement = request.placement ?? 'current-board';
@@ -282,8 +287,9 @@ async function save(options: Options, run: SavedRun): Promise<SavedRun> {
 }
 
 function view(run: KanbanRecordExecution): KanbanRecordExecution {
-    const {id, recordId, recordRevision, boardId, rootItemId, itemIds, state, createdAt, updatedAt,archivedAt,stage,code,completion} = run;
-    return {id, recordId, recordRevision, boardId, ...(rootItemId?{rootItemId}:{}),...(itemIds?{itemIds}:{}), state,createdAt,updatedAt,...(completion?{completion}:{}),...(stage?{stage}:{}),...(archivedAt!==undefined?{archivedAt}:{}), ...(code ? {code} : {})};
+    const {id, recordId, recordRevision, boardId, rootItemId, itemIds, state, createdAt, updatedAt,archivedAt,stage,code,completion,dependencies} = run;
+    const waiting=code?.startsWith('DECISION_DEPENDENCY_');
+    return {id, recordId, recordRevision, boardId, ...(dependencies?{dependencies}:{}), ...(!waiting&&rootItemId?{rootItemId}:{}),...(!waiting&&itemIds?{itemIds}:{}), state,createdAt,updatedAt,...(completion?{completion}:{}),...(stage?{stage}:{}),...(archivedAt!==undefined?{archivedAt}:{}), ...(code ? {code} : {})};
 }
 
 async function cancelDecision(options: Options, boardId: string, recordId: string, operationId: string): Promise<void> {
@@ -326,4 +332,21 @@ async function markPlanning(options:Options,run:SavedRun):Promise<void> {
         if(item.purpose==='planning'||item.owner||!['backlog','open'].includes(item.status))continue;
         await journalCommand(options.journal,options.service,run.boardId,'record-planning-marker:'+run.id+':'+id,{type:'mark-planning',itemId:id});
     }
+}
+
+async function admitDependencies(options:Options,run:SavedRun,started:number):Promise<boolean> {
+    if(!run.record.dependsOn?.length)return true;
+    const key='record-dependency-admission:'+run.id;if(await options.journal.get(key))return true;
+    const refs=await validateDecisionDependencies(options.service,run.sourceBoardId,run.recordId,run.record.dependsOn);
+    const dependencies=await decisionDependencyStates(refs,options.dependencyRecords??(async board=>(await withRecordProgress(await options.service.records(board,{kind:'decision',includeArchived:true,limit:200}),board,options.journal,options.service)).items));
+    if(dependencies.some(row=>row.state!=='completed')){
+        const code=dependencies.some(row=>row.state==='unavailable')?'DECISION_DEPENDENCY_UNAVAILABLE':'DECISION_DEPENDENCY_WAITING';
+        if(run.code!==code||JSON.stringify(run.dependencies)!==JSON.stringify(dependencies)){
+            await save(options,{...run,state:'blocked',code,dependencies,updatedAt:Date.now()});
+            options.log({operationId:run.id,boardId:run.sourceBoardId,stage:'record.dependencies.wait',result:'success',code,durationMs:Date.now()-started});
+        }
+        return false;
+    }
+    await options.journal.update(key,old=>old??{dependencies,admittedAt:Date.now()});
+    options.log({operationId:run.id,boardId:run.sourceBoardId,stage:'record.dependencies.admit',result:'success',durationMs:Date.now()-started});return true;
 }

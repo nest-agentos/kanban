@@ -78,13 +78,14 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
 }
 function append(state: KanbanState, command: Extract<RecordCommand, {type: 'append-record'}>, actor: KanbanActor, now: number, forceDraft: boolean): void {
     validateSources(command.record.sources);
-    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,discussionSessionId,completion = command.record.completion ?? (command.record.kind === 'decision' ? 'automatic' : undefined),verificationLevel,deliveryMode,priority} = command.record;
+    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,dependsOn,discussionSessionId,completion = command.record.completion ?? (command.record.kind === 'decision' ? 'automatic' : undefined),verificationLevel,deliveryMode,priority} = command.record;
     validateDecisionPriority(priority);requireValue(priority===undefined||kind==='decision','INVALID_RECORD_PRIORITY');
-    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(discussionSessionId ? {discussionSessionId} : {}), ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{}), ...(verificationLevel?{verificationLevel}:{}), ...(deliveryMode?{deliveryMode}:{}),...(priority!==undefined?{priority}:{})}); identity(input.id); text(input.title); text(input.content);
+    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(dependsOn?{dependsOn}:{}), ...(discussionSessionId ? {discussionSessionId} : {}), ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{}), ...(verificationLevel?{verificationLevel}:{}), ...(deliveryMode?{deliveryMode}:{}),...(priority!==undefined?{priority}:{})}); identity(input.id); text(input.title); text(input.content);
     requireValue(completion===undefined||kind==='decision'&&['manual','automatic'].includes(completion),'INVALID_COMPLETION_POLICY');
     if(completion)input.completion=completion;
     if(discussionSessionId!==undefined)identity(discussionSessionId);
     validateDecisionOptions(command.record, kind);
+    validateDependencies(state,command.record);
     validateRecordReferences(externalRefs);
     requireValue(input.kind === 'log' || input.kind === 'decision', 'INVALID_RECORD_KIND');
     requireValue(!state.records?.some(record => record.id === input.id), 'RECORD_EXISTS');
@@ -142,7 +143,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
 }
 
 export function recordFingerprint(record: import('./contracts').KanbanRecordInput): string {
-    return sha256HexSync(JSON.stringify({...(record.priority!==undefined?{priority:record.priority}:{}),kind: record.kind, title: record.title, content: record.content, rationale: record.rationale ?? null, verificationLevel: record.verificationLevel ?? null, deliveryMode: record.deliveryMode ?? null,
+    return sha256HexSync(JSON.stringify({...(record.dependsOn?{dependsOn:record.dependsOn}:{}),...(record.priority!==undefined?{priority:record.priority}:{}),kind: record.kind, title: record.title, content: record.content, rationale: record.rationale ?? null, verificationLevel: record.verificationLevel ?? null, deliveryMode: record.deliveryMode ?? null,
         itemIds: [...record.itemIds].sort(), sources: record.sources.map(source => JSON.stringify([source.sessionId, source.messageId, source.role])).sort(), ...(record.coordination?{coordination:record.coordination}: {}), ...(record.externalRefs ? {externalRefs: record.externalRefs} : {})}));
 }
 
@@ -173,4 +174,17 @@ function cleanupLinkedTasks(state:KanbanState,record:KanbanProjectRecord,now:num
     requireValue(selected.every(item=>['completed','cancelled'].includes(item.status)),'RECORD_EXECUTION_UNSETTLED');
     requireValue(!state.archiveIndex?.some(item=>ids.has(item.id)&&item.deletedAt===undefined),'RECORD_TASK_CLEANUP_REQUIRED');
     for(const item of state.board.items.filter(item=>ids.has(item.id)&&item.deletedAt===undefined)){item.deletedAt=now;item.updatedAt=now;item.revision++;}
+}
+
+function validateDependencies(state:KanbanState,record:import('./contracts').KanbanRecordInput):void {
+    if(record.dependsOn===undefined)return;
+    requireValue(record.kind==='decision'&&Array.isArray(record.dependsOn)&&record.dependsOn.length<=16,'DECISION_DEPENDENCIES_INVALID');
+    const keys=new Set<string>();
+    for(const ref of record.dependsOn){
+        requireValue(ref&&typeof ref==='object','DECISION_DEPENDENCIES_INVALID');identity(ref.boardId);identity(ref.recordId);
+        requireValue(ref.title===undefined||typeof ref.title==='string'&&ref.title.length<=320,'DECISION_DEPENDENCIES_INVALID');
+        const key=JSON.stringify([ref.boardId,ref.recordId]);requireValue(!keys.has(key),'DECISION_DEPENDENCIES_INVALID');keys.add(key);
+        requireValue(ref.boardId!==state.board.id||ref.recordId!==record.id,'DECISION_DEPENDENCY_CYCLE');
+        if(ref.boardId===state.board.id)requireValue(state.records?.some(row=>row.id===ref.recordId&&row.kind==='decision'&&row.status==='confirmed'&&!row.deletedAt),'DECISION_DEPENDENCY_UNAVAILABLE');
+    }
 }

@@ -29,6 +29,7 @@ export async function withRecordProgress(page:KanbanRecordPage,board:string,jour
 }
 function executionProgress(record:KanbanRecordSummary,run:Run):KanbanRecordProgress {
     const progress=record.progress??{state:'waiting' as const,lastActivityAt:record.updatedAt};
+    if(run.code==='DECISION_DEPENDENCY_WAITING')return {...progress,state:'waiting',reason:run.code,groupIds:[],itemId:undefined,startedAt:undefined};
     const groupIds=progress.groupIds??[...new Set([run.rootItemId,...run.itemIds??[]].filter((id):id is string=>!!id))];
     const base={...progress,startedAt:run.createdAt,...(['completed','failed','cancelled'].includes(run.state)?{finishedAt:run.updatedAt}:{finishedAt:undefined}),groupIds,...(run.rootItemId||run.itemIds?.[0]?{boardId:run.boardId,itemId:progress.itemId??run.rootItemId??run.itemIds?.[0]}:{}),lastActivityAt:Math.max(progress.lastActivityAt,run.updatedAt)};
     if(record.status!=='confirmed'&&!(record.archivedAt!==undefined&&['completed','failed'].includes(run.state)))return base;
