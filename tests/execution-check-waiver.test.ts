@@ -40,6 +40,7 @@ it('backfills bounded issue diagnostics without resolving or replacing the origi
  const f=await fixture(),issue={id:'network',attemptId:'dispatch',type:'error' as const};
  await f.run({type:'report-issue',itemId:'task',issue});
  await f.run({type:'report-issue',itemId:'task',issue:{...issue,summary:'WebRTC emitted UDP outside the preview policy'}});
+ await f.run({type:'report-issue',itemId:'task',issue:{...issue,summary:'WebRTC emitted UDP outside the preview policy'}});
  const detail=await f.human.item('b','task');
  expect(detail.task).toMatchObject({phase:'error',reason:'network',reasonDetail:'WebRTC emitted UDP outside the preview policy'});
  expect((await f.human.item('b','root')).task).toMatchObject({phase:'error',reason:'GROUP_CHILD_ERROR',reasonDetail:detail.task.reasonDetail});
