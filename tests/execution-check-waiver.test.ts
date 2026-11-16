@@ -35,3 +35,17 @@ it('rejects service self-approval, changed revisions and a different dispatch',a
  await expect(f.run({...command,expectedItemRevision:0} as KanbanCommand)).rejects.toMatchObject({code:'REVISION_CONFLICT'});
  await expect(f.run({...command,dispatchId:'foreign'} as KanbanCommand)).rejects.toMatchObject({code:'EXECUTION_NOT_FOUND'});
 });
+
+it('backfills bounded issue diagnostics without resolving or replacing the original issue',async()=>{
+ const f=await fixture(),issue={id:'network',attemptId:'dispatch',type:'error' as const};
+ await f.run({type:'report-issue',itemId:'task',issue});
+ await f.run({type:'report-issue',itemId:'task',issue:{...issue,summary:'WebRTC emitted UDP outside the preview policy'}});
+ const detail=await f.human.item('b','task');
+ expect(detail.task).toMatchObject({phase:'error',reason:'network',reasonDetail:'WebRTC emitted UDP outside the preview policy'});
+ expect((await f.human.item('b','root')).task).toMatchObject({phase:'error',reason:'GROUP_CHILD_ERROR',reasonDetail:detail.task.reasonDetail});
+ await f.run({type:'resolve-issue',itemId:'task',issueId:'network',attemptId:'dispatch',resolvedBy:'repair'});
+ await f.run({type:'report-issue',itemId:'task',issue:{...issue,summary:'A different diagnostic'}});
+ expect((await f.human.item('b','task')).item.issues).toEqual([{...issue,summary:detail.task.reasonDetail,resolvedBy:'repair'}]);
+ expect((await f.human.item('b','task')).task.reasonDetail).toBeUndefined();
+ for(const summary of ['', 'x'.repeat(2001),42])await expect(f.run({type:'report-issue',itemId:'task',issue:{...issue,summary:summary as string}})).rejects.toMatchObject({code:'INVALID_ISSUE_SUMMARY'});
+});

@@ -11,13 +11,13 @@ export interface KanbanTaskControl {
     id: string; dispatchId?: string; action: 'pause' | 'resume' | 'cancel';
     state: 'requested' | 'accepted' | 'paused' | 'resumed' | 'cancelled' | 'failed' | 'unknown'; code?: string;
 }
-export interface KanbanTaskIssue {id: string; attemptId: string; type: 'clarification' | 'error'; handler?:'self'|'parent'; resolvedBy?: string}
+export interface KanbanTaskIssue {id: string; attemptId: string; type: 'clarification' | 'error'; summary?:string; handler?:'self'|'parent'; resolvedBy?: string}
 export type KanbanTaskPhase = 'waiting-start' | 'analyzing' | 'queued' | 'waiting-dependency' | 'preparing' | 'running'
     | 'cancelling' | 'pausing' | 'paused' | 'resuming' | 'waiting-input' | 'error' | 'review' | 'completed' | 'cancelled' | 'unknown';
 export interface KanbanTaskProjection {
     completion?: 'accepted' | 'waived' | 'mixed' | 'children';
     cleanupAllowed?: boolean;
-    phase: KanbanTaskPhase; reason?: string; startAt?: number; sessionId?: string; dispatchId?: string;
+    phase: KanbanTaskPhase; reason?: string; reasonDetail?:string; startAt?: number; sessionId?: string; dispatchId?: string;
     actions: Array<'delete' | 'run' | 'edit' | 'cancel' | 'pause' | 'resume' | 'fix' | 'open-session' | 'resolve' | 'review'>;
 }
 export interface KanbanExecutionCheckWaiver {id:string;dispatchId:string;checks:string[];reason:string;acceptance:string;actor:import('./contracts').KanbanActor;at:number}

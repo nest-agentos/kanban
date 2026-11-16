@@ -89,11 +89,13 @@ function issues(state: KanbanState, item: KanbanItem, command: KanbanTaskCommand
     requireCoordinator(state, actor);
     if (command.type === 'report-issue') {
         const issue = command.issue; identity(issue.id); identity(issue.attemptId);
+        requireValue(issue.summary===undefined||typeof issue.summary==='string'&&issue.summary.trim().length>0&&issue.summary.length<=2000,'INVALID_ISSUE_SUMMARY');
         requireValue(issue.handler===undefined||['self','parent'].includes(issue.handler),'INVALID_ISSUE_HANDLER');
         requireValue(!issue.resolvedBy && ['clarification', 'error'].includes(issue.type), 'INVALID_ISSUE');
         requireValue(state.workflow?.dispatches[issue.attemptId]?.itemId === item.id && item.owner?.token === state.workflow.dispatches[issue.attemptId].fence, 'STALE_EXECUTION_RESULT');
         item.issues ??= []; const old = item.issues.find(i => i.id === issue.id && i.attemptId === issue.attemptId);
         if (!old) {requireValue(item.issues.length < 200, 'ISSUE_LIMIT'); item.issues.push(structuredClone(issue));}
+        else if(issue.summary&&!old.summary)old.summary=issue.summary;
     } else if (command.type === 'resolve-issue') {
         const issue = item.issues?.find(i => i.id === command.issueId && i.attemptId === command.attemptId); requireValue(issue, 'ISSUE_NOT_FOUND');
         identity(command.resolvedBy);issue.resolvedBy??=command.resolvedBy;
