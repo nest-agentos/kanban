@@ -16,7 +16,8 @@ export interface KanbanItemOperation extends KanbanOperationFact {
     waiver?: {id:string;cause:'direct'|'dependency';action:string;reason:string;at:number;actor:import('./contracts').KanbanActor};
     runAction?:string; runLabel?:string; hideRun?:boolean; followUp?:{action:string;label:string;confirmation:string};
     enabled:boolean;reason?:string;attention?:KanbanOperationAttention;
-    recovery?: {runId:string;label:string;reason:string;prompt:string};
+    recovery?: {runId:string;label:string;reason:string;prompt?:string};
+    inspectWorkResources?: boolean;
     statusText?:string; summary?: string; fields?: KanbanOperationField[]; confirmation?: string;
     configurable?: boolean; binding?: KanbanExternalReference;
     openSessionOnRun?: boolean;

@@ -2,7 +2,8 @@ export type {KanbanTaskGroup, KanbanPlanning, KanbanProgress, KanbanItemSummary,
 export type {KanbanReferenceTarget} from './references';
 export {kanbanReference} from './references';
 export type {KanbanPrincipal, KanbanMember, KanbanWorkType, KanbanColumn, KanbanNotificationPolicy, KanbanExternalReference} from './configuration';
-export {DEFAULT_KANBAN_WORK_TYPES, executableWorkItem} from './configuration';
+export {DEFAULT_KANBAN_WORK_TYPES, executableWorkItem,kanbanChildWorkType} from './configuration';
+export type {KanbanTaskSnapshot,KanbanTaskSnapshotOptions,KanbanPreparedTask,KanbanTaskRead} from './task-snapshot';
 export type {KanbanActor, KanbanEstimate, KanbanPolicy, KanbanParticipant, KanbanAssignment, KanbanItem, KanbanBoard, KanbanEvent, KanbanCommand, KanbanRequest, KanbanBoardSummary, KanbanService, KanbanBoardInput} from './contracts';
 export type {KanbanSuggestionKind, KanbanSuggestionQuery, KanbanSuggestion, KanbanSuggestionPage} from './suggestions';
 export type {KanbanSourceRef, KanbanDiscoveryChange, KanbanDiscoveryBatch} from './source';
@@ -34,7 +35,7 @@ export {projectKanbanTask,taskStartAt,taskDue,taskEditing,TASK_START_DELAY_MS} f
 export {kanbanVerificationOptions, kanbanVerificationMode} from './verification';
 export type {KanbanVerificationMode, KanbanVerificationOptions} from './verification';
 
-export type {KanbanRecordConversation,KanbanRecordConversationRequest,KanbanRecordConversationControl} from './record-conversation';
+export type {KanbanDecisionModule,KanbanRecordConversation,KanbanRecordConversationRequest,KanbanRecordConversationControl} from './record-conversation';
 
 export type {KanbanTaskRecovery,KanbanTaskRecoveryRequest,KanbanTaskRecoveryResult} from './recovery';
 
@@ -61,7 +62,8 @@ export {DEFAULT_DECISION_SORT,decisionSorts} from './decision-page';
 export {decisionRowState,decisionRowPriority} from './decision-row-state';
 export {decisionSort,compareDecisionRows} from './decision-sort';
 
-export {DECISION_SORT_PREFERENCE_KEY} from './decision-page';
+export {DECISION_SORT_PREFERENCE_KEY,DECISION_SEARCH_LIMIT,decisionFilterStates,type DecisionFilterState,type KanbanDecisionFilters} from './decision-page';
+export {decisionRecordsQuery,decisionRows,decisionPageFilter} from './decision-filters';
 export type {KanbanPreparedDecision} from './decision-page';
 
 export {conversationDraftRemovalBlocker} from './record-conversation';

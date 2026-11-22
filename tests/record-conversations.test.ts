@@ -8,7 +8,10 @@ async function fixture(){const {manager}=await createVFS({rootBackend:new Memory
  const options={journal,service:{read:vi.fn(async()=>({id:'board'}))} as any,port,log:vi.fn()};return {options,journal,port};}
 it('freezes creation identity, returns only public metadata and never duplicates a native session on retry',async()=>{
  const f=await fixture(),runtime=createRecordConversations(f.options);closes.push(()=>runtime.quiesce());
- const created=await runtime.startRecordConversation('board',{operationId:'conversation'});
+ const recurrence={state:'active' as const,firstAt:Date.now()+60000,timeZone:'UTC',cadence:{kind:'interval' as const,milliseconds:60000},trigger:'fixed' as const,maxConcurrency:1};
+ const created=await runtime.startRecordConversation('board',{operationId:'conversation',recurrence});
+ expect(created.recurrence).toEqual(recurrence);
+ await expect(runtime.startRecordConversation('board',{operationId:'conversation',recurrence:null})).rejects.toMatchObject({code:'IDEMPOTENCY_CONFLICT'});
  expect(created).toMatchObject({sessionId:'native',resourceId:'/native/original'});expect(created).not.toHaveProperty('binding');expect(created).not.toHaveProperty('phase');
  await runtime.startRecordConversation('board',{operationId:'conversation'});expect(f.port.start).toHaveBeenCalledTimes(1);expect(f.port.start.mock.calls[0][1]).toBe(true);
  await expect(runtime.startRecordConversation('other',{operationId:'conversation'})).rejects.toMatchObject({code:'IDEMPOTENCY_CONFLICT'});
@@ -145,4 +148,15 @@ it('restores another retained observer while two existing conversations are proc
  await f.journal.update('record-conversation:retained',()=>({id:'retained',boardId:'board',state:'confirmed',phase:'submitting',binding:{private:'same'},sessionId:'original-retained',resourceId:'/native/retained',createdAt:1}));
  try{await runtime.scan();await vi.waitFor(()=>expect(f.port.watch).toHaveBeenCalledWith(expect.objectContaining({id:'retained',sessionId:'original-retained'}),expect.any(Function)),{timeout:1000});expect(f.port.start).toHaveBeenCalledTimes(2);}
  finally{release();await Promise.all(pending);}
+});
+
+it('freezes the selected module IDs with the original conversation operation',async()=>{
+ const f=await fixture(),runtime=createRecordConversations(f.options);closes.push(()=>runtime.quiesce());
+ const request={operationId:'module-choice',moduleIds:['software-development']};
+ const started=await runtime.startRecordConversation('board',request);
+ expect(started.moduleIds).toEqual(request.moduleIds);
+ expect(f.port.prepare).toHaveBeenCalledWith(request.operationId,'board',undefined,undefined,request.moduleIds);
+ await expect(runtime.startRecordConversation('board',{...request,moduleIds:['other']})).rejects.toMatchObject({code:'IDEMPOTENCY_CONFLICT'});
+ await expect(runtime.startRecordConversation('board',{operationId:'bad',moduleIds:['unknown','unknown']})).rejects.toMatchObject({code:'DECISION_MODULES_INVALID'});
+ expect((await runtime.startRecordConversation('board',{operationId:request.operationId})).moduleIds).toEqual(request.moduleIds);
 });

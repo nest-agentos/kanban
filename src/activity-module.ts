@@ -46,7 +46,7 @@ function forwardCore(service: CoreHandle, track: <T>(run: () => Promise<T>) => P
         create: (input) => track(() => service.create(input)),
         read: (id) => track(() => service.read(id)),
         list: () => track(() => service.list()),
-        catalog: () => track(() => service.catalog()),
+        catalog: id => track(() => id===undefined?service.catalog():service.catalog(id)),
         execute: (id, request) => track(() => service.execute(id, request)),
         events: (id, after, limit) => track(() => service.events(id, after, limit)),
         query: (id, query) => track(() => service.query(id, query)),

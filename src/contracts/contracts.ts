@@ -124,7 +124,7 @@ export interface KanbanService {
     /** Full coordination snapshot; user-facing lists should use query(). */
     read(boardId: string): Promise<KanbanBoard>;
     list(): Promise<KanbanBoard[]>;
-    catalog(): Promise<KanbanBoardSummary[]>;
+    catalog(boardId?:string): Promise<KanbanBoardSummary[]>;
     execute(boardId: string, request: KanbanRequest): Promise<KanbanBoard>;
     events(boardId: string, afterSequence?: number | 'latest', limit?: number): Promise<KanbanEvent[]>;
     related(sessionId: string): Promise<KanbanBoard[]>;

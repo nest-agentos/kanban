@@ -141,6 +141,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
     if (query.kind) requireValue(['log', 'decision'].includes(query.kind), 'INVALID_RECORD_KIND');
     if (query.itemId !== undefined) identity(query.itemId);
     if (query.resource !== undefined) validateRecordReferences([query.resource]);
+    validateRecordReferences(query.resources);
     if (query.status) requireValue(['draft', 'confirmed', 'rejected', 'superseded', 'cancelling', 'cancelled'].includes(query.status), 'INVALID_RECORD_STATUS');
     const digest = sha256HexSync(JSON.stringify(filter)); let offset = 0;
     if (cursor) {
@@ -152,6 +153,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
     }
     const matched = summaries.filter(record => (query.includeDeleted || record.deletedAt === undefined) && (query.includeArchived || record.archivedAt===undefined) && (!query.kind || query.kind === record.kind)
         && (!query.resource || record.externalRefs?.some(ref=>ref.system===query.resource!.system&&ref.id===query.resource!.id))
+        && (!query.resources?.length || record.externalRefs?.some(ref => query.resources!.some(project=>ref.system===project.system&&ref.id===project.id)))
         && (!query.itemId || record.itemIds.includes(query.itemId)) && (!query.status || query.status === record.status))
         .sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id));
     const items = matched.slice(offset, offset + limit);

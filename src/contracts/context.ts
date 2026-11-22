@@ -54,5 +54,5 @@ export interface KanbanRecordProgress {
 }
 export interface KanbanRecordAttentionDismissal {fingerprint:string;operationId:string;actor:KanbanPrincipal;at:number}
 export type KanbanRecordSummary = Omit<KanbanProjectRecord, 'content' | 'rationale' | 'sources' | 'recurrenceFence'> & {recurrencePending?:number;attentionDismissal?:KanbanRecordAttentionDismissal;progress?:KanbanRecordProgress;sessionIds:string[];attention?:'waiting-input'|'error'|'review';attentionCode?:string;attentionItemId?:string;attentionTasks?:Array<{itemId:string;title:string;phase:'waiting-input'|'error'|'unknown';purpose:'planning'|'execution';sessionId?:string}>};
-export interface KanbanRecordQuery {resource?:import('./configuration').KanbanExternalReference;includeDeleted?: boolean; includeArchived?:boolean; kind?: KanbanProjectRecord['kind']; itemId?: string; status?: KanbanProjectRecord['status']; limit?: number; cursor?: string}
+export interface KanbanRecordQuery {resource?:import('./configuration').KanbanExternalReference;resources?:import('./configuration').KanbanExternalReference[];includeDeleted?: boolean; includeArchived?:boolean; kind?: KanbanProjectRecord['kind']; itemId?: string; status?: KanbanProjectRecord['status']; limit?: number; cursor?: string}
 export interface KanbanRecordPage {revision: number; total: number; items: KanbanRecordSummary[]; nextCursor?: string}

@@ -36,6 +36,7 @@ export interface KanbanExecutionSessionDetail {
 
 /** Transport-facing service with optional authorized resource activity. */
 export interface KanbanClient extends KanbanService {
+    taskSnapshot?(boardId:string,itemId:string,options?:import('./task-snapshot').KanbanTaskSnapshotOptions):Promise<import('./task-snapshot').KanbanTaskSnapshot>;
     boardSettings?(boardId:string):Promise<import('./settings').KanbanBoardSettingsCatalog>;
     previewTaskRestart?(boardId:string,itemId:string):Promise<import('./task-restart').KanbanRestartPreview>;
     restartTask?(boardId:string,request:import('./task-restart').KanbanRestartRequest):Promise<import('./task-restart').KanbanRestartResult>;
@@ -68,6 +69,7 @@ export interface KanbanClient extends KanbanService {
     decisionSnapshot?(boardId:string,query?:import('./decision-page').KanbanDecisionQuery):Promise<import('./decision-page').KanbanDecisionSnapshot>;
     recordConversations?(boardId:string):Promise<import('./record-conversation').KanbanRecordConversation[]>;
     recordDelivery?(boardId:string,itemId:string):Promise<import('./verification').KanbanRecordDelivery|undefined>;
+    decisionModules?(): Promise<import('./record-conversation').KanbanDecisionModule[]>;
     recordResources?(): Promise<import('./record-execution').KanbanRecordResource[]>;
     runRecord?(boardId: string, request: import('./record-execution').KanbanRecordRunRequest): Promise<import('./record-execution').KanbanRecordExecution>;
     planningSession?(boardId: string, itemId: string): Promise<KanbanPlanningSession | undefined>;

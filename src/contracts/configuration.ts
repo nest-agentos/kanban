@@ -19,6 +19,12 @@ export const DEFAULT_KANBAN_WORK_TYPES: readonly KanbanWorkType[] = [
 
 export interface KanbanExternalReference {system: string; id: string; revision?: string}
 
+export function kanbanChildWorkType(board:Pick<KanbanBoard,'workTypes'|'defaultWorkType'>,item:KanbanItem):string|undefined {
+    if(kanbanTaskType(item)!=='coordination'||item.planning?.parentId)return;
+    const types=board.workTypes??DEFAULT_KANBAN_WORK_TYPES;
+    return (types.find(type=>type.id===board.defaultWorkType&&type.executable)??types.find(type=>type.executable))?.id;
+}
+
 /** A composite work item delegates execution to its children. */
 export function executableWorkItem(board:Pick<KanbanBoard,'workTypes'|'defaultWorkType'>, item:{taskType?:import('./task-type').KanbanTaskType;purpose?:string;planning?:{kind:string;execution?:'direct'|'children'}}):boolean {
     return kanbanTaskType(item)!=='coordination'&&item.planning?.execution!=='children'&&(board.workTypes??DEFAULT_KANBAN_WORK_TYPES)

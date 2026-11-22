@@ -67,8 +67,8 @@ it('rejects malformed conditions before starting any source read',async()=>{
 it('sorts visible decision numbers before pagination and keeps unnumbered drafts first in both directions',async()=>{
     const items=Array.from({length:60},(_,n)=>({...record('id-'+n),number:60-n,title:'Task '+n,createdAt:n,updatedAt:n}));
     const f=fixture(items);f.recordConversations.mockResolvedValue([{id:'draft',boardId:'board',title:'Zulu draft',sessionId:'native',state:'draft',createdAt:0}] as never);
-    const first=(await decisionSnapshot(f.source,'board',{locale:'en'})).page!;
-    const next=(await decisionSnapshot(f.source,'board',{locale:'en',cursor:first.nextCursor})).page!;
+    const first=(await decisionSnapshot(f.source,'board',{sort:'title-asc',locale:'en'})).page!;
+    const next=(await decisionSnapshot(f.source,'board',{sort:'title-asc',locale:'en',cursor:first.nextCursor})).page!;
     const rows=[...first.decisionRows,...next.decisionRows];
     expect(rows[0].kind).toBe('conversation');
     expect(rows.slice(1).map(row=>row.kind==='record'?row.value.number:undefined)).toEqual(Array.from({length:60},(_,n)=>n+1));
@@ -78,4 +78,28 @@ it('sorts visible decision numbers before pagination and keeps unnumbered drafts
     expect(descending.decisionRows[1]).toMatchObject({kind:'record',value:{number:60}});
     await expect(decisionSnapshot(f.source,'board',{sort:'title-desc',locale:'en',cursor:first.nextCursor})).rejects.toMatchObject({code:'CURSOR_STALE'});
     expect(f.recordResources).not.toHaveBeenCalled();expect(f.execute).not.toHaveBeenCalled();
+});
+
+it('combines project alternatives, status alternatives, and optional archived rows before pagination',async()=>{
+    const project=(id:string)=>({system:'project',id});
+    const row=(id:string,scope:string,state:NonNullable<KanbanRecordSummary['progress']>['state'],archived=false)=>({
+        ...record(id),externalRefs:[project(scope)],progress:{state,lastActivityAt:2},...(archived?{archivedAt:3}:{})});
+    const f=fixture([row('waiting','one','waiting'),row('archived','two','completed',true),row('other','three','waiting'),row('active','two','running')]);
+    const query={resources:[project('one'),project('two')],states:['waiting','completed'] as Array<'waiting'|'completed'>};
+    expect((await decisionSnapshot(f.source,'board',query)).page?.decisionRows.map(entry=>entry.value.id)).toEqual(['waiting']);
+    expect((await decisionSnapshot(f.source,'board',{...query,includeArchived:true})).page?.decisionRows.map(entry=>entry.value.id)).toEqual(['archived','waiting']);
+    expect(f.records).toHaveBeenLastCalledWith('board',{kind:'decision',limit:200,resources:query.resources,includeArchived:true});
+    expect(f.catalog).not.toHaveBeenCalled();expect(f.recordResources).not.toHaveBeenCalled();
+});
+
+it('searches decision and draft titles across pages while preserving other filters',async()=>{
+    const records=Array.from({length:55},(_,index)=>({...record('r'+index),title:index===0?'Exact NeedLE title':'Other '+index,updatedAt:index+1}));
+    const f=fixture(records);
+    f.recordConversations.mockResolvedValue([{id:'draft-match',boardId:'board',sessionId:'native',state:'draft',createdAt:1,title:'Ｎｅｅｄｌｅ discussion'}] as never);
+    const unfiltered=(await decisionSnapshot(f.source,'board')).page!;
+    expect(unfiltered.items.some(row=>row.id==='r0')).toBe(false);
+    const matches=(await decisionSnapshot(f.source,'board',{search:'needle'})).page!;
+    expect(matches.decisionRows.map(row=>row.value.id).sort()).toEqual(['draft-match','r0']);
+    expect((await decisionSnapshot(f.source,'board',{search:'needle',states:['running']})).page?.items.map(row=>row.id)).toEqual(['r0']);
+    await expect(decisionSnapshot(f.source,'board',{search:'needle',cursor:unfiltered.nextCursor})).rejects.toMatchObject({code:'CURSOR_STALE'});
 });
