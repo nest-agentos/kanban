@@ -1,7 +1,7 @@
 import {randomUUID} from '../utils';
 import {safeCode} from './diagnostics';
 import type {RecordRun} from './record-progress-groups';
-import {activeRunHistory,readRun,runSummaries,checkpointRun,isRunMarker,readRunHistory,writeRunHistory,readCurrentRuns,migrateRunStorage} from './record-run-storage';
+import {activeRunHistory,activeRecordRuns,readRun,runSummaries,checkpointRun,isRunMarker,readRunHistory,writeRunHistory,readCurrentRuns,migrateRunStorage,migrateRunHistoryIndex,appendRecurringRun,runHistoryPage} from './record-run-storage';
 import type {ISeqFileTransaction} from '@nestos/vfs-core';
 import type {KanbanRecordSummary} from '../contracts';
 import {normalizeVirtualPath, type IFileSystem} from '@nestos/vfs-core';
@@ -36,6 +36,7 @@ export class KanbanAutomationJournal {
             await this.fs.meta.seq!.transaction!(tx => migrateBoardIndex(tx, this.path, this.indexPath, event => this.diagnostic(event),(key,raw)=>this.decode(key,raw,tx)));
         if(await this.fs.meta.seq!.getEntry(this.runsPath,'version')!=='1')
             await this.migrateRuns();
+        if(await this.fs.meta.seq!.getEntry(this.runsPath,'history-version')!=='2')await this.fs.meta.seq!.transaction!(tx=>migrateRunHistoryIndex(tx,this.runsPath));
     }
     private async migrateRuns():Promise<void> {
         const started=Date.now(),operationId=randomUUID();
@@ -48,8 +49,30 @@ export class KanbanAutomationJournal {
         return readCurrentRuns(this.fs.meta.seq!,this.runsPath,board,records,event=>this.diagnostic(event));
     }
     runSummaries(board:string,recordId?:string) {return runSummaries(this.fs.meta.seq!,this.runsPath,board,recordId);}
+    async runHistoryPage(board:string,recordId:string,limit:number,after?:string) {
+        const seq=this.fs.meta.seq!,started=Date.now(),operationId=randomUUID();
+        try{
+            let page:Awaited<ReturnType<typeof runHistoryPage>>|undefined;
+            if(seq.readTransaction)try{page=await seq.readTransaction(tx=>runHistoryPage(tx,this.runsPath,board,recordId,limit,after),this.runsPath);}
+            catch(error){if((error as {code?:string;message?:string}).code!=='ECAPABILITY'||!(error as Error).message.includes('seq.readTransaction'))throw error;}
+            page??=await seq.transaction!(tx=>runHistoryPage(tx,this.runsPath,board,recordId,limit,after));
+            this.diagnostic({operationId,boardId:board,stage:'recurrence.history.page',result:'success',count:page.items.length,durationMs:Date.now()-started});return page;
+        }catch(error){this.diagnostic({operationId,boardId:board,stage:'recurrence.history.page',result:'failure',code:safeCode(error,'RECURRENCE_HISTORY_FAILED'),durationMs:Date.now()-started});throw error;}
+    }
     activeRuns<T>(board:string):Promise<T[]> {return activeRunHistory(this.fs.meta.seq!,this.runsPath,board);}
+    activeRecordRuns<T>(board:string,recordId:string):Promise<T[]> {return activeRecordRuns(this.fs.meta.seq!,this.runsPath,board,recordId);}
     run<T>(board:string,id:string):Promise<T|undefined> {return readRun(this.fs.meta.seq!,this.runsPath,board,id);}
+    appendRecurringRun<T extends RecordRun>(board:string,value:T,context:unknown):Promise<T> {
+        const started=Date.now(),pending=this.fs.meta.seq!.transaction!(async tx=>{
+            const saved=await appendRecurringRun(tx,this.runsPath,this.path,board,value),key='record-context:'+value.id;
+            await updateBoardIndex(tx,'record-runs:'+board,[],[value],this.indexPath);
+            const existing=await tx.getEntry(this.path,key);if(existing===null)await tx.setEntry(this.path,key,JSON.stringify(context));
+            else requireValue(JSON.stringify(JSON.parse(existing))===JSON.stringify(context),'RECURRENCE_CONTEXT_CONFLICT');
+            return saved;
+        }).then(saved=>{this.diagnostic({operationId:value.id,boardId:board,stage:'recurrence.run.append',result:'success',durationMs:Date.now()-started});return saved;})
+            .catch(error=>{this.diagnostic({operationId:value.id,boardId:board,stage:'recurrence.run.append',result:'failure',code:safeCode(error,'RECURRENCE_RUN_APPEND_FAILED'),durationMs:Date.now()-started});throw error;})
+            .finally(()=>{this.writes.delete(pending);});this.writes.add(pending);return pending;
+    }
     saveRun<T extends RecordRun>(board:string,value:T):Promise<T> {
         const operationId=randomUUID(),started=Date.now();
         const work=this.fs.meta.seq!.transaction!(tx=>checkpointRun(tx,this.runsPath,board,value)).then(result=>{

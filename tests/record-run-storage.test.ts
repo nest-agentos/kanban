@@ -63,9 +63,15 @@ it('checkpoints one execution without reading other frozen histories and keeps h
  const changed=await f.journal.saveRun('source',{...one,state:'completed',updatedAt:20} as any);
  expect(changed).toMatchObject({state:'completed',updatedAt:20});expect(batch).not.toHaveBeenCalled();
  expect(read.mock.calls.some(([,key])=>key.startsWith('detail:')||key.startsWith('record-runs:'))).toBe(false);
- expect(walk).toHaveBeenCalledExactlyOnceWith('/runtime/record-runs.seq',expect.any(Function),{keyPrefix:'by-record:["source","decision","epoch",'});
+ expect(walk).not.toHaveBeenCalled();
  expect(await f.journal.saveRun('source',{...changed,updatedAt:999} as any)).toMatchObject({updatedAt:20});
  expect((await f.journal.currentRuns('source',[record('decision','epoch')])).get('decision')).toMatchObject({state:'completed',updatedAt:20});
+});
+it('updates the current run on an equal-time checkpoint without scanning the group',async()=>{
+ const f=await fixture([run('first'),run('second')]),walk=vi.fn(),seq=f.fs.meta.seq!,transaction=seq.transaction!.bind(seq);
+ vi.spyOn(seq,'transaction').mockImplementation(work=>transaction(tx=>work(new Proxy(tx,{get(target,key){const value=Reflect.get(target,key);if(typeof value!=='function')return value;return (...args:any[])=>{if(key==='walkEntries')walk(...args);return value.apply(target,args);};}}))));
+ await f.journal.saveRun('source',{...run('second'),state:'completed',updatedAt:10} as any);
+ expect(walk).not.toHaveBeenCalled();expect((await f.journal.currentRuns('source',[record('decision','epoch')])).get('decision')?.id).toBe('second');
 });
 it('filters recovery through the active index and reads history summaries without frozen details',async()=>{
  const f=await fixture([run('done',{state:'completed',record:{executionEpoch:'epoch',body:'PRIVATE_DONE'}}),run('live',{recordId:'live',record:{executionEpoch:'live',body:'PRIVATE_LIVE'}})]);
@@ -82,4 +88,20 @@ it('reports a failed checkpoint and rolls its hot and index writes back without 
  await expect(f.journal.saveRun('source',{...run('one'),state:'completed',updatedAt:10} as any)).rejects.toMatchObject({code:'ENOSPC'});failed.mockRestore();
  expect((await f.journal.activeRuns<any>('source'))[0]).toMatchObject({id:'one',state:'running'});
  expect(f.log).toHaveBeenCalledWith(expect.objectContaining({stage:'record.runs.checkpoint',result:'failure',code:'ENOSPC',operationId:expect.any(String),durationMs:expect.any(Number)}));expect(JSON.stringify(f.log.mock.calls)).not.toContain('PRIVATE');
+});
+it('appends recurring runs independently and pages their chronological index without reading frozen bodies',async()=>{
+ const f=await fixture(),rows=Array.from({length:125},(_,i)=>run('round-'+String(i).padStart(3,'0'),{state:i===0?'running':'completed',createdAt:1000+Math.floor(i/2),updatedAt:1000+Math.floor(i/2),scheduledAt:900+i,recurrenceRevision:7}));
+ for(const value of rows)await f.journal.appendRecurringRun('source',value,{sourceBoardId:'source',recordId:value.recordId,recordRevision:value.recordRevision,runId:value.id});
+ await f.journal.appendRecurringRun('source',run('other-round',{recordId:'other'}),{sourceBoardId:'source',recordId:'other',recordRevision:1,runId:'other-round'});
+ const walk=vi.fn(),batch=vi.fn(),ioctl=vi.fn(),seq=f.fs.meta.seq!,transaction=seq.transaction!.bind(seq);
+ vi.spyOn(seq,'transaction').mockImplementation(work=>transaction(tx=>work(new Proxy(tx,{get(target,key){const value=Reflect.get(target,key);if(typeof value!=='function')return value;return (...args:any[])=>{if(key==='walkEntries')walk(...args);if(key==='getEntries')batch(...args);if(key==='ioctl')ioctl(...args);return value.apply(target,args);};}}))));
+ let cursor:string|undefined;const ids:string[]=[];
+ do{const page=await f.journal.runHistoryPage('source','decision',20,cursor);ids.push(...page.items.map(row=>row.id));cursor=page.nextCursor;}while(cursor);
+ expect(ids).toHaveLength(125);expect(new Set(ids).size).toBe(125);
+ expect(ids).toEqual([...rows].sort((a,b)=>b.createdAt-a.createdAt||a.id.localeCompare(b.id)).map(row=>row.id));
+ expect(walk).not.toHaveBeenCalled();expect(ioctl).toHaveBeenCalledTimes(14);expect(ioctl.mock.calls.every(([,command,query])=>command==='seq.keys.page.v1'&&(query.keyPrefix.startsWith('history:')&&query.limit===20||query.keyPrefix.startsWith('active-record:')&&query.limit===50))).toBe(true);
+ expect(batch.mock.calls.every(([,keys])=>keys.length<=20&&keys.every((key:string)=>!key.startsWith('detail:')))).toBe(true);
+ expect((await f.journal.runHistoryPage('source','decision',20)).active.map(row=>row.id)).toEqual(['round-000']);
+ const reopened=new KanbanAutomationJournal(f.fs,{directory:'/runtime'});await reopened.open();expect((await reopened.runHistoryPage('source','decision',20)).items.map(row=>row.id)).toEqual(ids.slice(0,20));
+ expect(await reopened.findForBoard('record-runs:','source',()=>true)).toHaveLength(1);
 });

@@ -54,7 +54,7 @@ export async function requestRecordControl(service: KanbanClient, journal: Kanba
     if(request.action==='delete'&&record.deletedAt!==undefined)return 'settled';
     requireValue(request.expectedRevision===undefined||request.expectedRevision===record.revision,'REVISION_CONFLICT');
     if(request.action==='delete'&&!record.itemIds.length&&['draft','confirmed'].includes(record.status)
-        &&!(await journal.runSummaries(boardId,record.id)).length){
+        &&!(await journal.runHistoryPage(boardId,record.id,1)).items.length){
         await journalCommand(journal,service,boardId,'record-delete-unstarted:'+JSON.stringify([boardId,record.id,request.operationId]),{type:'delete-record',recordId:record.id});
         return 'settled';
     }

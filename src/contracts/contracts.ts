@@ -70,6 +70,9 @@ export type KanbanCommand = import('./task-restart').RepairDependencyCommand | i
     | {type:'archive-record';recordId:string;recordRevision?:number}
     | {type:'set-record-priority';recordId:string;priority:0|1|2|3|4|null}
     | {type:'configure-record-delivery';recordId:string;expectedRecordRevision:number;verificationLevel:'full'|'quick'|'none';deliveryMode:'release'|'source'|'build'}
+    | {type:'configure-record-recurrence';recordId:string;expectedRecordRevision:number;recurrence:import('./recurrence').KanbanRecurrence|null}
+    | {type:'reserve-record-recurrence';recordId:string;configRevision:number;scheduledAt:number}
+    | {type:'settle-record-recurrence';recordId:string;roundId:string}
     | {type:'revise-record';recordId:string;title:string;content:string;rationale:string;externalRefs?:import('./configuration').KanbanExternalReference[];completion?:'manual'|'automatic';verificationLevel?:'full'|'quick'|'none';deliveryMode?:'release'|'source'|'build'}
     | {type:'restart-record';recordId:string;epoch:string}
     | {type:'request-board-stop'; controlId:string; intent:'cancel'|'delete'; mode:'drain'|'cancel'}

@@ -56,6 +56,6 @@ function recordArchiveBatch(journal:KanbanAutomationJournal,log:Log,archive:Arch
 export async function verifyRecordArchive(journal:KanbanAutomationJournal,boardId:string,recordId:string,readRecords:(board:string)=>Promise<KanbanRecordPage>):Promise<void> {
     const record=(await readRecords(boardId)).items.find(row=>row.id===recordId);requireValue(record,'RECORD_NOT_FOUND');
     const code=recordArchiveBlocker(record);requireValue(!code||code==='RECORD_ARCHIVED',code??'RECORD_EXECUTION_UNSETTLED');
-    const runs=await journal.runSummaries(boardId,recordId);
-    requireValue(!runs?.some(run=>run.recordId===recordId&&!['completed','failed','cancelled'].includes(run.state)),'RECORD_EXECUTION_UNSETTLED');
+    const runs=await journal.activeRecordRuns(boardId,recordId);
+    requireValue(!runs.length,'RECORD_EXECUTION_UNSETTLED');
 }

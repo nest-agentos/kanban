@@ -1,4 +1,5 @@
 import {applyRecordRevision} from './record-revision';
+import {validateRecurrence} from './recurrence-validation';
 import {validateDecisionOptions,validateDecisionPriority} from './decision-options';
 import {sha256HexSync} from './utils';
 import type {KanbanActor, KanbanCommand, KanbanProjectRecord, KanbanRecordPage, KanbanRecordQuery} from './contracts';
@@ -6,9 +7,9 @@ import type {KanbanState} from './ports';
 import {identity, requireValue, text} from './rules';
 import {principal, principalKey} from './identity';
 import {requireReviewer, validateSources} from './amendments';
-export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record' | 'begin-record-edit' | 'save-record-edit' | 'end-record-edit' | 'set-record-priority'|'configure-record-delivery'}>;
+export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record' | 'begin-record-edit' | 'save-record-edit' | 'end-record-edit' | 'set-record-priority'|'configure-record-delivery'|'configure-record-recurrence'|'reserve-record-recurrence'|'settle-record-recurrence'}>;
 export function isRecordCommand(command: KanbanCommand): command is RecordCommand {
-    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record', 'begin-record-edit', 'save-record-edit', 'end-record-edit', 'set-record-priority','configure-record-delivery'].includes(command.type);
+    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record', 'begin-record-edit', 'save-record-edit', 'end-record-edit', 'set-record-priority','configure-record-delivery','configure-record-recurrence','reserve-record-recurrence','settle-record-recurrence'].includes(command.type);
 }
 export function applyRecord(state: KanbanState, command: RecordCommand, actor: KanbanActor, now: number, forceDraft = false): void {
     if (['begin-record-edit','save-record-edit','end-record-edit'].includes(command.type)) {applyRecordRevision(state,command as import('./contracts/record-revision').KanbanRecordRevisionCommand,actor,now);return;}
@@ -17,6 +18,20 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
     requireValue(record.deletedAt === undefined, 'RECORD_DELETED');
     if(command.type==='review-record'||command.type==='link-record')requireValue(record.archivedAt===undefined,'RECORD_ARCHIVED');
     if(command.type==='begin-record-edit'||command.type==='save-record-edit'||command.type==='end-record-edit')return;
+    if(command.type==='reserve-record-recurrence') {reserveRecurrence(state,record,command,actor,now);return;}
+    if(command.type==='settle-record-recurrence') {
+        requireReviewer(state.board,actor);const fence=record.recurrenceFence;
+        requireValue(fence&&fence.pending.some(row=>row.id===command.roundId),'RECURRENCE_RESERVATION_MISSING');
+        fence!.pending=fence!.pending.filter(row=>row.id!==command.roundId);record.updatedAt=now;record.revision++;return;
+    }
+    if(command.type==='configure-record-recurrence') {
+        requireReviewer(state.board,actor);requireValue(principal(actor).kind==='human','FORBIDDEN');
+        requireValue(record.kind==='decision'&&record.archivedAt===undefined&&!['cancelled','cancelling'].includes(record.status),'DECISION_NOT_EDITABLE');
+        requireValue(record.revision===command.expectedRecordRevision,'RECURRENCE_REVISION_CONFLICT');
+        if(command.recurrence){validateRecurrence(command.recurrence);record.recurrence=structuredClone(command.recurrence);record.recurrenceRevision=record.revision+1;record.hadRecurrence=true;}
+        else {delete record.recurrence;delete record.recurrenceRevision;}
+        record.updatedAt=now;record.revision++;return;
+    }
     if(command.type==='configure-record-delivery') {
         requireReviewer(state.board,actor);requireValue(principal(actor).kind==='human','FORBIDDEN');
         requireValue(record.kind==='decision'&&record.archivedAt===undefined&&record.status!=='cancelling','DECISION_NOT_EDITABLE');
@@ -79,9 +94,10 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
 }
 function append(state: KanbanState, command: Extract<RecordCommand, {type: 'append-record'}>, actor: KanbanActor, now: number, forceDraft: boolean): void {
     validateSources(command.record.sources);
-    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,dependsOn,discussionSessionId,completion = command.record.completion ?? (command.record.kind === 'decision' ? 'automatic' : undefined),verificationLevel,deliveryMode,priority} = command.record;
+    const {id, kind, title, content, rationale, itemIds, sources, supersedes, coordination, externalRefs,dependsOn,discussionSessionId,completion = command.record.completion ?? (command.record.kind === 'decision' ? 'automatic' : undefined),verificationLevel,deliveryMode,priority,recurrence} = command.record;
+    if(recurrence){requireValue(kind==='decision','DECISION_REQUIRED');validateRecurrence(recurrence);}
     validateDecisionPriority(priority);requireValue(priority===undefined||kind==='decision','INVALID_RECORD_PRIORITY');
-    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(dependsOn?{dependsOn}:{}), ...(discussionSessionId ? {discussionSessionId} : {}), ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{}), ...(verificationLevel?{verificationLevel}:{}), ...(deliveryMode?{deliveryMode}:{}),...(priority!==undefined?{priority}:{})}); identity(input.id); text(input.title); text(input.content);
+    const input = structuredClone({id, kind, title, content, rationale, itemIds, sources: sources.map(source => ({sessionId: source.sessionId, messageId: source.messageId, revision: source.revision, role: source.role})), supersedes, ...(recurrence?{recurrence}:{}), ...(dependsOn?{dependsOn}:{}), ...(discussionSessionId ? {discussionSessionId} : {}), ...(coordination ? {coordination}: {}), ...(externalRefs ? {externalRefs} : {}),...(completion?{completion}:{}), ...(verificationLevel?{verificationLevel}:{}), ...(deliveryMode?{deliveryMode}:{}),...(priority!==undefined?{priority}:{})}); identity(input.id); text(input.title); text(input.content);
     requireValue(completion===undefined||kind==='decision'&&['manual','automatic'].includes(completion),'INVALID_COMPLETION_POLICY');
     if(completion)input.completion=completion;
     if(discussionSessionId!==undefined)identity(discussionSessionId);
@@ -97,7 +113,7 @@ function append(state: KanbanState, command: Extract<RecordCommand, {type: 'appe
     if (input.supersedes) {identity(input.supersedes); requireValue(input.kind === 'decision' && input.supersedes !== input.id
         && state.records?.some(record => record.id === input.supersedes && record.kind === 'decision' && record.status === 'confirmed'), 'INVALID_SUPERSEDED_RECORD');}
     const author = principal(actor), manual = author.kind === 'human' && !forceDraft;
-    (state.records ??= []).push({...input, author, origin: manual ? 'manual' : 'flow',
+    (state.records ??= []).push({...input,...(recurrence?{recurrenceRevision:1,hadRecurrence:true as const}:{}), author, origin: manual ? 'manual' : 'flow',
         status: manual && input.kind === 'log' ? 'confirmed' : 'draft', revision: 1, createdAt: now, updatedAt: now});
 }
 function validateCoordination(state: KanbanState, input: import('./contracts').KanbanRecordInput): void {
@@ -144,7 +160,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
 }
 
 export function recordFingerprint(record: import('./contracts').KanbanRecordInput): string {
-    return sha256HexSync(JSON.stringify({...(record.dependsOn?{dependsOn:record.dependsOn}:{}),...(record.priority!==undefined?{priority:record.priority}:{}),kind: record.kind, title: record.title, content: record.content, rationale: record.rationale ?? null, verificationLevel: record.verificationLevel ?? null, deliveryMode: record.deliveryMode ?? null,
+    return sha256HexSync(JSON.stringify({...(record.recurrence?{recurrence:record.recurrence}:{}),...(record.dependsOn?{dependsOn:record.dependsOn}:{}),...(record.priority!==undefined?{priority:record.priority}:{}),kind: record.kind, title: record.title, content: record.content, rationale: record.rationale ?? null, verificationLevel: record.verificationLevel ?? null, deliveryMode: record.deliveryMode ?? null,
         itemIds: [...record.itemIds].sort(), sources: record.sources.map(source => JSON.stringify([source.sessionId, source.messageId, source.role])).sort(), ...(record.coordination?{coordination:record.coordination}: {}), ...(record.externalRefs ? {externalRefs: record.externalRefs} : {})}));
 }
 
@@ -161,8 +177,24 @@ function validateRecordReferences(refs: import('./contracts').KanbanExternalRefe
 }
 
 export function recordSummary(record: KanbanProjectRecord): import('./contracts').KanbanRecordSummary {
-    const {content: _content, rationale: _rationale, sources, ...metadata} = record;
-    return {...metadata, sessionIds: [...new Set(sources.map(source => source.sessionId))]};
+    const {content: _content, rationale: _rationale, sources, recurrenceFence:_fence, ...metadata} = record;
+    return {...metadata,...(_fence?.pending.length?{recurrencePending:_fence.pending.length}:{}), sessionIds: [...new Set(sources.map(source => source.sessionId))]};
+}
+
+function reserveRecurrence(state:KanbanState,record:KanbanProjectRecord,command:Extract<RecordCommand,{type:'reserve-record-recurrence'}>,actor:KanbanActor,now:number):void {
+    requireReviewer(state.board,actor);
+    const fence=record.recurrenceFence??{pending:[]},last=fence.last;
+    if(last?.configRevision===command.configRevision&&last.scheduledAt>=command.scheduledAt)return;
+    requireValue(record.kind==='decision'&&record.status==='confirmed'&&record.archivedAt===undefined,'DECISION_NOT_CONFIRMED');
+    requireValue(record.recurrence?.state==='active','RECURRENCE_NOT_ACTIVE');
+    requireValue(record.recurrenceRevision===command.configRevision,'RECURRENCE_REVISION_CONFLICT');
+    requireValue(Number.isSafeInteger(command.scheduledAt)&&command.scheduledAt>=record.recurrence.firstAt&&command.scheduledAt<=now,'RECURRENCE_TIME_INVALID');
+    const id='round-'+sha256HexSync(JSON.stringify([state.board.id,record.id,command.configRevision,command.scheduledAt]));
+    const {recurrenceFence:_fence,...snapshot}=record;
+    const pending=fence.pending.length<record.recurrence.maxConcurrency
+        ?[...fence.pending,{id,configRevision:command.configRevision,scheduledAt:command.scheduledAt,record:structuredClone(snapshot)}]:fence.pending;
+    record.recurrenceFence={last:{configRevision:command.configRevision,scheduledAt:command.scheduledAt},pending};
+    record.updatedAt=now;record.revision++;
 }
 
 function linkedRecordTasks(state:KanbanState,record:KanbanProjectRecord){

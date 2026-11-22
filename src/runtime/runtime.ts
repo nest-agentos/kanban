@@ -12,6 +12,7 @@ import {KanbanAutomationJournal} from './automation-journal';
 import {KanbanWorkLog} from './work-log';
 import {defaultReferences} from './ports';
 import {createRecordExecution} from './record-execution';
+import {createRecurrenceScheduler,recurrenceNextTime} from './recurrence-scheduler';
 import {createKanbanAutomation} from './automation';
 import {createBoardDeletion,withBoardDeletion} from './board-deletion';
 import {scanBoardStopWork} from './board-stop-work';
@@ -48,11 +49,12 @@ function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeConte
     const restarts=createTaskRestart({service,journal,assertIdle:options.assertRestartIdle});
     const capabilities:Partial<import('../contracts').KanbanClient>=Object.assign({},...extensions.map(extension=>extension.capabilities));
     const records=options.resources?createRecordExecution({service,journal,dependencyRecords:async board=>(await client.records(board,{kind:'decision',includeArchived:true,limit:200})).items,dismissAttention:(board,request):Promise<void>=>dismissRecordAttention(client,journal,board,request),archiveSession:options.archiveSession,archiveItemResources:async(board,item,operation)=>{for(const extension of extensions)await extension.archiveItemResources?.(board,item,operation);},resources:options.resources,requiresItemResource:options.requiresItemResource,planningSession:capabilities.planningSession,log:options.log??(()=>{})}):undefined;
+    const recordApi=records?{itemResources:records.itemResources,recordDelivery:records.recordDelivery,recordResources:records.recordResources,runRecord:records.runRecord,controlRecord:records.controlRecord,recordSessions:records.recordSessions}:undefined;
     const archival=recordArchival(service,journal,options.log??(()=>{}),board=>client.records(board,{kind:'decision',includeArchived:true,limit:200}));
     const automation=options.automation?createKanbanAutomation({...options.automation,...context,
         directory:directory+'/automation',log:options.log??(()=>{})}):undefined;
     const client:import('../contracts').KanbanClient={...service,...capabilities,decisionSnapshot:(board,query)=>decisionSnapshot(client,board,query,options.log),previewTaskRestart:restarts.previewTaskRestart,restartTask:restarts.restartTask,
-        ...(records?{...records,recordExecutions:async(board:string,id:string)=>(await workLog.record(service,board,id)).kind==='decision'?records.recordExecutions(board,id):[]}:{}),
+        ...(records?{...recordApi,recordExecutionPage:records.recordExecutionPage,recordExecutions:async(board:string,id:string)=>(await workLog.record(service,board,id)).kind==='decision'?records.recordExecutions(board,id):[]}:{}),
         archiveRecords:archival.archiveRecords,
         controlRecord:async(board,request)=>{if(request.action==='archive')return archival.archive(board,request);if(!records){
             const record=request.action==='delete'?await service.record(board,request.recordId):undefined;
@@ -65,9 +67,10 @@ function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeConte
             for(const extension of extensions)if(extension.projectRecords)page=await extension.projectRecords(board,page);
             return withRecordAttention(page,board,journal);
         },
-        record:(board:string,id:string)=>workLog.record(service,board,id)};
+        record:async(board:string,id:string)=>{const record=await workLog.record(service,board,id),next=await recurrenceNextTime(journal,board,record);return next===undefined?record:{...record,recurrenceNextAt:next};}};
     const deletion=createBoardDeletion({service:client,journal});setDeletion(deletion.assertSettled);
-    const participants=[restarts,archival,...extensions,...records?[records]:[],...automation?[automation]:[]];
+    const recurrence=records?createRecurrenceScheduler(service,journal,records,options.log??(()=>{}),options.now??Date.now):undefined;
+    const participants=[restarts,archival,...extensions,...records?[records]:[],...recurrence?[recurrence]:[],...automation?[automation]:[]];
     const lifecycle=runtimeLifecycle(service,journal,participants,async()=>{
         await scanBoardStopWork({service,journal,ports:options.control??{control:{control:async()=> 'unknown'}},fixes:capabilities.cancelFix?{cancelFix:capabilities.cancelFix}:undefined,records});
         if(!automation&&options.control)for(const board of await service.list())await scanTaskControls(options.control,journal,board,service);

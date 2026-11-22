@@ -11,6 +11,12 @@ export interface KanbanRecordActivity {
 }
 export interface KanbanDecisionDependency {boardId:string;recordId:string;title?:string}
 export interface KanbanProjectRecord {
+    recurrence?:import('./recurrence').KanbanRecurrence;
+    hadRecurrence?:true;
+    recurrenceRevision?:number;
+    /** Read-only projection of the persisted scheduler cursor. */
+    recurrenceNextAt?:number;
+    recurrenceFence?:import('./recurrence').KanbanRecurrenceFence;
     dependsOn?:KanbanDecisionDependency[];
     priority?: 0 | 1 | 2 | 3 | 4;
     /** Immutable, host-projected activity; decisions remain in the coordination store. */
@@ -30,7 +36,7 @@ export interface KanbanProjectRecord {
     revision: number; createdAt: number; updatedAt: number; reviewedBy?: KanbanPrincipal;
     supersedes?: string; supersededBy?: string;
 }
-export type KanbanRecordInput = Pick<KanbanProjectRecord, 'dependsOn' | 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs' | 'completion' | 'verificationLevel' | 'deliveryMode' | 'discussionSessionId' | 'priority'>;
+export type KanbanRecordInput = Pick<KanbanProjectRecord, 'recurrence' | 'dependsOn' | 'id' | 'kind' | 'title' | 'content' | 'rationale' | 'itemIds' | 'sources' | 'supersedes' | 'coordination' | 'externalRefs' | 'completion' | 'verificationLevel' | 'deliveryMode' | 'discussionSessionId' | 'priority'>;
 export interface KanbanRecordParticipationTarget {
     itemId:string;title:string;resourceId?:string;purpose:'management'|'execution';phase:import('./task-state').KanbanTaskPhase;
 }
@@ -47,6 +53,6 @@ export interface KanbanRecordProgress {
     reason?: string; boardId?:string; itemId?: string; sessionId?: string; lastActivityAt: number;
 }
 export interface KanbanRecordAttentionDismissal {fingerprint:string;operationId:string;actor:KanbanPrincipal;at:number}
-export type KanbanRecordSummary = Omit<KanbanProjectRecord, 'content' | 'rationale' | 'sources'> & {attentionDismissal?:KanbanRecordAttentionDismissal;progress?:KanbanRecordProgress;sessionIds:string[];attention?:'waiting-input'|'error'|'review';attentionCode?:string;attentionItemId?:string;attentionTasks?:Array<{itemId:string;title:string;phase:'waiting-input'|'error'|'unknown';purpose:'planning'|'execution';sessionId?:string}>};
+export type KanbanRecordSummary = Omit<KanbanProjectRecord, 'content' | 'rationale' | 'sources' | 'recurrenceFence'> & {recurrencePending?:number;attentionDismissal?:KanbanRecordAttentionDismissal;progress?:KanbanRecordProgress;sessionIds:string[];attention?:'waiting-input'|'error'|'review';attentionCode?:string;attentionItemId?:string;attentionTasks?:Array<{itemId:string;title:string;phase:'waiting-input'|'error'|'unknown';purpose:'planning'|'execution';sessionId?:string}>};
 export interface KanbanRecordQuery {resource?:import('./configuration').KanbanExternalReference;includeDeleted?: boolean; includeArchived?:boolean; kind?: KanbanProjectRecord['kind']; itemId?: string; status?: KanbanProjectRecord['status']; limit?: number; cursor?: string}
 export interface KanbanRecordPage {revision: number; total: number; items: KanbanRecordSummary[]; nextCursor?: string}

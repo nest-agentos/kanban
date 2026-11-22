@@ -22,6 +22,8 @@ export interface KanbanItemOperation extends KanbanOperationFact {
     openSessionOnRun?: boolean;
 }
 export interface KanbanItemOperations {
+    /** Settled or uncertain persisted attempts retained for an archived owner. */
+    history?:KanbanItemOperation[];
     pluginId?:string;
     plugins?:Array<{id:string;version:string;label:string;view:KanbanItemOperations}>;
     code?:string;

@@ -7,6 +7,7 @@ export type {KanbanActor, KanbanEstimate, KanbanPolicy, KanbanParticipant, Kanba
 export type {KanbanSuggestionKind, KanbanSuggestionQuery, KanbanSuggestion, KanbanSuggestionPage} from './suggestions';
 export type {KanbanSourceRef, KanbanDiscoveryChange, KanbanDiscoveryBatch} from './source';
 export type {KanbanDecisionDependency, KanbanText, KanbanAmendment, KanbanProjectRecord, KanbanRecordActivity, KanbanRecordParticipationTarget, KanbanRecordProgress, KanbanRecordInput, KanbanRecordSummary, KanbanRecordQuery, KanbanRecordPage} from './context';
+export type {KanbanRecurrence,KanbanRecurrenceFence,KanbanRecurrenceReservation} from './recurrence';
 export type {KanbanArtifactRef, KanbanWorkDefinition, KanbanWorkPlan, KanbanPublishedPlan, KanbanDispatch, KanbanWorkflowState, KanbanWorkflowCommand} from './workflow';
 
 export type {KanbanScanSession, KanbanScanText, KanbanScanConnection, KanbanScanPolicy, KanbanScanInput, KanbanDiscoveryResult} from './discovery';
@@ -17,7 +18,7 @@ export type {KanbanSessionPurpose, KanbanSessionExecution, KanbanSessionAssociat
 export type {KanbanContent, KanbanContentItem, KanbanContentRecord, KanbanContentAmendment} from './content';
 export type {KanbanAutomationSettings, KanbanAutomationOption, KanbanAutomationTarget, KanbanAutomationCatalog, KanbanAnalysisStatus} from './automation';
 export {sameAutomationBinding} from './automation';
-export type {KanbanItemResourceCatalog, KanbanRecordResource, KanbanRecordExecution, KanbanRecordRunRequest} from './record-execution';
+export type {KanbanItemResourceCatalog, KanbanRecordResource, KanbanRecordExecution, KanbanRecordExecutionPage, KanbanRecordRunRequest} from './record-execution';
 export type {KanbanWorkResource, KanbanWorkResourceCleanup, KanbanWorkResourceQuery} from './work-resources';
 export type {KanbanOperationFact, KanbanOperationAttention, KanbanOperationChoice, KanbanOperationField, KanbanItemOperation, KanbanItemOperations, KanbanItemOperationRequest, KanbanItemOperationBinding,KanbanOperationPluginDescriptor} from './operations';
 

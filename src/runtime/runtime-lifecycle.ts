@@ -6,6 +6,10 @@ import type {KanbanAutomationJournal} from './automation-journal';
 import type {KanbanRuntimeExtension} from './runtime-ports';
 import {safeCode} from './diagnostics';
 export async function verifyRuntimeLifecycle(service:KanbanService,journal:KanbanAutomationJournal,board:KanbanBoard,command:KanbanCommand) {
+    if(command.type==='settle-record-recurrence'){
+        const run=await journal.run<import('../contracts').KanbanRecordExecution>(board.id,command.roundId);
+        if(!run||run.recordId!==command.recordId||!['completed','failed','cancelled'].includes(run.state))throw new KanbanError('RECURRENCE_SETTLEMENT_UNCONFIRMED');
+    }
     if(command.type==='archive-record')await verifyRecordArchive(journal,board.id,command.recordId,id=>service.records(id,{kind:'decision',includeArchived:true,limit:200}));
     if(command.type==='delete-item') {
         const blocker=(await boardDeletionBlockers({service,journal},board.id)).find(row=>row.itemId===command.itemId);

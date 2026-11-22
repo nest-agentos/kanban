@@ -6,11 +6,13 @@ export interface KanbanItemResourceCatalog {resources:KanbanRecordResource[];sel
 export interface KanbanRecordExecution {
     dependencies?:Array<import('./context').KanbanDecisionDependency&{state:'waiting'|'completed'|'unavailable'}>;
     id: string; recordId: string; recordRevision: number; boardId: string;
+    scheduledAt?:number; recurrenceRevision?:number;
     completion?:import('./task-state').KanbanTaskProjection['completion'];
     rootItemId?: string; itemIds?: string[]; stage?:'planning'|'execution';
     state: 'preparing' | 'running' | 'blocked' | 'review' | 'completed' | 'failed' | 'cancelling' | 'cancelled' | 'pausing' | 'paused' | 'resuming' | 'unknown';
     createdAt: number; updatedAt: number; archivedAt?:number; code?: string;
 }
+export interface KanbanRecordExecutionPage {items:KanbanRecordExecution[];active:KanbanRecordExecution[];nextCursor?:string}
 export interface KanbanRecordRunRequest {
     operationId: string; recordId: string; expectedRevision: number;
     placement?: 'current-board' | 'new-board';

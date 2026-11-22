@@ -82,6 +82,7 @@ class KanbanModule implements KanbanService {
         await this.authorize(state.board, request.command.type, request.command);
         requireValue(state.board.deletedAt === undefined, 'BOARD_DELETED');
         if (request.command.type === 'delete-board') await this.options.verifyDeletion?.(structuredClone(state.board));
+        if (request.command.type === 'settle-record-recurrence') requireValue(this.options.verifyLifecycle,'RECURRENCE_SETTLEMENT_UNCONFIRMED');
         await this.options.verifyLifecycle?.(structuredClone(state.board), request.command);
         await this.verifyRelease(state.board, request.command);
         const verifyStage = request.command.type === 'observe-execution' && request.command.outcome === 'succeeded' ? 'observe'

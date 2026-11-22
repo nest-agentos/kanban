@@ -10,11 +10,10 @@ export async function workContext(journal:KanbanAutomationJournal,board:KanbanBo
     const runId=item.externalRefs?.find(ref=>ref.system===references.decision)?.id;
     let decision=runId?await journal.get<DecisionContext>('record-context:'+runId):undefined;
     if(runId&&!decision) {
-        const runs=await journal.get<Array<{id:string;sourceBoardId:string;recordId:string;recordRevision:number}>>('record-runs:'+board.id);
-        const run=runs?.find(run=>run.id===runId);
+        const run=await journal.run<{id:string;sourceBoardId:string;recordId:string;recordRevision:number}>(board.id,runId);
         if(run)decision={sourceBoardId:run.sourceBoardId,recordId:run.recordId,recordRevision:run.recordRevision,runId};
     }
-    const snapshot = decision ? (await journal.get<Array<{id:string;record:unknown}>>('record-runs:'+decision.sourceBoardId))?.find(run=>run.id===decision?.runId)?.record : undefined;
+    const snapshot = decision ? (await journal.run<{record:unknown}>(decision.sourceBoardId,decision.runId))?.record : undefined;
     if(decision){const {previousRunId:_previous,...current}=decision;decision=current;}
     const own=await currentAnalysis(journal,board.id,item.id);
     const approved=own?.status.state==='ready'?own:item.planning?.parentId?await currentAnalysis(journal,board.id,item.planning.parentId):undefined;

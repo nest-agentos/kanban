@@ -62,7 +62,7 @@ export interface KanbanClient extends KanbanService {
     startRecordConversation?(boardId:string,request:import('./record-conversation').KanbanRecordConversationRequest):Promise<import('./record-conversation').KanbanRecordConversation>;
     openTaskCommunication?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
     openTaskCoordination?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
-    openRecordCoordination?(boardId:string,request:{recordId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
+    openRecordCoordination?(boardId:string,request:{recordId:string;operationId:string;runId?:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
     removeRecordConversations?(boardId:string,request:import('./record-conversation').KanbanRecordDraftRemovalRequest):Promise<import('./record-conversation').KanbanRecordDraftRemovalResult>;
     controlRecordConversation?(boardId:string,request:import('./record-conversation').KanbanRecordConversationControl):Promise<void>;
     decisionSnapshot?(boardId:string,query?:import('./decision-page').KanbanDecisionQuery):Promise<import('./decision-page').KanbanDecisionSnapshot>;
@@ -73,6 +73,7 @@ export interface KanbanClient extends KanbanService {
     planningSession?(boardId: string, itemId: string): Promise<KanbanPlanningSession | undefined>;
     recordSessions?(boardId:string,recordId:string,query?:{includeArchived?:boolean}): Promise<KanbanPlanningSession[]>;
     recordExecutions?(boardId: string, recordId: string): Promise<import('./record-execution').KanbanRecordExecution[]>;
+    recordExecutionPage?(boardId:string,recordId:string,query?:{limit?:number;cursor?:string}):Promise<import('./record-execution').KanbanRecordExecutionPage>;
     automationCatalog?(): Promise<import('./automation').KanbanAutomationCatalog>;
     analysisStatus?(boardId: string, itemId: string): Promise<import('./automation').KanbanAnalysisStatus | null>;
     queryActivity?(boardId: string, query?: KanbanSessionActivityQuery): Promise<KanbanSessionItemPage>;

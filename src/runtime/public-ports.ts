@@ -32,7 +32,7 @@ export interface KanbanRuntimeOptions {
     log?(event:KanbanRuntimeDiagnostic):void;
 }
 /** All persistence, projections, control and deletion barriers are owned by this service. */
-export interface KanbanRuntime extends KanbanService,Pick<KanbanClient,'itemOperations'|'runItemOperation'|'bindItemOperation'|'previewTaskRestart'|'restartTask'|'records'|'record'|'runRecord'|'recordExecutions'|'controlRecord'|'archiveRecords'|'itemResources'|'recordDelivery'|'recordResources'|'previewDeletion'|'deleteBoard'|'cancelBoard'|'requestBoardDeletion'|'queryActivity'|'executionSession'|'automationCatalog'|'analysisStatus'> {
+export interface KanbanRuntime extends KanbanService,Pick<KanbanClient,'itemOperations'|'runItemOperation'|'bindItemOperation'|'previewTaskRestart'|'restartTask'|'records'|'record'|'runRecord'|'recordExecutions'|'recordExecutionPage'|'controlRecord'|'archiveRecords'|'itemResources'|'recordDelivery'|'recordResources'|'previewDeletion'|'deleteBoard'|'cancelBoard'|'requestBoardDeletion'|'queryActivity'|'executionSession'|'automationCatalog'|'analysisStatus'> {
     results(boardId:string,dispatchId:string):Promise<Array<{reference:KanbanArtifactRef;value:unknown}>>;
     quiesce():Promise<void>;dispose():Promise<void>;
 }
