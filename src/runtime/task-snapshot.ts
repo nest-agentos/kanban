@@ -32,7 +32,7 @@ async function taskSections(service:KanbanClient,board:KanbanTaskSnapshot['board
     const {item,archive}=detail,{id:boardId}=board,{id:itemId}=item,coordination=kanbanTaskType(item)==='coordination';
     const group=item.planning?.execution==='children';
     const query={parentId:itemId,view:'all' as const,limit:50};
-    const phase=projectKanbanTask(item).phase;
+    const phase=(detail.task??projectKanbanTask(item)).phase;
     const [resources,operations,planning,execution,recovery,children,workResources,successors]=await Promise.all([
         read('resources',service.recordResources&&(()=>service.recordResources!())),
         read('operations',service.itemOperations&&(()=>service.itemOperations!(boardId,itemId))),
