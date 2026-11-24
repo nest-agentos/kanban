@@ -121,3 +121,14 @@ it('keeps recurring decisions and their drafts in the recurring view only', asyn
         ['board',expect.objectContaining({recurring:true})],
     ]);
 });
+
+it('defaults to unfinished decisions and exposes completed and archived decisions through explicit filters', async () => {
+    const completed = {state:'completed' as const,lastActivityAt:2};
+    const f=fixture([record('pending'),{...record('done'),progress:completed},{...record('archive'),progress:completed,archivedAt:3}]);
+    const ids=async (query:Parameters<typeof decisionSnapshot>[2])=>
+        (await decisionSnapshot(f.source,'board',query)).page?.decisionRows.map(row=>row.value.id);
+    expect(await ids({})).toEqual(['pending']);
+    expect(await ids({states:['completed']})).toEqual(['done']);
+    expect(await ids({includeArchived:true})).toEqual(['archive','pending']);
+    expect(await ids({archived:true})).toEqual(['archive']);
+});

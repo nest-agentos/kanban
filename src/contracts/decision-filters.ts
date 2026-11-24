@@ -31,7 +31,11 @@ export function decisionPageFilter(rows:KanbanDecisionRow[],query:KanbanDecision
     if(search)rows=rows.filter(row=>normalizedTitle(row.value.title??'').includes(search));
     const attention=new Set(rows.filter(row=>decisionRowPriority(row)===0));
     const states=new Set(query.states);
-    const byState=states.size?rows.filter(row=>states.has(decisionRowState(row).state)||(states.has('attention')&&attention.has(row))):rows;
+    const byState=rows.filter(row=>{
+        const state=decisionRowState(row).state;
+        if(states.size)return states.has(state)||(states.has('attention')&&attention.has(row));
+        return state!=='completed'||query.archived||(query.includeArchived&&row.kind==='record'&&row.value.archivedAt!==undefined);
+    });
     const needsAttention=byState.filter(row=>attention.has(row));
     return {attentionTotal:needsAttention.length,visible:query.attentionOnly?needsAttention:byState};
 }
