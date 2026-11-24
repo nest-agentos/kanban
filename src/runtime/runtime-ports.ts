@@ -14,6 +14,7 @@ export interface KanbanRuntimeContext {
 /** Extensions bind host facilities; recovery and shutdown are coordinated by the runtime. */
 export interface KanbanRuntimeExtension {
     operationPlugins?:import('./operation-plugins').KanbanOperationPlugin[];
+    projectManagementTask?(boardId:string,itemId:string,task:import('../contracts').KanbanTaskProjection):Promise<import('../contracts').KanbanTaskProjection>;
     projectRecords?(boardId:string,page:import('../contracts').KanbanRecordPage):Promise<import('../contracts').KanbanRecordPage>;
     archiveItemResources?(boardId:string,itemId:string,operationId:string):Promise<void>;
     capabilities?:Partial<KanbanClient>;

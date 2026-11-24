@@ -25,6 +25,7 @@ interface SavedRun extends KanbanRecordExecution {
     sourceBoardId: string; record: KanbanProjectRecord; automation: NonNullable<KanbanBoard['automation']>}
 type RunReceipt = Pick<SavedRun, 'id' | 'sourceBoardId' | 'recordId' | 'recordRevision' | 'requestRevision' | 'placement'> & {schema?: 2};
 interface Options {
+    projectManagementTask?(boardId:string,itemId:string,task:import('../contracts').KanbanTaskProjection):Promise<import('../contracts').KanbanTaskProjection>;
     dependencyRecords?(board:string):Promise<import('../contracts').KanbanRecordSummary[]>;
     dismissAttention?(boardId:string,request:Parameters<NonNullable<KanbanClient['controlRecord']>>[1]):Promise<void>;
     archiveItemResources?(boardId:string,itemId:string,operationId:string):Promise<void>;
@@ -344,7 +345,10 @@ async function readManagementTasks(options:Options,boardId:string,runs:KanbanRec
         const batch=ids.slice(offset,offset+200),started=Date.now();
         try{
             const page=await options.service.query(boardId,{ids:batch,view:'all',limit:200});
-            for(const {id,title,task} of page.items)tasks.set(id,{id,title,task});
+            await Promise.all(page.items.map(async ({id,title,task})=>{
+                const projected=task?.reason==='GROUP_SETTLEMENT_PENDING'&&options.projectManagementTask ? await options.projectManagementTask(boardId,id,task) : task;
+                tasks.set(id,{id,title,task:projected});
+            }));
             options.log({operationId:runs[0].id,boardId,stage:'record.management-tasks.read',result:'success',durationMs:Date.now()-started});
         }catch(error){
             const code=safeCode(error,'OPERATION_UNAVAILABLE');

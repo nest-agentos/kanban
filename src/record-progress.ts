@@ -57,10 +57,11 @@ function groupCompletion(facts:Fact[]):KanbanRecordProgress['completion'] {
 
 /** Cleanup follow-ups preserve the accepted delivery state. */
 export function recordFinalization(progress:KanbanRecordProgress,followUps:NonNullable<KanbanRecordProgress['followUps']>):KanbanRecordProgress {
-    if(progress.state!=='completed'||!followUps.length)return {...progress,followUps};
+    if(progress.state!=='completed'&&progress.reason!=='GROUP_SETTLEMENT_PENDING'||!followUps.length)return {...progress,followUps};
     const delivery=followUps.filter(row=>row.phase!=='cleanup');
     if(!delivery.length)return {...progress,followUps};
     const pending=delivery.find(row=>row.state==='unknown')??delivery.find(row=>row.state==='blocked')??delivery.find(row=>row.requiresConfirmation)??delivery[0];
-    return {...progress,followUps,stage:'finalization',state:pending.state==='unknown'?'checking':pending.state==='blocked'||pending.requiresConfirmation?'needs-action':'running',
+    const phase=pending.state==='unknown'?'unknown':pending.state==='blocked'?'error':pending.requiresConfirmation?'waiting-input':'running';
+    return {...progress,followUps,phase,stage:'finalization',state:pending.state==='unknown'?'checking':pending.state==='blocked'||pending.requiresConfirmation?'needs-action':'running',
         boardId:pending.boardId,itemId:pending.itemId,reason:pending.code??(pending.requiresConfirmation?'confirmation-required':'finalization-pending')};
 }
