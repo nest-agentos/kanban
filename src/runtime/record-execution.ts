@@ -1,3 +1,4 @@
+import {forEachRecordScope} from './record-read-scopes';
 import {withRecordProgress} from './record-progress';
 import {validateDecisionDependencies,decisionDependencyStates} from './record-dependencies';
 import type {DecisionContext} from './work-context';
@@ -110,15 +111,20 @@ export function createRecordExecution(options: Options) {
             const sessions = await Promise.all([...targets.values()].map(row => options.planningSession?.(row.board,row.id)));
             return sessions.filter((row): row is NonNullable<typeof row> => !!row);
         },
-        recordExecutions: async (boardId: string, recordId: string) => {
+        recordExecutions: async (boardId: string, recordId: string, query?:{includeManagementTasks?:boolean}) => {
             await options.service.record(boardId, recordId);
             const runs = await options.journal.runSummaries(boardId,recordId);
-            return runs.filter(run => run.recordId === recordId).map(view);
+            const projected=runs.filter(run => run.recordId === recordId).map(view);
+            if(query?.includeManagementTasks)await attachManagementTasks(options,projected);
+            return projected;
         },
-        recordExecutionPage:async(boardId:string,recordId:string,query?:{limit?:number;cursor?:string})=>{
+        recordExecutionPage:async(boardId:string,recordId:string,query?:{limit?:number;cursor?:string;includeManagementTasks?:boolean|'page'})=>{
             if((await options.service.record(boardId,recordId)).kind!=='decision')return {items:[],active:[]};
             const page=await options.journal.runHistoryPage(boardId,recordId,query?.limit??20,query?.cursor);
-            return {...page,items:page.items.map(view),active:page.active.map(view)};
+            const active=page.active.map(view);
+            const items=page.items.map(view);
+            if(query?.includeManagementTasks)await attachManagementTasks(options,query.includeManagementTasks==='page'?[...active,...items]:active, query.includeManagementTasks==='page');
+            return {...page,items,active};
         },
         async scan() {
             if (stopped) return;
@@ -318,6 +324,35 @@ async function once(options: Options, run: SavedRun, stage: string, command: Kan
 }
 async function save(options: Options, run: SavedRun): Promise<SavedRun> {
     return options.journal.saveRun(run.sourceBoardId,run);
+}
+
+async function attachManagementTasks(options:Options,runs:KanbanRecordExecution[],includeArchived=false):Promise<void> {
+    const scopes=new Map<string,KanbanRecordExecution[]>();
+    for(const run of runs){
+        if((!includeArchived&&run.archivedAt!==undefined)||(!run.rootItemId&&!run.itemIds?.length))continue;
+        const rows=scopes.get(run.boardId)??[];
+        rows.push(run);scopes.set(run.boardId,rows);
+    }
+    await forEachRecordScope(scopes,([boardId,rows])=>readManagementTasks(options,boardId,rows));
+}
+
+async function readManagementTasks(options:Options,boardId:string,runs:KanbanRecordExecution[]):Promise<void> {
+    const idsFor=(run:KanbanRecordExecution)=>run.rootItemId?[run.rootItemId]:run.itemIds??[];
+    const ids=[...new Set(runs.flatMap(idsFor))];
+    const tasks=new Map<string,NonNullable<KanbanRecordExecution['managementTasks']>[number]>();
+    for(let offset=0;offset<ids.length;offset+=200){
+        const batch=ids.slice(offset,offset+200),started=Date.now();
+        try{
+            const page=await options.service.query(boardId,{ids:batch,view:'all',limit:200});
+            for(const {id,title,task} of page.items)tasks.set(id,{id,title,task});
+            options.log({operationId:runs[0].id,boardId,stage:'record.management-tasks.read',result:'success',durationMs:Date.now()-started});
+        }catch(error){
+            const code=safeCode(error,'OPERATION_UNAVAILABLE');
+            for(const id of batch)tasks.set(id,{id,code});
+            options.log({operationId:runs[0].id,boardId,stage:'record.management-tasks.read',result:'failure',code,durationMs:Date.now()-started});
+        }
+    }
+    for(const run of runs)run.managementTasks=idsFor(run).map(id=>tasks.get(id)??{id,code:'TASK_GROUP_UNAVAILABLE'});
 }
 
 function view(run: KanbanRecordExecution): KanbanRecordExecution {

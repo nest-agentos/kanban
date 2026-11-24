@@ -11,7 +11,7 @@ export const decisionFilterStates=['attention','waiting','running','completed','
 export type DecisionFilterState=typeof decisionFilterStates[number];
 export const DECISION_SEARCH_LIMIT=160;
 export interface KanbanDecisionFilters {search?:string;resources?:KanbanExternalReference[];states?:DecisionFilterState[];includeArchived?:boolean;attentionOnly?:boolean;}
-export interface KanbanDecisionQuery extends KanbanDecisionFilters {resource?:KanbanExternalReference;cursor?:string;sort?:DecisionSort;archived?:boolean;sections?:Array<'page'|'catalog'|'projects'>;locale?:string}
+export interface KanbanDecisionQuery extends KanbanDecisionFilters {resource?:KanbanExternalReference;cursor?:string;sort?:DecisionSort;archived?:boolean;recurring?:boolean;sections?:Array<'page'|'catalog'|'projects'>;locale?:string}
 export interface KanbanDecisionPage extends KanbanRecordPage {decisionRows:KanbanDecisionRow[];conversationCode?:string;conversationSignature?:string;attentionTotal?:number;dismissAvailable?:boolean;dismissConversationAvailable?:boolean}
 export interface KanbanDecisionSnapshot {page?:KanbanDecisionPage;boards?:KanbanBoardSummary[];resources?:KanbanRecordResource[];resourceCode?:string;observedAt:number}
 

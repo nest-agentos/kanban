@@ -139,6 +139,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
     const {cursor, ...filter} = query, limit = query.limit ?? 50;
     requireValue(Number.isSafeInteger(limit) && limit > 0 && limit <= 200, 'INVALID_LIMIT');
     if (query.kind) requireValue(['log', 'decision'].includes(query.kind), 'INVALID_RECORD_KIND');
+    requireValue(query.recurring === undefined || typeof query.recurring === 'boolean', 'INVALID_RECORD_QUERY');
     if (query.itemId !== undefined) identity(query.itemId);
     if (query.resource !== undefined) validateRecordReferences([query.resource]);
     validateRecordReferences(query.resources);
@@ -152,6 +153,7 @@ export function queryRecords(state: KanbanState, query: KanbanRecordQuery = {}, 
         offset = decoded.offset; requireValue(Number.isSafeInteger(offset) && offset >= 0, 'INVALID_CURSOR');
     }
     const matched = summaries.filter(record => (query.includeDeleted || record.deletedAt === undefined) && (query.includeArchived || record.archivedAt===undefined) && (!query.kind || query.kind === record.kind)
+        && (query.recurring === undefined || !!record.recurrence === query.recurring)
         && (!query.resource || record.externalRefs?.some(ref=>ref.system===query.resource!.system&&ref.id===query.resource!.id))
         && (!query.resources?.length || record.externalRefs?.some(ref => query.resources!.some(project=>ref.system===project.system&&ref.id===project.id)))
         && (!query.itemId || record.itemIds.includes(query.itemId)) && (!query.status || query.status === record.status))

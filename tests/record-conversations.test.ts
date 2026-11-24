@@ -160,3 +160,17 @@ it('freezes the selected module IDs with the original conversation operation',as
  await expect(runtime.startRecordConversation('board',{operationId:'bad',moduleIds:['unknown','unknown']})).rejects.toMatchObject({code:'DECISION_MODULES_INVALID'});
  expect((await runtime.startRecordConversation('board',{operationId:request.operationId})).moduleIds).toEqual(request.moduleIds);
 });
+
+it('persists the source Session before transport and rejects a changed source on retry', async () => {
+ const f=await fixture(),runtime=createRecordConversations(f.options);closes.push(()=>runtime.quiesce());
+ const recurrence={state:'active' as const,firstAt:Date.now()+60000,timeZone:'UTC',cadence:{kind:'interval' as const,milliseconds:60000},trigger:'fixed' as const,maxConcurrency:1};
+ const sourceSession={projectId:'project',profileId:'codex',sessionId:'original'};
+ const request={operationId:'source-loop',recurrence,sourceSession};
+ f.port.prepare.mockRejectedValueOnce(Object.assign(Error('Read failed'),{code:'EIO'}));
+ await expect(runtime.startRecordConversation('board',request)).rejects.toMatchObject({code:'EIO'});
+ await expect(runtime.startRecordConversation('board',{...request,sourceSession:{...sourceSession,sessionId:'different'}})).rejects.toMatchObject({code:'IDEMPOTENCY_CONFLICT'});
+ const recovered=await runtime.startRecordConversation('board',{operationId:request.operationId});
+ expect(recovered.sourceSession).toEqual(sourceSession);
+ expect(f.port.prepare).toHaveBeenLastCalledWith('source-loop','board',undefined,undefined,undefined,sourceSession);
+ expect(f.port.start).toHaveBeenCalledOnce();
+});

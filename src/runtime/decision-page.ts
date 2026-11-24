@@ -30,7 +30,7 @@ function validateQuery(query:KanbanDecisionQuery):void {
     if(!query||typeof query!=='object'||Array.isArray(query))throw new KanbanError('INVALID_DECISION_QUERY');
     if(query.sort!==undefined&&!decisionSorts.includes(query.sort)||query.cursor!==undefined&&(typeof query.cursor!=='string'||query.cursor.length>1024))throw new KanbanError('INVALID_DECISION_QUERY');
     if(query.sections!==undefined&&(!Array.isArray(query.sections)||query.sections.some(section=>!['page','catalog','projects'].includes(section))))throw new KanbanError('INVALID_DECISION_SECTIONS');
-    if([query.archived,query.includeArchived,query.attentionOnly].some(value=>value!==undefined&&typeof value!=='boolean'))throw new KanbanError('INVALID_DECISION_QUERY');
+    if([query.archived,query.includeArchived,query.attentionOnly,query.recurring].some(value=>value!==undefined&&typeof value!=='boolean'))throw new KanbanError('INVALID_DECISION_QUERY');
     if(query.resource&&(!query.resource.system||!query.resource.id||typeof query.resource.system!=='string'||typeof query.resource.id!=='string'))throw new KanbanError('INVALID_DECISION_QUERY');
     validateFilters(query);
     try{if(query.locale!==undefined)new Intl.Collator(query.locale,{numeric:true,sensitivity:'base'});}catch{throw new KanbanError('INVALID_DECISION_LOCALE');}
@@ -61,7 +61,7 @@ function composePage(records:Awaited<ReturnType<KanbanClient['records']>>,conver
     try{collator=query.locale?new Intl.Collator(query.locale,{numeric:true,sensitivity:'base'}):undefined;}catch{throw new KanbanError('INVALID_DECISION_LOCALE');}
     rows.sort((a,b)=>compareDecisionRows(a,b,sort,row=>projectLabel(row,resources),collator));
     const {attentionTotal,visible}=decisionPageFilter(rows,query);
-    const scope={boardId,locale:query.locale??null,resource:query.resource??null,search:query.search??'',resources:query.resources??[],states:query.states??[],includeArchived:!!query.includeArchived,sort,attentionOnly:!!query.attentionOnly,archived:!!query.archived,revision:records.revision,
+    const scope={boardId,recurring:query.recurring??false,locale:query.locale??null,resource:query.resource??null,search:query.search??'',resources:query.resources??[],states:query.states??[],includeArchived:!!query.includeArchived,sort,attentionOnly:!!query.attentionOnly,archived:!!query.archived,revision:records.revision,
         rows:rows.map(row=>[row.kind,row.value.id,decisionRowState(row).state,row.value.createdAt,decisionRowState(row).lastActivityAt,row.kind==='record'?row.value.archivedAt:null]),projects:sort.startsWith('project-')?rows.map(row=>projectLabel(row,resources)):undefined};
     const fingerprint=sha256HexSync(JSON.stringify(scope)),offset=cursorOffset(query.cursor,fingerprint);
     const decisionRows=visible.slice(offset,offset+50),items=decisionRows.flatMap(row=>row.kind==='record'?[row.value]:[]);

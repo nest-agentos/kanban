@@ -3,7 +3,7 @@ import type {KanbanDispatch,KanbanItem,KanbanItemSummary,KanbanWorkflowState,Kan
 
 type Item=Pick<KanbanItem,'acceptanceResult'|'repairPending'|'executionEpoch'|'restartPending'|'deletedAt'|'id'|'status'|'createdAt'|'launch'|'analysis'|'control'|'issues'|'blocked'|'externalRefs'|'planning'>&Pick<KanbanItemSummary,'executionCheckWaivers'>;
 type Related=Pick<KanbanItemSummary,'id'|'status'>&Partial<KanbanItemSummary>;
-type Fact={phase:KanbanTaskPhase;reason?:string;reasonDetail?:string;actions?:KanbanTaskProjection['actions']};
+type Fact={blockingChild?:KanbanTaskProjection['blockingChild'];phase:KanbanTaskPhase;reason?:string;reasonDetail?:string;actions?:KanbanTaskProjection['actions']};
 export const TASK_START_DELAY_MS=300000;
 export function taskStartAt(item:Pick<Item,'createdAt'|'launch'>):number {return item.launch?.startAt??item.createdAt+TASK_START_DELAY_MS;}
 export function taskEditing(item:Pick<Item,'launch'>,now:number):boolean {return item.launch?.editing?.persistent===true||(item.launch?.editing?.expiresAt??0)>now;}
@@ -71,9 +71,11 @@ function groupFact(item:Item,workflow:KanbanWorkflowState|undefined,now:number,a
     if(!children.length)return {phase:'waiting-dependency',reason:'CHILDREN_UNFINISHED'};
     const tasks=children.map(child=>projectKanbanTask(child as Item,workflow,now,all));
     const phases=tasks.map(task=>task.phase);
-    if(phases.includes('error'))return {phase:'error',reason:'GROUP_CHILD_ERROR',reasonDetail:tasks.find(task=>task.phase==='error')?.reasonDetail};
-    if(phases.includes('unknown'))return {phase:'unknown',reason:'GROUP_CHILD_UNCONFIRMED'};
-    if(phases.includes('waiting-input'))return {phase:'waiting-input',reason:'GROUP_INPUT_REQUIRED',reasonDetail:tasks.find(task=>task.phase==='waiting-input')?.reasonDetail};
+    const blocker=[['error','GROUP_CHILD_ERROR'],['unknown','GROUP_CHILD_UNCONFIRMED'],['waiting-input','GROUP_INPUT_REQUIRED']] as const;
+    for(const [phase,reason] of blocker){
+        const index=phases.indexOf(phase);
+        if(index>=0)return {phase,reason,reasonDetail:tasks[index].reasonDetail,blockingChild:{id:children[index].id,title:children[index].title}};
+    }
     if(phases.includes('review'))return {phase:'review',reason:'GROUP_CHILD_REVIEW'};
     if(phases.some(phase=>['running','preparing','analyzing','queued','resuming'].includes(phase)))return {phase:'running',reason:'GROUP_CHILD_RUNNING'};
     if(phases.some(phase=>phase==='paused')&&phases.every(phase=>phase==='paused'||phase==='completed'))return {phase:'paused',reason:'GROUP_CHILD_PAUSED'};

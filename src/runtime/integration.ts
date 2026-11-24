@@ -52,7 +52,7 @@ export {managementTaskOwner,resolveManagementTaskOwner} from './coordination-rul
 export {registerSessionLearnings,type SessionLearningInput} from './session-learnings';
 export {parseSessionLearnings,learningText} from './session-learnings-input';
 
-export {registerTaskResultRecovery,resumeTaskResultRecovery,type TaskResultRecovery,type TaskResultRecoveryPorts} from './task-result-recovery';
+export {registeredTaskResult,registerTaskResultRecovery,resumeTaskResultRecovery,type TaskResultRecovery,type TaskResultRecoveryPorts} from './task-result-recovery';
 
 export {automaticDelivery,automaticDeliveryStatus,automaticDeliveryStatuses,settleWorkspaceFinalization} from './automatic-delivery';
 export {deliveryKey,deliverySteps,deliveryComplete,deliveryNeedsAuthority,deliveryStatus} from './automatic-delivery-state';
@@ -60,7 +60,7 @@ export {claimDeliveryTarget,releaseDeliveryTarget,type DeliveryScope} from './au
 export type {AutomaticDeliveryOptions,AutomaticDeliveryState,AutomaticDeliveryPolicy} from './automatic-delivery-types';
 export {selectDeliverySteps,reviewKey,jobKey} from './delivery-policy';
 
-export {finishReviewCleanup,reviewCleanupKey,type ReviewCleanup,type ReviewCleanupPorts} from './item-operation-cleanup';
+export {finishReviewCleanup,registerReviewCleanup,reviewCleanupKey,type ReviewCleanup,type ReviewCleanupPorts} from './item-operation-cleanup';
 export {cancellationKey,pendingCancellation,blocksOperation,cancellationSupported,requestCancellation,reconcileCancellation,scanCancellations,type ReviewCancellation,type ReviewCancellationPorts,type CancellableReviewJob} from './item-operation-cancellation';
 
 export {requireOperationAuthority,type OperationOrigin,type OperationAuthorityPorts,type OperationAuthorityContext} from './item-operation-authority';

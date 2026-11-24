@@ -8,6 +8,7 @@ export interface KanbanRecordExecution {
     id: string; recordId: string; recordRevision: number; boardId: string;
     scheduledAt?:number; recurrenceRevision?:number;
     completion?:import('./task-state').KanbanTaskProjection['completion'];
+    managementTasks?: Array<{id:string;title?:string;task?:import('./task-state').KanbanTaskProjection;code?:string}>;
     rootItemId?: string; itemIds?: string[]; stage?:'planning'|'execution';
     state: 'preparing' | 'running' | 'blocked' | 'review' | 'completed' | 'failed' | 'cancelling' | 'cancelled' | 'pausing' | 'paused' | 'resuming' | 'unknown';
     createdAt: number; updatedAt: number; archivedAt?:number; code?: string;

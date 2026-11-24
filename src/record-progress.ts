@@ -21,10 +21,15 @@ export function recordProgress(record:KanbanRecordSummary,facts:Fact[]):KanbanRe
     const active=new Set(roots.filter(({task})=>task.phase!=='completed').map(({item})=>item.id));
     const fact=activeFacts(facts,active,new Set(groupIds)).sort((a,b)=>priorities.indexOf(a.task.phase)-priorities.indexOf(b.task.phase)||Number(a.item.planning.execution==='children')-Number(b.item.planning.execution==='children'))[0];
     const {item,task}=fact;
-    const state=task.phase==='unknown'&&['FORBIDDEN','EACCES','PERMISSION_DENIED','UNAUTHORIZED'].includes(task.reason??'')?'needs-action':phaseState(task.phase);
+    const state=awaitsTaskAction(fact)?'needs-action':phaseState(task.phase);
     const reason=task.phase==='review'?'acceptance-required':task.phase==='waiting-input'?'input-required':task.reason;
     return {...base,groupIds,state,phase:task.phase,itemId:item.id,...(task.sessionId?{sessionId:task.sessionId}:{}),
         ...(reason&&/^[A-Za-z0-9_:-]{1,160}$/.test(reason)?{reason}:{})};
+}
+function awaitsTaskAction({item,task}:Fact):boolean {
+    if(task.phase==='unknown')return ['FORBIDDEN','EACCES','PERMISSION_DENIED','UNAUTHORIZED'].includes(task.reason??'');
+    return task.phase==='error'&&item.status==='claimed'&&!!task.dispatchId&&task.actions.includes('resolve')&&
+        !!item.issues?.some(issue=>issue.id===task.reason&&issue.attemptId===task.dispatchId&&!issue.resolvedBy);
 }
 function phaseState(phase:KanbanTaskProjection['phase']):KanbanRecordProgress['state'] {
     if(phase==='unknown')return 'checking';
@@ -50,10 +55,12 @@ function groupCompletion(facts:Fact[]):KanbanRecordProgress['completion'] {
     return 'children';
 }
 
-/** Task settlement remains intact while outstanding finalization controls decision completion. */
+/** Cleanup follow-ups preserve the accepted delivery state. */
 export function recordFinalization(progress:KanbanRecordProgress,followUps:NonNullable<KanbanRecordProgress['followUps']>):KanbanRecordProgress {
     if(progress.state!=='completed'||!followUps.length)return {...progress,followUps};
-    const pending=followUps.find(row=>row.state==='unknown')??followUps.find(row=>row.state==='blocked')??followUps.find(row=>row.requiresConfirmation)??followUps[0];
+    const delivery=followUps.filter(row=>row.phase!=='cleanup');
+    if(!delivery.length)return {...progress,followUps};
+    const pending=delivery.find(row=>row.state==='unknown')??delivery.find(row=>row.state==='blocked')??delivery.find(row=>row.requiresConfirmation)??delivery[0];
     return {...progress,followUps,stage:'finalization',state:pending.state==='unknown'?'checking':pending.state==='blocked'||pending.requiresConfirmation?'needs-action':'running',
         boardId:pending.boardId,itemId:pending.itemId,reason:pending.code??(pending.requiresConfirmation?'confirmation-required':'finalization-pending')};
 }

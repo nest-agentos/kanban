@@ -11,10 +11,13 @@ export interface TaskResultRecoveryPorts {
     recover(board:string,request:KanbanTaskRecoveryRequest):Promise<KanbanTaskRecoveryResult>;
     log(event:{operationId:string;boardId:string;stage:string;result:'success'|'failure';code?:string;durationMs:number}):void;
 }
-const index='task-recovery-results',key=(value:TaskResultRecovery)=>'task-recovery-result:'+value.dispatchId;
+const index='task-recovery-results',key=(dispatchId:string)=>'task-recovery-result:'+dispatchId;
+export function registeredTaskResult(journal:KanbanAutomationJournal,dispatchId:string):Promise<TaskResultRecovery|undefined> {
+    return journal.get<TaskResultRecovery>(key(dispatchId));
+}
 /** Candidate and pending index commit together; historical results never enter later scans. */
 export async function registerTaskResultRecovery(journal:KanbanAutomationJournal,value:TaskResultRecovery):Promise<void> {
-    let pending=false;const id=key(value);
+    let pending=false;const id=key(value.dispatchId);
     await journal.updateMany([{key:id,change:raw=>{
         const old=raw as TaskResultRecovery|undefined;
         requireValue(!old||old.boardId===value.boardId&&old.itemId===value.itemId&&old.resultId===value.resultId,'RESULT_RECOVERY_CONFLICT');

@@ -60,6 +60,15 @@ it('chooses the concrete failing task and Session rather than its aggregate grou
  expect(recordProgress({...record,itemIds:['group']},[group,{...child,item:{...child.item,planning:{parentId:'group'}}}])).toMatchObject({state:'failed',reason:'BUILD_FAILED',itemId:'child',sessionId:'session-child'});
 });
 
+it('projects a reported blocker on the active execution as needing action',()=>{
+ const issue={id:'browser-dependencies-missing',attemptId:'active',type:'error'};
+ const task={...fact('root','error').task,dispatchId:issue.attemptId,reason:issue.id,actions:['resolve'] as const};
+ const blocked={item:{...fact('root','error').item,status:'claimed',issues:[issue]},task:{...task,actions:[...task.actions]}};
+ expect(recordProgress(record,[blocked])).toMatchObject({state:'needs-action',phase:'error',reason:issue.id,itemId:'root'});
+ expect(recordProgress(record,[{...blocked,item:{...blocked.item,status:'open'}}]).state).toBe('failed');
+ expect(recordProgress(record,[{...blocked,task:{...blocked.task,dispatchId:'later'}}]).state).toBe('failed');
+});
+
 it('keeps a settled group completed and reports its waiver even if an old descendant still has an issue',()=>{
  const root={...fact('root','completed'),item:{...fact('root','completed').item,planning:{execution:'children'}},task:{phase:'completed' as const,completion:'waived' as const,actions:[]}};
  const child={...fact('child','error'),item:{...fact('child','error').item,planning:{parentId:'root'}}};

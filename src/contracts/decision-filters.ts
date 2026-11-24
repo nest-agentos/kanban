@@ -9,15 +9,15 @@ function includesProject(references:KanbanExternalReference[]|undefined,projects
 }
 
 export function decisionRecordsQuery(query:KanbanDecisionQuery):KanbanRecordQuery {
-    return {kind:'decision',limit:200,includeArchived:query.includeArchived??query.archived??false,
+    return {kind:'decision',limit:200,recurring:query.recurring??false,includeArchived:query.includeArchived??query.archived??false,
         ...(query.resource?{resource:query.resource}:{}),...(query.resources?.length?{resources:query.resources}:{})};
 }
 
 export function decisionRows(records:KanbanRecordSummary[],conversations:KanbanRecordConversation[],query:KanbanDecisionQuery):KanbanDecisionRow[] {
     const matches=(refs:KanbanExternalReference[]|undefined)=>
         (!query.resource||includesProject(refs,[query.resource]))&&(!query.resources?.length||includesProject(refs,query.resources));
-    const drafts=query.archived?[]:conversations.filter(row=>(row.sessionId||row.resourceId)&&!row.recordId&&matches(row.resources));
-    const rows=records.filter(row=>matches(row.externalRefs)&&(query.archived?row.archivedAt!==undefined:query.includeArchived||row.archivedAt===undefined));
+    const drafts=query.archived?[]:conversations.filter(row=>(row.sessionId||row.resourceId)&&!row.recordId&&!!row.recurrence===(query.recurring??false)&&matches(row.resources));
+    const rows=records.filter(row=>!!row.recurrence===(query.recurring??false)&&matches(row.externalRefs)&&(query.archived?row.archivedAt!==undefined:query.includeArchived||row.archivedAt===undefined));
     return [...rows.map(value=>{
         const sessions=conversations.filter(row=>row.recordId===value.id);
         return {kind:'record' as const,value,conversations:sessions,conversation:sessions.find(row=>row.purpose==='coordination')??sessions[0]};

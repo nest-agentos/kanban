@@ -15,6 +15,7 @@ export interface KanbanTaskIssue {id: string; attemptId: string; type: 'clarific
 export type KanbanTaskPhase = 'waiting-start' | 'analyzing' | 'queued' | 'waiting-dependency' | 'preparing' | 'running'
     | 'cancelling' | 'pausing' | 'paused' | 'resuming' | 'waiting-input' | 'error' | 'review' | 'completed' | 'cancelled' | 'unknown';
 export interface KanbanTaskProjection {
+    blockingChild?:{id:string;title?:string};
     completion?: 'accepted' | 'waived' | 'mixed' | 'children';
     cleanupAllowed?: boolean;
     phase: KanbanTaskPhase; reason?: string; reasonDetail?:string; startAt?: number; sessionId?: string; dispatchId?: string;

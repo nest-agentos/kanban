@@ -55,7 +55,7 @@ function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeConte
     const automation=options.automation?createKanbanAutomation({...options.automation,...context,
         directory:directory+'/automation',log:options.log??(()=>{})}):undefined;
     const client:import('../contracts').KanbanClient={...service,...capabilities,decisionSnapshot:(board,query)=>decisionSnapshot(client,board,query,options.log),taskSnapshot:(board,item,request)=>taskSnapshot(client,board,item,options.log,request),previewTaskRestart:restarts.previewTaskRestart,restartTask:restarts.restartTask,
-        ...(records?{...recordApi,recordExecutionPage:records.recordExecutionPage,recordExecutions:async(board:string,id:string)=>(await workLog.record(service,board,id)).kind==='decision'?records.recordExecutions(board,id):[]}:{}),
+        ...(records?{...recordApi,recordExecutionPage:records.recordExecutionPage,recordExecutions:async(board:string,id:string,query?:{includeManagementTasks?:boolean})=>(await workLog.record(service,board,id)).kind==='decision'?records.recordExecutions(board,id,query):[]}:{}),
         archiveRecords:archival.archiveRecords,
         controlRecord:async(board,request)=>{if(request.action==='archive')return archival.archive(board,request);if(!records){
             const record=request.action==='delete'?await service.record(board,request.recordId):undefined;

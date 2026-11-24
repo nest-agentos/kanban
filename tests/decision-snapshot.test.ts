@@ -88,7 +88,7 @@ it('combines project alternatives, status alternatives, and optional archived ro
     const query={resources:[project('one'),project('two')],states:['waiting','completed'] as Array<'waiting'|'completed'>};
     expect((await decisionSnapshot(f.source,'board',query)).page?.decisionRows.map(entry=>entry.value.id)).toEqual(['waiting']);
     expect((await decisionSnapshot(f.source,'board',{...query,includeArchived:true})).page?.decisionRows.map(entry=>entry.value.id)).toEqual(['archived','waiting']);
-    expect(f.records).toHaveBeenLastCalledWith('board',{kind:'decision',limit:200,resources:query.resources,includeArchived:true});
+    expect(f.records).toHaveBeenLastCalledWith('board',{kind:'decision',limit:200,resources:query.resources,includeArchived:true,recurring:false});
     expect(f.catalog).not.toHaveBeenCalled();expect(f.recordResources).not.toHaveBeenCalled();
 });
 
@@ -102,4 +102,22 @@ it('searches decision and draft titles across pages while preserving other filte
     expect(matches.decisionRows.map(row=>row.value.id).sort()).toEqual(['draft-match','r0']);
     expect((await decisionSnapshot(f.source,'board',{search:'needle',states:['running']})).page?.items.map(row=>row.id)).toEqual(['r0']);
     await expect(decisionSnapshot(f.source,'board',{search:'needle',cursor:unfiltered.nextCursor})).rejects.toMatchObject({code:'CURSOR_STALE'});
+});
+
+it('keeps recurring decisions and their drafts in the recurring view only', async () => {
+    const recurrence = {state:'active'} as NonNullable<KanbanRecordSummary['recurrence']>;
+    const f = fixture([record('once'), {...record('loop'), recurrence}]);
+    const base = {boardId:'board', purpose:'decision', state:'draft', code:'', createdAt:1, lastActivityAt:2, recordId:''};
+    Object.assign(f.source, {recordConversations:async () => [
+        {...base,id:'once-draft',sessionId:'single'},
+        {...base,id:'loop-draft',sessionId:'recurring',recurrence},
+    ]});
+    const ordinary = await decisionSnapshot(f.source, 'board');
+    const recurring = await decisionSnapshot(f.source, 'board', {recurring:true});
+    expect(ordinary.page.decisionRows.map(row=>row.value.id).sort()).toEqual(['once','once-draft']);
+    expect(recurring.page.decisionRows.map(row=>row.value.id).sort()).toEqual(['loop','loop-draft']);
+    expect(f.records.mock.calls).toEqual([
+        ['board',expect.objectContaining({recurring:false})],
+        ['board',expect.objectContaining({recurring:true})],
+    ]);
 });

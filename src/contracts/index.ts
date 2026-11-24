@@ -35,9 +35,9 @@ export {projectKanbanTask,taskStartAt,taskDue,taskEditing,TASK_START_DELAY_MS} f
 export {kanbanVerificationOptions, kanbanVerificationMode} from './verification';
 export type {KanbanVerificationMode, KanbanVerificationOptions} from './verification';
 
-export type {KanbanDecisionModule,KanbanRecordConversation,KanbanRecordConversationRequest,KanbanRecordConversationControl} from './record-conversation';
+export type {KanbanDecisionModule,KanbanRecordConversation,KanbanRecordConversationRequest, KanbanDecisionSourceSession,KanbanRecordConversationControl} from './record-conversation';
 
-export type {KanbanTaskRecovery,KanbanTaskRecoveryRequest,KanbanTaskRecoveryResult} from './recovery';
+export type {KanbanTaskRecovery,KanbanTaskRecoveryRequest,KanbanTaskRecoveryResult,KanbanReportUsage,KanbanRecoveryReceipt,KanbanTaskConfigurationStatus} from './recovery';
 
 export type {KanbanRestartPreview,KanbanRestartRequest,KanbanRestartResult} from './task-restart';
 

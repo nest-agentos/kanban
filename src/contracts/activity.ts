@@ -57,8 +57,11 @@ export interface KanbanClient extends KanbanService {
     controlRecord?(boardId: string, request: {recordId: string; operationId: string; action: 'pause' | 'resume' | 'cancel' | 'archive' | 'delete' | 'restart' | 'dismiss-attention'; expectedRevision?:number;attentionFingerprint?:string}): Promise<void>;
     fixTask?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./task-state').KanbanFixSession>;
     itemResources?(boardId:string,parentId?:string):Promise<import('./record-execution').KanbanItemResourceCatalog>;
+    checkTaskConfiguration?(boardId:string,itemId:string):Promise<import('./recovery').KanbanTaskConfigurationStatus>;
+    reloadTaskConfiguration?(boardId:string,request:{itemId:string;sessionId:string;operationId:string;purpose?:'report-handoff'}):Promise<{operationId:string;revision:string}>;
+    inspectTaskReports?(boardId:string,itemId:string):Promise<import('./recovery').KanbanReportUsage>;
     taskRecovery?(boardId:string,itemId:string):Promise<import('./recovery').KanbanTaskRecovery>;
-    openTaskRecovery?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./recovery').KanbanTaskRecoveryResult>;
+    openTaskRecovery?(boardId:string,request:{itemId:string;operationId:string;expectedRevision?:string}):Promise<import('./recovery').KanbanTaskRecoveryResult>;
     recoverTask?(boardId:string,request:import('./recovery').KanbanTaskRecoveryRequest):Promise<import('./recovery').KanbanTaskRecoveryResult>;
     startRecordConversation?(boardId:string,request:import('./record-conversation').KanbanRecordConversationRequest):Promise<import('./record-conversation').KanbanRecordConversation>;
     openTaskCommunication?(boardId:string,request:{itemId:string;operationId:string}):Promise<import('./record-conversation').KanbanRecordConversation>;
@@ -74,8 +77,8 @@ export interface KanbanClient extends KanbanService {
     runRecord?(boardId: string, request: import('./record-execution').KanbanRecordRunRequest): Promise<import('./record-execution').KanbanRecordExecution>;
     planningSession?(boardId: string, itemId: string): Promise<KanbanPlanningSession | undefined>;
     recordSessions?(boardId:string,recordId:string,query?:{includeArchived?:boolean}): Promise<KanbanPlanningSession[]>;
-    recordExecutions?(boardId: string, recordId: string): Promise<import('./record-execution').KanbanRecordExecution[]>;
-    recordExecutionPage?(boardId:string,recordId:string,query?:{limit?:number;cursor?:string}):Promise<import('./record-execution').KanbanRecordExecutionPage>;
+    recordExecutions?(boardId: string, recordId: string, query?:{includeManagementTasks?:boolean}): Promise<import('./record-execution').KanbanRecordExecution[]>;
+    recordExecutionPage?(boardId:string,recordId:string,query?:{limit?:number;cursor?:string;includeManagementTasks?:boolean|'page'}):Promise<import('./record-execution').KanbanRecordExecutionPage>;
     automationCatalog?(): Promise<import('./automation').KanbanAutomationCatalog>;
     analysisStatus?(boardId: string, itemId: string): Promise<import('./automation').KanbanAnalysisStatus | null>;
     queryActivity?(boardId: string, query?: KanbanSessionActivityQuery): Promise<KanbanSessionItemPage>;

@@ -7,7 +7,7 @@ import {requireValue} from '../rules';
 import {safeCode} from './diagnostics';
 export interface SavedRecordConversation extends KanbanRecordConversation {binding?:unknown;submitted?:boolean;clearedAt?:number;phase:'prepared'|'submitting'}
 export interface RecordConversationPort {
-    prepare(id:string,boardId:string,resources?:KanbanRecordConversation['resources'],primaryResource?:KanbanRecordConversation['primaryResource'],moduleIds?:string[]):Promise<unknown>;
+    prepare(id:string,boardId:string,resources?:KanbanRecordConversation['resources'],primaryResource?:KanbanRecordConversation['primaryResource'],moduleIds?:string[],sourceSession?:KanbanRecordConversation['sourceSession']):Promise<unknown>;
     start(binding:unknown,first:boolean,active:()=>boolean):Promise<{sessionId:string;resourceId:string}>;
     advance(conversation:SavedRecordConversation,active:()=>boolean):Promise<Partial<Pick<SavedRecordConversation,'recordId'|'state'|'code'|'pendingReports'|'purpose'>>>;
     watchKey?(conversation:SavedRecordConversation):string;
@@ -60,7 +60,8 @@ class RecordConversations {
     }
     startRecordConversation=(boardId:string,request:KanbanRecordConversationRequest):Promise<KanbanRecordConversation>=>this.serial(request.operationId,()=>this.start(boardId,request));
     private async start(boardId:string,request:KanbanRecordConversationRequest):Promise<KanbanRecordConversation> {
-        const {operationId:id,moduleIds,recurrence}=request;
+        const {operationId:id,moduleIds,recurrence,sourceSession}=request;
+        if(sourceSession)requireValue(!!recurrence&&[sourceSession.projectId,sourceSession.profileId,sourceSession.sessionId].every(value=>typeof value==='string'&&value.length>0&&value.length<=256),'INVALID_DECISION_SOURCE_SESSION');
         if(recurrence!==undefined&&recurrence!==null)validateRecurrence(recurrence);
         requireValue(moduleIds===undefined||Array.isArray(moduleIds)&&moduleIds.length<=16&&moduleIds.every(id=>typeof id==='string'&&/^[a-z][a-z0-9-]{0,63}$/.test(id))&&new Set(moduleIds).size===moduleIds.length,'DECISION_MODULES_INVALID');
         requireValue(/^[a-zA-Z0-9_-]{1,128}$/.test(id),'INVALID_OPERATION_ID');await this.options.service.read(boardId);
@@ -72,13 +73,14 @@ class RecordConversations {
             requireValue(select||!old||request.primaryResource===undefined||JSON.stringify(old.primaryResource)===JSON.stringify(request.primaryResource),'IDEMPOTENCY_CONFLICT');
             requireValue(select||!old||request.moduleIds===undefined||JSON.stringify(old.moduleIds??[])===JSON.stringify(request.moduleIds),'IDEMPOTENCY_CONFLICT');
             requireValue(!old||recurrence===undefined||select&&old.recurrence===undefined||JSON.stringify(old.recurrence??null)===JSON.stringify(recurrence),'IDEMPOTENCY_CONFLICT');
+            requireValue(!old||sourceSession===undefined||JSON.stringify(old.sourceSession)===JSON.stringify(sourceSession),'IDEMPOTENCY_CONFLICT');
             const mode=recurrence===undefined?{}:{recurrence:structuredClone(recurrence)};
             if(select)return {...old,...mode,resources:structuredClone(request.resources!),primaryResource:request.primaryResource?structuredClone(request.primaryResource):undefined,moduleIds:request.moduleIds?.slice()};
-            return old??{id,boardId,...mode,state:'preparing',phase:'prepared',createdAt:Date.now(),...(request.moduleIds?.length?{moduleIds:request.moduleIds.slice()}:{}),...(request.resources?{resources:structuredClone(request.resources)}:{}),...(request.primaryResource?{primaryResource:structuredClone(request.primaryResource)}:{})};});
+            return old??{id,boardId,...mode,...(sourceSession?{sourceSession:structuredClone(sourceSession)}:{}),state:'preparing',phase:'prepared',createdAt:Date.now(),...(request.moduleIds?.length?{moduleIds:request.moduleIds.slice()}:{}),...(request.resources?{resources:structuredClone(request.resources)}:{}),...(request.primaryResource?{primaryResource:structuredClone(request.primaryResource)}:{})};});
         try {
             if(!saved.binding){
-                const modules=saved.moduleIds?.length?[saved.moduleIds] as const:[];
-                const binding=await this.options.port.prepare(id,boardId,saved.resources,saved.primaryResource,...modules);
+                const args: [modules?:string[],source?:KanbanRecordConversation['sourceSession']]=saved.sourceSession?[saved.moduleIds,saved.sourceSession]:saved.moduleIds?.length?[saved.moduleIds]:[];
+                const binding=await this.options.port.prepare(id,boardId,saved.resources,saved.primaryResource,...args);
                 saved=await this.options.journal.update<SavedRecordConversation>(key(id),old=>({...old!,binding:old!.binding??binding}));
             }
             requireValue(this.active(),'SERVICE_STOPPING');
