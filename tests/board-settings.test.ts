@@ -13,6 +13,10 @@ it('persists host-defined settings independently per board with revision and ope
 it('rejects malformed settings and non-human writes without changing the board',async()=>{
     const f=await fixture(),board=await f.service.read('one');
     for(const [index,settings]of [undefined,null,new Date(),new Map(),{value:42}].entries())await expect(f.service.execute('one',{operationId:'bad-'+index,expectedRevision:board.revision,command:{type:'configure-board-settings',settings:settings as never}})).rejects.toMatchObject({code:'INVALID_BOARD_SETTINGS'});
+    for(const [index,value]of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1,'8'].entries())
+        await expect(f.service.execute('one',{operationId:'bad-limit-'+index,expectedRevision:board.revision,
+            command:{type:'configure-board-settings',settings:{},executionSlots:8,executionSlotsPerAssignee:value as number}})).rejects.toMatchObject({code:'INVALID_LIMIT'});
+    expect((await f.service.read('one')).policy).toEqual(board.policy);
     const worker=createKanbanModule({...f.options,actor:{kind:'service',id:'worker'}});
     await expect(worker.execute('one',{operationId:'worker',expectedRevision:board.revision,command:{type:'configure-board-settings',settings:{hostTarget:'other'}}})).rejects.toMatchObject({code:'FORBIDDEN'});
     expect((await f.service.read('one')).settings).toBeUndefined();

@@ -1,4 +1,5 @@
 import type {KanbanItem, KanbanItemSummary, KanbanPlanning} from './contracts';
+import {kanbanExecutionLimits} from './contracts';
 import type {KanbanState} from './ports';
 import {workType, executable} from './configuration';
 import {identity, requireValue, text} from './rules';
@@ -15,7 +16,8 @@ export function terminal(item: Pick<KanbanItem, 'status'>): boolean {return item
 export function catalog(state: KanbanState): KanbanItemSummary[] {return [...state.board.items.map(summary), ...(state.archiveIndex ?? [])];}
 export function limits(state: KanbanState) {
     const p = state.board.policy;
-    return {ready: p.maxReady ?? 20, inProgress: p.maxInProgress ?? 3, perAgent: p.maxInProgressPerAssignee ?? p.maxInProgressPerAgent ?? 1, perAssignee: p.maxInProgressPerAssignee ?? p.maxInProgressPerAgent ?? 1};
+    const execution = kanbanExecutionLimits(p);
+    return {ready: p.maxReady ?? 20, ...execution, perAgent: execution.perAssignee};
 }
 export function validatePlan(state: KanbanState, item: KanbanItem, value: KanbanPlanning): void {
     requireValue(typeof value.kind === 'string' && Number.isInteger(value.priority) && value.priority >= 0 && value.priority <= 4, 'INVALID_PLANNING');

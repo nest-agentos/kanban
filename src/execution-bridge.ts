@@ -82,7 +82,7 @@ async function runBridge(options: KanbanExecutionBridgeOptions, path: string, ac
             const dispatch=(await options.service.workflow(board.id)).dispatches[dispatchId];
             if(active()) await runDispatch(options,path,dispatch,active,track,failures);
         }
-        catch(error) {if(!['WIP_LIMIT','ASSIGNEE_WIP_LIMIT','READY_LIMIT','REVISION_CONFLICT'].includes(safeCode(error))) throw error;}
+        catch(error) {if(!['WIP_LIMIT','AGENT_WIP_LIMIT','ASSIGNEE_WIP_LIMIT','READY_LIMIT','REVISION_CONFLICT'].includes(safeCode(error))) throw error;}
     }
 }
 async function runDispatch(options: KanbanExecutionBridgeOptions, path: string, dispatch: KanbanDispatch, active: () => boolean, track: TrackWrite, failures: Map<string, ReadFailure>): Promise<void> {

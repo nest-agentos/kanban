@@ -203,11 +203,11 @@ it('allocates readable task IDs transactionally while numbering custom IDs indep
 });
 
 it.each([
-    [{}, true],
-    [{maxInProgressPerAssignee: 1}, false],
-    [{maxInProgressPerAgent: 1}, false],
-    [{maxInProgress: 1}, false],
-] as const)('separates default execution capacity from explicit review WIP: %j', async (policy, starts) => {
+    {},
+    {maxInProgressPerAssignee: 1},
+    {maxInProgressPerAgent: 1},
+    {maxInProgress: 1},
+] as const)('releases the execution slot while waiting for review: %j', async policy => {
     const f = await fixture(policy);
     await f.run({type: 'request-run', itemId: 'task'});
     const bridge = await f.bridge(); await bridge.scan();
@@ -216,16 +216,27 @@ it.each([
     await f.run({type: 'publish-plan', plan: {schema: 'kanban.plan/1', rootItemId: 'management-root', id: 'next-plan', revision: 1, sealed: true,
         items: [{id: 'next', title: 'Next', responsibility: 'Build', acceptance: 'Verify', assignee: {kind: 'service', id: 'worker'}, dependsOn: []}]}});
     await f.run({type: 'request-run', itemId: 'next'}); await bridge.scan();
-    expect(f.executor.start).toHaveBeenCalledTimes(starts ? 2 : 1);
+    expect(f.executor.start).toHaveBeenCalledTimes(2);
     expect((await f.item()).status).toBe('review');
 });
-it('keeps active executions within the default per-assignee capacity', async () => {
-    const f = await fixture(); await f.run({type: 'request-run', itemId: 'task'});
+it('runs eight tasks by default and admits the ninth when one enters review', async () => {
+    const f = await fixture();
+    const items = Array.from({length: 8}, (_, index) => ({
+        id: 'next-'+index, title: 'Next', responsibility: 'Build', acceptance: 'Verify',
+        assignee: {kind: 'service' as const, id: 'worker'}, dependsOn: [],
+    }));
+    await f.run({type: 'publish-plan', plan: {schema: 'kanban.plan/1', rootItemId: 'management-root',
+        id: 'next-plan', revision: 1, sealed: true, items}});
+    for (const id of ['task', ...items.map(item => item.id)]) await f.run({type: 'request-run', itemId: id});
     const bridge = await f.bridge(); await bridge.scan();
-    await f.run({type: 'publish-plan', plan: {schema: 'kanban.plan/1', rootItemId: 'management-root', id: 'next-plan', revision: 1, sealed: true,
-        items: [{id: 'next', title: 'Next', responsibility: 'Build', acceptance: 'Verify', assignee: {kind: 'service', id: 'worker'}, dependsOn: []}]}});
-    await f.run({type: 'request-run', itemId: 'next'}); await bridge.scan();
-    expect(f.executor.start).toHaveBeenCalledTimes(1);
+    expect(f.executor.start).toHaveBeenCalledTimes(8);
+    const workflow = await f.service.workflow('board');
+    expect(workflow.ready).toHaveLength(1);
+    const dispatch = Object.values(workflow.dispatches)[0];
+    await f.run({type: 'observe-execution', dispatchId: dispatch.id, fence: dispatch.fence, outcome: 'succeeded'});
+    await bridge.scan();
+    expect(f.executor.start).toHaveBeenCalledTimes(9);
+    expect((await f.service.item('board',dispatch.itemId)).item.status).toBe('review');
 });
 it('projects task groups from child states and never offers an independent execution',()=>{
     const group={id:'group',status:'backlog',createdAt:1,launch:{startAt:10000,admittedAt:1},planning:{kind:'task',execution:'children',priority:2,dependencies:[],references:[]}} as KanbanItem;

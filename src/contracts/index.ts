@@ -2,6 +2,11 @@ export type {KanbanTaskGroup, KanbanPlanning, KanbanProgress, KanbanItemSummary,
 export type {KanbanReferenceTarget} from './references';
 export {kanbanReference} from './references';
 export type {KanbanPrincipal, KanbanMember, KanbanWorkType, KanbanColumn, KanbanNotificationPolicy, KanbanExternalReference} from './configuration';
+import type {KanbanPolicy} from './contracts';
+export function kanbanExecutionLimits(policy:Pick<KanbanPolicy,'maxInProgress'|'maxInProgressPerAssignee'|'maxInProgressPerAgent'>) {
+    const inProgress = policy.maxInProgress ?? 8;
+    return {inProgress, perAssignee: policy.maxInProgressPerAssignee ?? policy.maxInProgressPerAgent ?? inProgress};
+}
 export {DEFAULT_KANBAN_WORK_TYPES, executableWorkItem,kanbanChildWorkType} from './configuration';
 export type {KanbanTaskSnapshot,KanbanTaskSnapshotOptions,KanbanPreparedTask,KanbanTaskRead} from './task-snapshot';
 export type {KanbanActor, KanbanEstimate, KanbanPolicy, KanbanParticipant, KanbanAssignment, KanbanItem, KanbanBoard, KanbanEvent, KanbanCommand, KanbanRequest, KanbanBoardSummary, KanbanService, KanbanBoardInput} from './contracts';

@@ -80,7 +80,7 @@ export type KanbanCommand = import('./task-restart').RepairDependencyCommand | i
     | {type: 'delete-board'}
     | {type: 'set-board-control'; mode?: 'automatic' | 'manual'; paused?: boolean}
     | {type: 'edit-item'; itemId: string; title: string; responsibility: string; acceptance: string}
-    | {type:'configure-board-settings';settings:Record<string,string>}
+    | {type:'configure-board-settings';settings:Record<string,string>;executionSlots?:number;executionSlotsPerAssignee?:number}
     | {type: 'configure-automation'; settings: import('./automation').KanbanAutomationSettings}
     | {type: 'review-amendment'; itemId: string; amendmentId: string; accept: boolean; reason?: string}
     | {type: 'append-record'; record: KanbanRecordInput}
