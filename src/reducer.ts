@@ -1,4 +1,5 @@
 import {kanbanTaskType} from './contracts/task-type';
+import {updateDeferredVerification} from './deferred-verification';
 import {configureBoardSettings} from './board-settings';
 import {prepareItemCleanup} from './item-cleanup';
 import {insertRepairDependency} from './repair-dependency';
@@ -62,6 +63,7 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     else if (command.type === 'review-amendment') {if(command.accept)assertDefinitionEditable(itemFor(board,command.itemId),now);reviewAmendment(board, command, actor, now);}
     else if (planningCommand(command)) applyPlanningCommand(state, command, now, actor, workflowInternal);
     else if (command.type === 'create-item') createItem(state, command, actor, now, token);
+    else if(command.type==='defer-verification'||command.type==='record-verification-result')updateDeferredVerification(board,command,actor,now);
     else if(command.type==='configure-board-settings')configureBoardSettings(board,command,actor);
     else if (command.type === 'configure-automation') configureAutomation(board, command.settings, actor);
     else if (command.type === 'register-session') {
@@ -156,6 +158,8 @@ export function escalationReasons(board: KanbanBoard, item: KanbanItem, now: num
 function eventData(command: KanbanCommand, state: KanbanState): KanbanEvent['data'] {
     if (command.type === 'request-board-stop' || command.type === 'observe-board-stop') return {code:state.board.lifecycle?.code,reason:state.board.lifecycle?.intent,itemIds:state.board.items.filter(item=>item.control?.action==='cancel').map(item=>item.id)};
     else if (command.type === 'set-board-control') return {code: 'BOARD_' + (state.board.executionControl?.paused ? 'PAUSE_REQUESTED' : state.board.executionControl?.mode?.toUpperCase())};
+    if(command.type==='defer-verification')return {verificationId:command.verification.id,reason:'verification-deferred'};
+    if(command.type==='record-verification-result')return {verificationId:command.verificationId,reason:command.outcome};
     if (command.type === 'apply-discovery') return discoveryEvent(state, command.batch);
     if (command.type === 'report-analysis') return {code:command.status.code, reason:'analysis-'+command.status.state};
     if (command.type === 'control-receipt') return {code:command.code, reason:'control-'+command.state};

@@ -1,3 +1,4 @@
+export type {KanbanDeferredVerification} from './deferred-verification';
 export type {KanbanTaskGroup, KanbanPlanning, KanbanProgress, KanbanItemSummary, KanbanArchivedItem, KanbanItemQuery, KanbanItemPage, KanbanOverview} from './planning';
 export type {KanbanReferenceTarget} from './references';
 export {kanbanReference} from './references';
@@ -26,7 +27,7 @@ export type {KanbanAutomationSettings, KanbanAutomationOption, KanbanAutomationT
 export {sameAutomationBinding} from './automation';
 export type {KanbanItemResourceCatalog, KanbanRecordResource, KanbanRecordExecution, KanbanRecordExecutionPage, KanbanRecordRunRequest} from './record-execution';
 export type {KanbanWorkResource, KanbanWorkResourceCleanup, KanbanWorkResourceQuery} from './work-resources';
-export type {KanbanOperationFact, KanbanOperationAttention, KanbanOperationChoice, KanbanOperationField, KanbanItemOperation, KanbanItemOperations, KanbanItemOperationRequest, KanbanItemOperationBinding,KanbanOperationPluginDescriptor} from './operations';
+export type {KanbanOperationContributor, KanbanOperationFact, KanbanOperationAttention, KanbanOperationChoice, KanbanOperationField, KanbanItemOperation, KanbanItemOperations, KanbanItemOperationRequest, KanbanItemOperationBinding,KanbanOperationPluginDescriptor} from './operations';
 
 export type {KanbanDeletionPreview, KanbanDeletionRequest} from './deletion';
 

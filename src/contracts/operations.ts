@@ -22,6 +22,11 @@ export interface KanbanItemOperation extends KanbanOperationFact {
     configurable?: boolean; binding?: KanbanExternalReference;
     openSessionOnRun?: boolean;
 }
+export interface KanbanOperationContributor {
+    itemId:string;
+    title:string;
+    blocker?: {summary?:string;code?:string;handler?:'self'|'parent'};
+}
 export interface KanbanItemOperations {
     /** Settled or uncertain persisted attempts retained for an archived owner. */
     history?:KanbanItemOperation[];
@@ -29,7 +34,7 @@ export interface KanbanItemOperations {
     plugins?:Array<{id:string;version:string;label:string;view:KanbanItemOperations}>;
     code?:string;
     /** Host-owned operation scopes share the same task owner and retain independent receipts. */
-    scopes?:Array<{id:string;label:string;contributors:Array<{itemId:string;title:string}>;view:KanbanItemOperations}>;
+    scopes?:Array<{id:string;label:string;contributors:Array<KanbanOperationContributor>;view:KanbanItemOperations}>;
     owner?:{boardId:string;itemId:string};
     automatic?:{attention?:KanbanOperationAttention;state:'running'|'blocked'|'completed'|'waiting-confirmation';stage:string;code?:string;waitingForTarget?:boolean;waitingForUser?:boolean};
     halted?: {runId:string;state:'cancelling'|'cancelled'};

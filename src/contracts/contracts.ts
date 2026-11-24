@@ -43,6 +43,7 @@ export interface KanbanItem {
     planning?: KanbanPlanning; closedAt?: number; restoredAt?: number; closureReason?: string;
 }
 export interface KanbanBoard {
+    deferredVerifications?: import('./deferred-verification').KanbanDeferredVerification[];
     settings?:Record<string,string>;
     lifecycle?: {operationId: string; intent: 'cancel' | 'delete'; mode: 'drain' | 'cancel'; phase: 'waiting' | 'ready' | 'blocked'; code?: string};
     /** Logical deletion retains audit, Session and resource associations. */
@@ -59,9 +60,9 @@ export interface KanbanEvent {
     taskType?:import('./task-type').KanbanTaskType;
     sequence: number; boardId: string; itemId?: string; operationId: string; at: number;
     kind: string; actor: KanbanActor; recipients: string[];
-    data: { status?: KanbanItem['status']; reference?: KanbanExternalReference; code?: string; itemTitle?: string; dispatchId?: string; readyItemIds?: string[]; planId?: string; recordId?: string; recordIds?: string[]; itemIds?: string[]; planning?: KanbanPlanning; message?: string; reason?: string; resultRef?: string; estimate?: KanbanEstimate; workUnits?: number };
+    data: { status?: KanbanItem['status']; reference?: KanbanExternalReference; code?: string; itemTitle?: string; dispatchId?: string; readyItemIds?: string[]; planId?: string; recordId?: string; recordIds?: string[]; verificationId?: string; itemIds?: string[]; planning?: KanbanPlanning; message?: string; reason?: string; resultRef?: string; estimate?: KanbanEstimate; workUnits?: number };
 }
-export type KanbanCommand = import('./task-restart').RepairDependencyCommand | import('./task-restart').KanbanRestartCommand | import('./record-revision').KanbanRecordRevisionCommand | import('./task-state').KanbanTaskCommand | import('./workflow').KanbanWorkflowCommand
+export type KanbanCommand = import('./deferred-verification').KanbanVerificationCommand | import('./task-restart').RepairDependencyCommand | import('./task-restart').KanbanRestartCommand | import('./record-revision').KanbanRecordRevisionCommand | import('./task-state').KanbanTaskCommand | import('./workflow').KanbanWorkflowCommand
     | {type: 'restart-item'; itemId: string; replacementId: string}
     | {type: 'delete-item'; itemId: string}
     | {type: 'request-record-cancellation'; recordId: string}
@@ -111,7 +112,7 @@ export type KanbanCommand = import('./task-restart').RepairDependencyCommand | i
     | {type: 'unblock-item'; itemId: string; token?: string};
 export interface KanbanRequest { operationId: string; expectedRevision: number; command: KanbanCommand; }
 /** Board directory metadata with item labels; coordination bodies require read()/item(). */
-export type KanbanBoardSummary = Omit<KanbanBoard, 'items'> & {attention?:{board:number;decision:number;log:number};executionPhase?: ReturnType<typeof import('./board-control').boardControlPhase>; items: Array<Pick<KanbanItem, 'id' | 'title' | 'number' | 'taskType'>>};
+export type KanbanBoardSummary = Omit<KanbanBoard, 'items' | 'deferredVerifications'> & {attention?:{board:number;decision:number;log:number};executionPhase?: ReturnType<typeof import('./board-control').boardControlPhase>; items: Array<Pick<KanbanItem, 'id' | 'title' | 'number' | 'taskType'>>};
 export interface KanbanService {
     workflow(boardId: string): Promise<import('./workflow').KanbanWorkflowState>;
 

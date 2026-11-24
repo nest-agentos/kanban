@@ -21,3 +21,16 @@ it('rejects malformed settings and non-human writes without changing the board',
     await expect(worker.execute('one',{operationId:'worker',expectedRevision:board.revision,command:{type:'configure-board-settings',settings:{hostTarget:'other'}}})).rejects.toMatchObject({code:'FORBIDDEN'});
     expect((await f.service.read('one')).settings).toBeUndefined();
 });
+
+it('tracks deferred verification independently of task acceptance and keeps evidence off the catalog',async()=>{
+    const {service,options}=await fixture();
+    const run=async (id:string,command:import('../src/contracts').KanbanCommand)=>
+        service.execute('one',{operationId:id,expectedRevision:(await service.read('one')).revision,command});
+    await run('defer',{type:'defer-verification',verification:{id:'page-performance',title:'Page performance',instructions:'Measure candidate version.'}});
+    expect((await service.catalog('one'))[0]).not.toHaveProperty('deferredVerifications');
+    await run('fail',{type:'record-verification-result',verificationId:'page-performance',outcome:'failed',evidence:'Browser closed'});
+    expect((await service.read('one')).deferredVerifications?.[0].result?.outcome).toBe('failed');
+    await run('pass',{type:'record-verification-result',verificationId:'page-performance',outcome:'passed',evidence:'Measured version and HTTP requests'});
+    expect((await createKanbanModule(options).read('one')).deferredVerifications?.[0].result).toMatchObject({outcome:'passed',evidence:'Measured version and HTTP requests'});
+    await expect(run('overwrite',{type:'record-verification-result',verificationId:'page-performance',outcome:'failed',evidence:'Unrelated result'})).rejects.toMatchObject({code:'VERIFICATION_UNAVAILABLE'});
+});

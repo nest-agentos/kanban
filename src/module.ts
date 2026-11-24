@@ -64,7 +64,7 @@ class KanbanModule implements KanbanService {
         const boards: import('./contracts').KanbanBoardSummary[] = [];
         if(boardId!==undefined)identity(boardId);
         for (const id of boardId===undefined?await this.options.store.ids():[boardId]) {
-            try {const view = await this.readView(id); if (view.state.board.deletedAt !== undefined) continue; boards.push({...view.state.board,attention:attentionCounts(view.state,view.items,view.records), executionPhase: boardControlPhase({...view.state.board, items: view.items}), items: view.items.filter(item => item.deletedAt === undefined).map(item => ({id:item.id,title:item.title,number:item.number,taskType:kanbanTaskType(item)}))});}
+            try {const view = await this.readView(id); if (view.state.board.deletedAt !== undefined) continue; const {deferredVerifications:_,...board}=view.state.board; boards.push({...board,attention:attentionCounts(view.state,view.items,view.records), executionPhase: boardControlPhase({...view.state.board, items: view.items}), items: view.items.filter(item => item.deletedAt === undefined).map(item => ({id:item.id,title:item.title,number:item.number,taskType:kanbanTaskType(item)}))});}
             catch (error) {if (!(error instanceof KanbanError) || error.code !== 'FORBIDDEN') throw error;}
         }
         return structuredClone(boards);
