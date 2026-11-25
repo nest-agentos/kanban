@@ -13,7 +13,7 @@ export interface KanbanPolicy {
     maxComplexity: number; maxWorkUnits: number; maxDurationMs: number; escalationSessionIds: string[];
 }
 export interface KanbanParticipant {
-    sessionId: string; agentId?: string; roles: Array<'creator' | 'owner' | 'consultant' | 'reviewer' | 'observer' | 'escalation'>;
+    sessionId: string; agentId?: string; roles: Array<'creator' | 'owner' | 'consultant' | 'reviewer' | 'observer' | 'escalation' | 'discussion'>;
     joinedAt: number; subscribed: boolean;
 }
 export interface KanbanAssignment extends KanbanActor { principalId?: string; token: string; leaseUntil: number; claimedAt: number; }

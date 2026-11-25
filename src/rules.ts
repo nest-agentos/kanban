@@ -36,7 +36,7 @@ export function validateBoard(board: KanbanBoard): void {
 export function participant(list: KanbanParticipant[], sessionId: string, agentId: string | undefined,
     role: KanbanParticipant['roles'][number], subscribed: boolean, now: number): void {
     identity(sessionId);
-    requireValue(['creator', 'owner', 'consultant', 'reviewer', 'observer', 'escalation'].includes(role), 'INVALID_ROLE');
+    requireValue(['creator', 'owner', 'consultant', 'reviewer', 'observer', 'escalation', 'discussion'].includes(role), 'INVALID_ROLE');
     let entry = list.find(value => value.sessionId === sessionId);
     if (!entry) { entry = { sessionId, agentId, roles: [], subscribed, joinedAt: now }; list.push(entry); }
     if (entry.agentId && agentId) requireValue(entry.agentId === agentId, 'SESSION_AGENT_CONFLICT');

@@ -2,7 +2,7 @@ import {manualChildKey,validateManualChecklist} from './recurrence-validation';
 import {requireCoordinator} from './workflow-plans';
 import {sha256HexSync} from './utils';
 import {kanbanTaskType} from './contracts/task-type';
-import {isGeneratedChecklistId,isKanbanRecurringRunBoard} from './contracts/contracts';
+import {isGeneratedChecklistId,isKanbanRecurringRunBoard,isKanbanHumanChecklistTask} from './contracts/contracts';
 import {updateDeferredVerification} from './deferred-verification';
 import {configureBoardSettings} from './board-settings';
 import {prepareItemCleanup} from './item-cleanup';
@@ -19,7 +19,7 @@ import {applyWorkflow, isWorkflowCommand, refreshReady, protectWorkflowItem} fro
 import {allocateTaskId,numberEntities} from './numbering';
 import {isRecordCommand, applyRecord} from './project-records';
 import {reviewAmendment} from './amendments';
-import {principal} from './identity';
+import {eligible,principal} from './identity';
 import type { KanbanActor, KanbanBoard, KanbanCommand, KanbanEvent, KanbanItem } from './contracts';
 import type { KanbanState } from './ports';
 import { identity, participant, requireValue, text } from './rules';
@@ -76,6 +76,12 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     else if (command.type === 'configure-automation') configureAutomation(board, command.settings, actor);
     else if (command.type === 'register-session') {
         const item = command.itemId ? itemFor(board, command.itemId) : undefined;
+        if(command.role==='discussion'){
+            requireValue(item&&isKanbanHumanChecklistTask(board,item),'HUMAN_CHECKLIST_REQUIRED');
+            requireValue(principal(actor).kind==='human','FORBIDDEN'); eligible(board,item,actor);
+            requireValue(!terminal(item),'ITEM_COMPLETED');
+            requireValue(!item.participants.some(p=>p.roles.includes('discussion')&&p.sessionId!==command.sessionId),'TASK_DISCUSSION_ALREADY_LINKED');
+        }
         const list = item ? item.participants : board.participants;
         participant(list, command.sessionId, command.agentId, command.role, command.subscribed, now);
         if (item) item.revision++;
