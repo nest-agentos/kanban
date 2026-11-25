@@ -10,6 +10,13 @@ export function nextRecurrence(config:KanbanRecurrence,after:number):number {
     if(config.cadence.kind==='interval')return config.firstAt+(Math.floor((after-config.firstAt)/config.cadence.milliseconds)+1)*config.cadence.milliseconds;
     return nextCalendar(config.cadence,config.timeZone,after);
 }
+export function currentRecurrenceSlot(config:KanbanRecurrence,now:number):number|undefined {
+    if(now<config.firstAt)return;
+    if(config.cadence.kind==='interval')return config.firstAt+Math.floor((now-config.firstAt)/config.cadence.milliseconds)*config.cadence.milliseconds;
+    const local=parts(config.timeZone,now),weekday=new Date(Date.UTC(local.year,local.month-1,local.day)).getUTCDay();
+    const time=config.cadence.weekdays.includes(weekday)?calendarInstant(config.timeZone,{...local,hour:config.cadence.hour,minute:config.cadence.minute}):undefined;
+    if(time!==undefined&&time>=config.firstAt&&time<=now)return time;
+}
 function parts(zone:string,instant:number):Local {
     const fields=new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(instant);
     const value=(name:string)=>Number(fields.find(field=>field.type===name)?.value);

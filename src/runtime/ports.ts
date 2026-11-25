@@ -19,6 +19,7 @@ export const defaultReferences: KanbanReferencePolicy = {
 };
 
 export interface KanbanResourceCatalog {
+    manualChildResource?(record:import('../contracts').KanbanProjectRecord):import('../contracts').KanbanExternalReference|undefined;
     system: string;
     decisionSystem?: string;
     list(): Promise<Array<{reference: KanbanExternalReference; label: string}>>;

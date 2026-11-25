@@ -1,3 +1,6 @@
+import {manualChildKey,validateManualChecklist} from './recurrence-validation';
+import {requireCoordinator} from './workflow-plans';
+import {sha256HexSync} from './utils';
 import {kanbanTaskType} from './contracts/task-type';
 import {updateDeferredVerification} from './deferred-verification';
 import {configureBoardSettings} from './board-settings';
@@ -22,7 +25,7 @@ import { identity, participant, requireValue, text } from './rules';
 import { transition } from './transitions';
 import {planningCommand, applyPlanningCommand, attachReference} from './planning-commands';
 import {plan, setStage, validatePlan, terminal} from './planning';
-import {executable} from './configuration';
+import {executable,workType} from './configuration';
 import {validateCandidates} from './identity';
 import {archiveExpired} from './archives';
 
@@ -41,6 +44,7 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     if (command.type === 'delete-board') return deleteBoard(state, actor, operationId, now);
     if (command.type === 'scan') { scan(state, actor, operationId, now); refreshReady(state); return state; }
     let recordEvent = command.type !== 'renew';
+    let manualIds:string[]|undefined;
     if (command.type === 'request-board-stop' || command.type === 'observe-board-stop') stopBoard(state,command,actor,now);
     else if (command.type === 'set-board-control') setBoardControl(state, command, actor, now, token);
     else if (command.type === 'delete-item') {
@@ -63,6 +67,7 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     else if (command.type === 'review-amendment') {if(command.accept)assertDefinitionEditable(itemFor(board,command.itemId),now);reviewAmendment(board, command, actor, now);}
     else if (planningCommand(command)) applyPlanningCommand(state, command, now, actor, workflowInternal);
     else if (command.type === 'create-item') createItem(state, command, actor, now, token);
+    else if(command.type==='create-manual-children')manualIds=createManualChildren(state,command,actor,now,token);
     else if(command.type==='defer-verification'||command.type==='record-verification-result')updateDeferredVerification(board,command,actor,now);
     else if(command.type==='configure-board-settings')configureBoardSettings(board,command,actor);
     else if (command.type === 'configure-automation') configureAutomation(board, command.settings, actor);
@@ -79,7 +84,7 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     numberEntities(state); refreshReady(state);
     board.revision++;
     if (recordEvent) append(state, actor, operationId, now, command.type, command.type === 'restart-item' ? command.replacementId : 'itemId' in command ? command.itemId : command.type === 'create-item' ? command.item.id ?? state.board.items.at(-1)?.id : 'dispatchId' in command ? state.workflow?.dispatches[command.dispatchId]?.itemId : undefined,
-        {...eventData(command,state),...(cleanupIds?{itemIds:cleanupIds,reason:'manual-cleanup'}:{})},
+        {...eventData(command,state),...(manualIds?{itemIds:manualIds}:{}),...(cleanupIds?{itemIds:cleanupIds,reason:'manual-cleanup'}:{})},
         command.type === 'message' ? command.recipientSessionIds : undefined);
     scan(state, actor, operationId, now);
     return state;
@@ -106,6 +111,29 @@ function createItem(state: KanbanState, command: Extract<KanbanCommand, { type: 
     validateCandidates(board, item, executable(board, item)); validatePlan(state, item, item.planning);
     if (actor.sessionId) participant(item.participants, actor.sessionId, actor.agentId, 'creator', true, now); board.items.push(item);
     if (command.stage === 'open') setStage(state, item, 'open', now);
+}
+function createManualChildren(state:KanbanState,command:Extract<KanbanCommand,{type:'create-manual-children'}>,actor:KanbanActor,now:number,token:string):string[] {
+    requireCoordinator(state,actor);
+    requireValue(principal(actor).kind==='human','FORBIDDEN');
+    validateManualChecklist(command.children);
+    const parent=itemFor(state.board,command.itemId);
+    const kind=workType(state.board,command.workType);
+    requireValue(parent.planning?.execution==='children'&&kind.executable&&!terminal(parent),'PARENT_UNAVAILABLE');
+    const siblings=[...state.board.items,...state.archiveIndex??[]].filter(row=>row.planning?.parentId===parent.id&&!row.deletedAt&&row.status!=='cancelled');
+    const ids:string[]=[];
+    for(const child of command.children){
+        const key=manualChildKey(child.title),existing=siblings.find(row=>manualChildKey(row.title)===key);
+        if(existing){
+            const detail=state.board.items.find(row=>row.id===existing.id);
+            requireValue(detail?.acceptance.trim()===child.acceptance.trim(),'MANUAL_CHECKLIST_EXISTING_CONFLICT');
+            continue;
+        }
+        const id='manual-'+sha256HexSync(JSON.stringify([parent.id,token,key])).slice(0,40);
+        createItem(state,{type:'create-item',item:{id,title:child.title.trim(),responsibility:child.title.trim(),acceptance:child.acceptance.trim(),externalRefs:command.externalRefs},
+            launch:{mode:'manual'},planning:{kind:kind.id,parentId:parent.id,priority:parent.planning.priority,dependencies:[],references:[]}},actor,now,token);
+        ids.push(id);
+    }
+    return ids;
 }
 function itemFor(board: KanbanBoard, id: string): KanbanItem {
     const item = board.items.find(value => value.id === id); requireValue(item, 'ITEM_NOT_FOUND'); return item;

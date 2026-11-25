@@ -10,8 +10,11 @@ type Log=(event:{operationId:string;boardId:string;stage:string;result:'success'
 type Runner={runRecurring:import('./record-execution').RecordRecurringRunner};
 interface Cursor {revision:number;nextAt:number}
 const cursorKey=(board:string,id:string)=>'recurrence-cursor:'+JSON.stringify([board,id]);
+function hasPendingRound(record:KanbanProjectRecord):boolean {
+    return record.recurrenceFence?.pending.some(row=>!record.recurrence?.manualChecklist||!!row.record.recurrence?.manualChecklist)===true;
+}
 export async function recurrenceNextTime(journal:KanbanAutomationJournal,board:string,record:KanbanProjectRecord):Promise<number|undefined> {
-    if(record.recurrence?.state!=='active'||record.recurrence.trigger==='after-settlement'&&record.recurrenceFence?.pending.length)return;
+    if(record.recurrence?.state!=='active'||record.recurrence.trigger==='after-settlement'&&hasPendingRound(record))return;
     const cursor=await journal.get<Cursor>(cursorKey(board,record.id));
     return cursor&&cursor.revision===record.recurrenceRevision?cursor.nextAt:undefined;
 }
@@ -51,7 +54,7 @@ export function createRecurrenceScheduler(service:KanbanClient,journal:KanbanAut
         const started=now(),operationId='recurrence-scan:'+id;
         try {
             let record=await service.record(board,id);
-            if(!record.recurrence&&!record.recurrenceFence?.pending.length)return;
+            if(!record.recurrence&&!hasPendingRound(record))return;
             await reconcilePending(board,record);
             record=await service.record(board,id);
             if(record.recurrence?.state==='active'&&record.status==='confirmed')await schedule(board,record);
@@ -62,19 +65,19 @@ export function createRecurrenceScheduler(service:KanbanClient,journal:KanbanAut
         for(const reservation of record.recurrenceFence?.pending??[]){
             const intent=await admission.adopt(board,reservation);
             const result=await admission.reconcile(intent);
-            if(result.phase==='settled')await settle(board,record,result.id,result.settledAt??now());
+            if(result.phase==='settled')await settle(board,record,result,result.settledAt??now());
         }
     }
-    async function settle(board:string,record:KanbanProjectRecord,id:string,settledAt:number) {
-        if(record.recurrence?.trigger==='after-settlement'&&record.recurrenceRevision){
+    async function settle(board:string,record:KanbanProjectRecord,intent:RecurrenceIntent,settledAt:number) {
+        if(record.recurrence?.trigger==='after-settlement'&&record.recurrenceRevision&&!!record.recurrence.manualChecklist===!!intent.record.recurrence?.manualChecklist){
             const nextAt=afterSettlement(record.recurrence,settledAt);
             await journal.update<Cursor>(cursorKey(board,record.id),old=>old&&old.revision===record.recurrenceRevision?{revision:old.revision,nextAt}:old??{revision:record.recurrenceRevision!,nextAt});
         }
-        await journalCommand(journal,service,board,'recurrence-settle:'+id,{type:'settle-record-recurrence',recordId:record.id,roundId:id});
+        await journalCommand(journal,service,board,'recurrence-settle:'+intent.id,{type:'settle-record-recurrence',recordId:record.id,roundId:intent.id});
     }
     async function schedule(board:string,record:KanbanProjectRecord) {
         const config=record.recurrence!,revision=record.recurrenceRevision!,current=now(),key=cursorKey(board,record.id);
-        if(config.trigger==='after-settlement'&&record.recurrenceFence?.pending.length)return;
+        if(config.trigger==='after-settlement'&&hasPendingRound(record))return;
         const state=await journal.update<Cursor>(key,old=>{
             if(!old||old.revision!==revision)return {revision,nextAt:nextRecurrence(config,current)};
             if(initial)return {revision,nextAt:config.trigger==='fixed'?nextRecurrence(config,current):Math.max(old.nextAt,nextRecurrence(config,current))};

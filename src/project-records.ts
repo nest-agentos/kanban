@@ -1,3 +1,4 @@
+import {currentRecurrenceSlot} from './runtime/recurrence-time';
 import {applyRecordRevision} from './record-revision';
 import {validateRecurrence} from './recurrence-validation';
 import {validateDecisionOptions,validateDecisionPriority} from './decision-options';
@@ -7,9 +8,9 @@ import type {KanbanState} from './ports';
 import {identity, requireValue, text} from './rules';
 import {principal, principalKey} from './identity';
 import {requireReviewer, validateSources} from './amendments';
-export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record' | 'begin-record-edit' | 'save-record-edit' | 'end-record-edit' | 'set-record-priority'|'configure-record-delivery'|'configure-record-recurrence'|'reserve-record-recurrence'|'settle-record-recurrence'}>;
+export type RecordCommand = Extract<KanbanCommand, {type: 'append-record' | 'review-record' | 'link-record' | 'request-record-cancellation' | 'cancel-record' | 'delete-record' | 'archive-record' | 'restart-record' | 'revise-record' | 'begin-record-edit' | 'save-record-edit' | 'end-record-edit' | 'set-record-priority'|'configure-record-delivery'|'configure-record-recurrence'|'reserve-record-recurrence'|'rebuild-record-recurrence'|'settle-record-recurrence'}>;
 export function isRecordCommand(command: KanbanCommand): command is RecordCommand {
-    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record', 'begin-record-edit', 'save-record-edit', 'end-record-edit', 'set-record-priority','configure-record-delivery','configure-record-recurrence','reserve-record-recurrence','settle-record-recurrence'].includes(command.type);
+    return ['append-record', 'review-record', 'link-record', 'request-record-cancellation', 'cancel-record', 'delete-record', 'archive-record', 'restart-record', 'revise-record', 'begin-record-edit', 'save-record-edit', 'end-record-edit', 'set-record-priority','configure-record-delivery','configure-record-recurrence','reserve-record-recurrence','rebuild-record-recurrence','settle-record-recurrence'].includes(command.type);
 }
 export function applyRecord(state: KanbanState, command: RecordCommand, actor: KanbanActor, now: number, forceDraft = false): void {
     if (['begin-record-edit','save-record-edit','end-record-edit'].includes(command.type)) {applyRecordRevision(state,command as import('./contracts/record-revision').KanbanRecordRevisionCommand,actor,now);return;}
@@ -18,6 +19,14 @@ export function applyRecord(state: KanbanState, command: RecordCommand, actor: K
     requireValue(record.deletedAt === undefined, 'RECORD_DELETED');
     if(command.type==='review-record'||command.type==='link-record')requireValue(record.archivedAt===undefined,'RECORD_ARCHIVED');
     if(command.type==='begin-record-edit'||command.type==='save-record-edit'||command.type==='end-record-edit')return;
+    if(command.type==='rebuild-record-recurrence'){
+        requireValue(principal(actor).kind==='human','FORBIDDEN');
+        requireValue(record.recurrence?.manualChecklist,'MANUAL_CHECKLIST_REQUIRED');
+        const scheduledAt=currentRecurrenceSlot(record.recurrence,now);
+        requireValue(scheduledAt!==undefined,'RECURRENCE_SLOT_NOT_DUE');
+        reserveRecurrence(state,record,{...command,type:'reserve-record-recurrence',scheduledAt},actor,now,true);
+        return;
+    }
     if(command.type==='reserve-record-recurrence') {reserveRecurrence(state,record,command,actor,now);return;}
     if(command.type==='settle-record-recurrence') {
         requireReviewer(state.board,actor);const fence=record.recurrenceFence;
@@ -181,11 +190,12 @@ function validateRecordReferences(refs: import('./contracts').KanbanExternalRefe
 }
 
 export function recordSummary(record: KanbanProjectRecord): import('./contracts').KanbanRecordSummary {
-    const {content: _content, rationale: _rationale, sources, recurrenceFence:_fence, ...metadata} = record;
-    return {...metadata,...(_fence?.pending.length?{recurrencePending:_fence.pending.length}:{}), sessionIds: [...new Set(sources.map(source => source.sessionId))]};
+    const {content: _content, rationale: _rationale, sources, recurrenceFence:_fence, recurrence, ...metadata} = record;
+    const schedule=recurrence?(({manualChecklist:_checklist,...schedule})=>schedule)(recurrence):undefined;
+    return {...metadata,...(schedule?{recurrence:schedule}:{}),...(_fence?.pending.length?{recurrencePending:_fence.pending.length}:{}), sessionIds: [...new Set(sources.map(source => source.sessionId))]};
 }
 
-function reserveRecurrence(state:KanbanState,record:KanbanProjectRecord,command:Extract<RecordCommand,{type:'reserve-record-recurrence'}>,actor:KanbanActor,now:number):void {
+function reserveRecurrence(state:KanbanState,record:KanbanProjectRecord,command:Extract<RecordCommand,{type:'reserve-record-recurrence'}>,actor:KanbanActor,now:number,requireSlot=false):void {
     requireReviewer(state.board,actor);
     const fence=record.recurrenceFence??{pending:[]},last=fence.last;
     if(last?.configRevision===command.configRevision&&last.scheduledAt>=command.scheduledAt)return;
@@ -195,7 +205,10 @@ function reserveRecurrence(state:KanbanState,record:KanbanProjectRecord,command:
     requireValue(Number.isSafeInteger(command.scheduledAt)&&command.scheduledAt>=record.recurrence.firstAt&&command.scheduledAt<=now,'RECURRENCE_TIME_INVALID');
     const id='round-'+sha256HexSync(JSON.stringify([state.board.id,record.id,command.configRevision,command.scheduledAt]));
     const {recurrenceFence:_fence,...snapshot}=record;
-    const pending=fence.pending.length<record.recurrence.maxConcurrency
+    const occupied=record.recurrence.manualChecklist
+        ?fence.pending.filter(row=>row.record.recurrence?.manualChecklist).length:fence.pending.length;
+    if(requireSlot)requireValue(occupied<record.recurrence.maxConcurrency,'RECURRENCE_CONCURRENCY_LIMIT');
+    const pending=occupied<record.recurrence.maxConcurrency
         ?[...fence.pending,{id,configRevision:command.configRevision,scheduledAt:command.scheduledAt,record:structuredClone(snapshot)}]:fence.pending;
     record.recurrenceFence={last:{configRevision:command.configRevision,scheduledAt:command.scheduledAt},pending};
     record.updatedAt=now;record.revision++;

@@ -6,7 +6,7 @@ export interface KanbanItemResourceCatalog {resources:KanbanRecordResource[];sel
 export interface KanbanRecordExecution {
     dependencies?:Array<import('./context').KanbanDecisionDependency&{state:'waiting'|'completed'|'unavailable'}>;
     id: string; recordId: string; recordRevision: number; boardId: string;
-    scheduledAt?:number; recurrenceRevision?:number;
+    scheduledAt?:number; recurrenceRevision?:number; manualCardCount?:number;
     completion?:import('./task-state').KanbanTaskProjection['completion'];
     managementTasks?: Array<{id:string;title?:string;reference?:string;task?:import('./task-state').KanbanTaskProjection;code?:string}>;
     rootItemId?: string; itemIds?: string[]; stage?:'planning'|'execution';

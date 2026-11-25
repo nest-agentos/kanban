@@ -73,6 +73,7 @@ export type KanbanCommand = import('./deferred-verification').KanbanVerification
     | {type:'set-record-priority';recordId:string;priority:0|1|2|3|4|null}
     | {type:'configure-record-delivery';recordId:string;expectedRecordRevision:number;verificationLevel:'full'|'quick'|'none';deliveryMode:'release'|'source'|'build'}
     | {type:'configure-record-recurrence';recordId:string;expectedRecordRevision:number;recurrence:import('./recurrence').KanbanRecurrence|null}
+    | {type:'rebuild-record-recurrence';recordId:string;configRevision:number}
     | {type:'reserve-record-recurrence';recordId:string;configRevision:number;scheduledAt:number}
     | {type:'settle-record-recurrence';recordId:string;roundId:string}
     | {type:'revise-record';recordId:string;title:string;content:string;rationale:string;externalRefs?:import('./configuration').KanbanExternalReference[];completion?:'manual'|'automatic';verificationLevel?:'full'|'quick'|'none';deliveryMode?:'release'|'source'|'build'}
@@ -88,6 +89,7 @@ export type KanbanCommand = import('./deferred-verification').KanbanVerification
     | {type: 'append-record'; record: KanbanRecordInput}
     | {type: 'review-record'; recordId: string; accept: boolean}
     | {type: 'link-record'; recordId: string; itemId: string}
+    | {type:'create-manual-children';itemId:string;workType:string;children:import('./recurrence').KanbanManualChild[];externalRefs?:import('./configuration').KanbanExternalReference[]}
     | { type: 'create-item'; item: Pick<KanbanItem, 'title' | 'responsibility' | 'acceptance' | 'eligibleAgentIds' | 'eligiblePrincipals' | 'externalRefs' | 'purpose' | 'taskType'> & {id?: string}; planning?: KanbanPlanning; stage?: 'backlog' | 'open'; launch?: {mode?: 'automatic' | 'manual'; paused?: boolean} }
     | { type: 'register-session'; itemId?: string; sessionId: string; agentId?: string; role: KanbanParticipant['roles'][number]; subscribed: boolean }
     | { type: 'claim'; itemId: string; estimate?: KanbanEstimate }

@@ -1,3 +1,4 @@
+export type {KanbanManualChild} from './recurrence';
 export type {KanbanDeferredVerification} from './deferred-verification';
 export type {KanbanTaskGroup, KanbanPlanning, KanbanProgress, KanbanItemSummary, KanbanArchivedItem, KanbanItemQuery, KanbanItemPage, KanbanOverview} from './planning';
 export type {KanbanReferenceTarget} from './references';

@@ -23,7 +23,7 @@ interface SavedRun extends KanbanRecordExecution {
     settings?:Record<string,string>;
     previousRunId?:string;
     placement?: KanbanRecordRunRequest['placement']; requestRevision?: number; taskKind?: string; parentKind?: string;
-    sourceBoardId: string; record: KanbanProjectRecord; automation: NonNullable<KanbanBoard['automation']>}
+    sourceBoardId: string; record: KanbanProjectRecord; automation?: NonNullable<KanbanBoard['automation']>}
 type RunReceipt = Pick<SavedRun, 'id' | 'sourceBoardId' | 'recordId' | 'recordRevision' | 'requestRevision' | 'placement'> & {schema?: 2};
 interface Options {
     recurringAutomation?:import('./runtime-ports').KanbanRuntimeOptions['recurringAutomation'];
@@ -91,7 +91,7 @@ export function createRecordExecution(options: Options) {
             const reservation=current.recurrenceFence?.pending.find(row=>row.id===intent.id);
             requireValue(reservation&&reservation.configRevision===intent.configRevision&&reservation.scheduledAt===intent.scheduledAt&&JSON.stringify(reservation.record)===JSON.stringify(intent.record),'RECURRENCE_RESERVATION_MISSING');
             const existing=await options.journal.run<SavedRun>(intent.boardId,intent.id);
-            const placement=existing ? existing.placement : options.recurringAutomation?'new-board':undefined;
+            const placement=existing ? existing.placement : options.recurringAutomation||intent.record.recurrence?.manualChecklist?'new-board':undefined;
             const request={operationId:intent.id,recordId:intent.recordId,expectedRevision:intent.record.revision,placement} as const;
             return resume(existing ? await freezeOperation(options,request,existing) : await prepare(options,intent.boardId,request,frozen));
         },
@@ -175,8 +175,9 @@ async function prepare(options: Options, boardId: string, request: KanbanRecordR
     requireValue(current.kind === 'decision' && current.status === 'confirmed' && record.status==='confirmed', 'DECISION_NOT_CONFIRMED');
     requireValue(round||record.revision === request.expectedRevision, 'REVISION_CONFLICT');
     const board = await options.service.read(boardId);
-    const automation=round&&options.recurringAutomation?await options.recurringAutomation(board,record):board.automation;
-    requireValue(automation, 'AUTOMATION_BINDING_REQUIRED');
+    const manual=round&&record.recurrence?.manualChecklist;
+    const automation=manual?undefined:round&&options.recurringAutomation?await options.recurringAutomation(board,record):board.automation;
+    requireValue(manual||automation, 'AUTOMATION_BINDING_REQUIRED');
     await validateResourceReferences(options.resources, record);
     requireValue(record.externalRefs?.some(ref => ref.system === options.resources.system), 'REMOTE_PROJECT_REQUIRED');
     const id = round?.id??sha256HexSync(JSON.stringify([boardId, record.id, record.revision]));
@@ -241,6 +242,11 @@ async function advance(options: Options, run: SavedRun): Promise<KanbanRecordExe
         await validateResourceReferences(options.resources, run.record);
         if(!await admitDependencies(options,run,started)){const current=await options.journal.run<SavedRun>(run.sourceBoardId,run.id);requireValue(current,'RECORD_EXECUTION_CHECKPOINT_MISSING');return view(current);}
         await materialize(options, run);
+        if(run.recurring&&run.record.recurrence?.manualChecklist){
+            const updated=await save(options,{...run,state:'completed',stage:'execution',manualCardCount:run.record.recurrence.manualChecklist.length,updatedAt:Date.now()});
+            options.log({operationId:run.id,boardId:run.sourceBoardId,stage:'record.manual-cards.publish',result:'success',durationMs:Date.now()-started});
+            return view(updated);
+        }
         const board = await options.service.read(run.boardId);
         const items = run.itemIds ? await Promise.all(run.itemIds.map(async id => board.items.find(item => item.id === id) ?? (await options.service.item(run.boardId, id)).item)) : board.items;
         if(run.rootItemId&&!run.itemIds?.includes(run.rootItemId)&&items.every(item=>item.purpose!=='planning')&&board.items.find(item=>item.id===run.rootItemId)?.purpose==='planning')await once(options,run,'finish-planning',{type:'finish-planning',itemId:run.rootItemId});
@@ -279,7 +285,7 @@ function newRun(board: KanbanBoard, record: KanbanProjectRecord, request: Kanban
     return {id, sourceBoardId: board.id, recordId: record.id, recordRevision: record.revision,
         boardId: placement === 'new-board' ? 'run-' + id : board.id, placement, taskKind: parent.id, parentKind: parent.id,
         rootItemId:itemIds[0],itemIds,sharedCoordination:true,
-        state:'preparing',stage:'planning',createdAt: Date.now(), updatedAt: Date.now(), record, settings:structuredClone(board.settings), automation: structuredClone(board.automation!)};
+        state:'preparing',stage:'planning',createdAt: Date.now(), updatedAt: Date.now(), record, settings:structuredClone(board.settings), automation: structuredClone(board.automation)};
 }
 function runCompletion(items:KanbanItem[],all:KanbanItem[]):KanbanRecordExecution['completion'] {
     const outcomes=items.map(item=>projectKanbanTask(item,undefined,Date.now(),all).completion);
@@ -319,12 +325,27 @@ async function materialize(options: Options, run: SavedRun): Promise<void> {
             externalRefs: [...references, {system: options.resources.decisionSystem ?? 'kanban-decision', id: run.id}]},
             ...(run.taskKind ? {planning: {kind: run.taskKind, priority: run.record.priority ?? 2, dependencies: [], references: [], ...(group ? {parentId: run.rootItemId} : {})}} : {})});
     }
+    if(run.recurring&&run.record.recurrence?.manualChecklist){
+        await publishManualRound(options,run,run.record.recurrence.manualChecklist);
+        return;
+    }
     await markPlanning(options,run);
     if(run.boardId!==run.sourceBoardId && run.settings)await once(options,run,'settings',{type:'configure-board-settings',settings:run.settings});
-    if (run.boardId !== run.sourceBoardId) await once(options, run, 'automation', {type: 'configure-automation', settings: {...run.automation, enabled: true, autoAccept: false}});
+    if (run.boardId !== run.sourceBoardId) await once(options, run, 'automation', {type: 'configure-automation', settings: {...run.automation!, enabled: true, autoAccept: false}});
     if(run.boardId===run.sourceBoardId&&!run.recurring)for(const itemId of run.rootItemId?[run.rootItemId]:run.itemIds??[])await once(options,run,'link-'+itemId,{type:'link-record',recordId:run.recordId,itemId});
 }
 
+async function publishManualRound(options:Options,run:SavedRun,children:import('../contracts').KanbanManualChild[]):Promise<void> {
+    const board=await options.service.read(run.boardId);
+    const workType=(board.workTypes??DEFAULT_KANBAN_WORK_TYPES).find(type=>type.executable&&type.id===board.defaultWorkType)
+        ??(board.workTypes??DEFAULT_KANBAN_WORK_TYPES).find(type=>type.executable);
+    requireValue(workType&&run.rootItemId,'DECISION_WORK_TYPES_REQUIRED');
+    const project=options.resources.manualChildResource?.(run.record)
+        ??run.record.externalRefs?.find(ref=>ref.system===options.resources.system);
+    const externalRefs=[...project?[project]:[],{system:options.resources.decisionSystem??'kanban-decision',id:run.id}];
+    await once(options,run,'manual-cards',{type:'create-manual-children',itemId:run.rootItemId,workType:workType.id,externalRefs,children});
+    await once(options,run,'finish-manual-planning',{type:'finish-planning',itemId:run.rootItemId});
+}
 async function once(options: Options, run: SavedRun, stage: string, command: KanbanCommand): Promise<void> {
     const key = 'record-stage:' + run.id + ':' + stage;
     await journalCommand(options.journal, options.service, run.boardId, key, command);
@@ -368,9 +389,9 @@ async function readManagementTasks(options:Options,boardId:string,runs:KanbanRec
 }
 
 function view(run: KanbanRecordExecution): KanbanRecordExecution {
-    const {id, recordId, recordRevision, boardId, rootItemId, itemIds, state, createdAt, updatedAt,archivedAt,stage,code,completion,dependencies,scheduledAt,recurrenceRevision} = run;
+    const {id, recordId, recordRevision, boardId, rootItemId, itemIds, state, createdAt, updatedAt,archivedAt,stage,code,completion,dependencies,scheduledAt,recurrenceRevision,manualCardCount} = run;
     const waiting=code?.startsWith('DECISION_DEPENDENCY_');
-    return {id, recordId, recordRevision, boardId, ...(dependencies?{dependencies}:{}), ...(!waiting&&rootItemId?{rootItemId}:{}),...(!waiting&&itemIds?{itemIds}:{}), state,createdAt,updatedAt,...(scheduledAt!==undefined?{scheduledAt}:{}),...(recurrenceRevision!==undefined?{recurrenceRevision}:{}),...(completion?{completion}:{}),...(stage?{stage}:{}),...(archivedAt!==undefined?{archivedAt}:{}), ...(code ? {code} : {})};
+    return {id, recordId, recordRevision, boardId, ...(dependencies?{dependencies}:{}), ...(!waiting&&rootItemId?{rootItemId}:{}),...(!waiting&&itemIds?{itemIds}:{}), state,createdAt,updatedAt,...(scheduledAt!==undefined?{scheduledAt}:{}),...(recurrenceRevision!==undefined?{recurrenceRevision}:{}),...(manualCardCount!==undefined?{manualCardCount}:{}),...(completion?{completion}:{}),...(stage?{stage}:{}),...(archivedAt!==undefined?{archivedAt}:{}), ...(code ? {code} : {})};
 }
 
 async function cancelDecision(options: Options, boardId: string, recordId: string, operationId: string): Promise<void> {

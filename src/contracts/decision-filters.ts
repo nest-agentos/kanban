@@ -26,7 +26,7 @@ export function decisionRows(records:KanbanRecordSummary[],conversations:KanbanR
 
 function normalizedTitle(value:string):string {return value.normalize('NFKC').trim().toLowerCase();}
 
-export function decisionPageFilter(rows:KanbanDecisionRow[],query:KanbanDecisionQuery) {
+export function decisionPageFilter(rows:KanbanDecisionRow[],query:KanbanDecisionQuery,includeCompletedByDefault=false) {
     const search=normalizedTitle(query.search??'');
     if(search)rows=rows.filter(row=>normalizedTitle(row.value.title??'').includes(search));
     const attention=new Set(rows.filter(row=>decisionRowPriority(row)===0));
@@ -34,7 +34,7 @@ export function decisionPageFilter(rows:KanbanDecisionRow[],query:KanbanDecision
     const byState=rows.filter(row=>{
         const state=decisionRowState(row).state;
         if(states.size)return states.has(state)||(states.has('attention')&&attention.has(row));
-        return state!=='completed'||query.archived||(query.includeArchived&&row.kind==='record'&&row.value.archivedAt!==undefined);
+        return state!=='completed'||includeCompletedByDefault||query.archived||(query.includeArchived&&row.kind==='record'&&row.value.archivedAt!==undefined);
     });
     const needsAttention=byState.filter(row=>attention.has(row));
     return {attentionTotal:needsAttention.length,visible:query.attentionOnly?needsAttention:byState};

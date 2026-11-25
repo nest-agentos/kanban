@@ -1,3 +1,5 @@
+export interface KanbanManualChild {title:string;acceptance:string}
+
 /** A schedule is frozen into each execution; controls affect future executions only. */
 export interface KanbanRecurrence {
     state:'active'|'paused'|'stopped';
@@ -6,6 +8,7 @@ export interface KanbanRecurrence {
     cadence:{kind:'interval';milliseconds:number}|{kind:'calendar';hour:number;minute:number;weekdays:number[]};
     trigger:'after-settlement'|'fixed';
     maxConcurrency:number;
+    manualChecklist?:KanbanManualChild[];
 }
 export interface KanbanRecurrenceReservation {
     id:string;configRevision:number;scheduledAt:number;record:import('./context').KanbanProjectRecord;

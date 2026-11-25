@@ -10,7 +10,7 @@ type Saved=Record<string,unknown>&RecordRun;
 type Hot=RecordRun&{details:string;epoch?:string;ordinal:number};
 const family='record-runs:';
 const marker=(count:number)=>JSON.stringify({recordRuns:1,count});
-const hotFields=['id','recordId','recordRevision','boardId','rootItemId','itemIds','stage','state','createdAt','updatedAt','archivedAt','code','completion','dependencies','scheduledAt','recurrenceRevision'];
+const hotFields=['id','recordId','recordRevision','boardId','rootItemId','itemIds','stage','state','createdAt','updatedAt','archivedAt','code','completion','dependencies','scheduledAt','recurrenceRevision','manualCardCount'];
 const prefix=(board:string)=>'run:'+JSON.stringify([board]).slice(0,-1)+',';
 const runKey=(board:string,id:string)=>'run:'+JSON.stringify([board,id]);
 const activeKey=(board:string,id:string)=>'active:'+JSON.stringify([board,id]);
