@@ -175,7 +175,7 @@ async function prepare(options: Options, boardId: string, request: KanbanRecordR
     requireValue(current.kind === 'decision' && current.status === 'confirmed' && record.status==='confirmed', 'DECISION_NOT_CONFIRMED');
     requireValue(round||record.revision === request.expectedRevision, 'REVISION_CONFLICT');
     const board = await options.service.read(boardId);
-    const automation=round&&options.recurringAutomation?await options.recurringAutomation(board):board.automation;
+    const automation=round&&options.recurringAutomation?await options.recurringAutomation(board,record):board.automation;
     requireValue(automation, 'AUTOMATION_BINDING_REQUIRED');
     await validateResourceReferences(options.resources, record);
     requireValue(record.externalRefs?.some(ref => ref.system === options.resources.system), 'REMOTE_PROJECT_REQUIRED');

@@ -25,7 +25,7 @@ export interface KanbanRuntimeOptions extends Omit<KanbanActivityModuleOptions,'
     journal?:KanbanJournalOptions | KanbanAutomationJournal;workLog?:KanbanWorkLogOptions;
     archiveSession?(sessionId:string,operationId:string):Promise<void>;
     resources?:KanbanResourceCatalog;requiresItemResource?: (board:import('../contracts').KanbanBoard)=>boolean;
-    recurringAutomation?(board:import('../contracts').KanbanBoard):Promise<NonNullable<import('../contracts').KanbanBoard['automation']>>;
+    recurringAutomation?(board:import('../contracts').KanbanBoard,record:import('../contracts').KanbanProjectRecord):Promise<NonNullable<import('../contracts').KanbanBoard['automation']>>;
     assertRestartIdle?(boardId:string,itemIds:string[]):Promise<void>;
     control?:KanbanTaskControlOptions;
     automation?:Omit<KanbanAutomationOptions,'fs'|'directory'|'service'|'serviceFor'|'journal'|'workLog'|'log'>;
