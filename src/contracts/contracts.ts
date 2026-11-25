@@ -19,6 +19,7 @@ export interface KanbanParticipant {
 export interface KanbanAssignment extends KanbanActor { principalId?: string; token: string; leaseUntil: number; claimedAt: number; }
 export interface KanbanItem {
     recurring?:true;
+    manualOutcome?: {note?:string};
     executionCheckWaivers?:import('./task-state').KanbanExecutionCheckWaiver[];
     operationWaivers?: import('./operation-waiver').KanbanOperationWaiver[];
     acceptanceResult?: import('./operation-waiver').KanbanAcceptanceResult;
@@ -90,6 +91,7 @@ export type KanbanCommand = import('./deferred-verification').KanbanVerification
     | {type: 'review-record'; recordId: string; accept: boolean}
     | {type: 'link-record'; recordId: string; itemId: string}
     | {type:'create-manual-children';itemId:string;workType:string;children:import('./recurrence').KanbanManualChild[];externalRefs?:import('./configuration').KanbanExternalReference[]}
+    | {type:'settle-manual-task';itemId:string;outcome:'completed'|'cancelled';note?:string}
     | { type: 'create-item'; item: Pick<KanbanItem, 'title' | 'responsibility' | 'acceptance' | 'eligibleAgentIds' | 'eligiblePrincipals' | 'externalRefs' | 'purpose' | 'taskType'> & {id?: string}; planning?: KanbanPlanning; stage?: 'backlog' | 'open'; launch?: {mode?: 'automatic' | 'manual'; paused?: boolean} }
     | { type: 'register-session'; itemId?: string; sessionId: string; agentId?: string; role: KanbanParticipant['roles'][number]; subscribed: boolean }
     | { type: 'claim'; itemId: string; estimate?: KanbanEstimate }
@@ -118,6 +120,11 @@ export interface KanbanRequest { operationId: string; expectedRevision: number; 
 export function isKanbanRecurringRunBoard(board:Pick<KanbanBoard,'scope'>):boolean {
     return board.scope?.kind==='collection'&&board.scope.namespace==='recurring-run';
 }
+export function isKanbanHumanChecklistTask(board:Pick<KanbanBoard,'scope'|'automation'>,item:Pick<KanbanItem,'id'|'launch'|'planning'>):boolean {
+    return isKanbanRecurringRunBoard(board) && !board.automation?.enabled && item.launch?.mode==='manual'
+        && item.planning?.execution==='direct' && !!item.planning.parentId && isGeneratedChecklistId(item.id);
+}
+export const isGeneratedChecklistId = (id:string):boolean => /^manual-[a-f0-9]{40}$/.test(id);
 export type KanbanBoardSummary = Omit<KanbanBoard, 'items' | 'deferredVerifications'> & {attention?:{board:number;decision:number;log:number};executionPhase?: ReturnType<typeof import('./board-control').boardControlPhase>; items: Array<Pick<KanbanItem, 'id' | 'title' | 'number' | 'taskType'>>};
 export interface KanbanService {
     workflow(boardId: string): Promise<import('./workflow').KanbanWorkflowState>;

@@ -23,9 +23,9 @@ export function protectWorkflowItem(state: KanbanState, command: KanbanCommand):
     const plan=Object.values(state.workflow.plans).find(plan=>plan.itemIds.includes(command.itemId!));
     if (!plan) return;
     requireValue(!['edit-item','plan-item','review-amendment'].includes(command.type),'PLAN_ITEM_CHANGED_REQUIRES_NEW_ID');
-    if (plan.sealed) requireValue(!['claim','submit','review','close-plan'].includes(command.type),'WORKFLOW_COMMAND_REQUIRED');
+    if (plan.sealed) requireValue(!['claim','submit','review','close-plan','settle-manual-task'].includes(command.type),'WORKFLOW_COMMAND_REQUIRED');
     const live=Object.values(state.workflow.dispatches).some(dispatch=>dispatch.itemId===command.itemId&&['prepared','running','unknown','succeeded'].includes(dispatch.outcome));
-    if (live) requireValue(!['delete-item','request-transfer','accept-transfer','release-item','cancel-item'].includes(command.type),'EXECUTION_UNSETTLED');
+    if (live) requireValue(!['delete-item','request-transfer','accept-transfer','release-item','cancel-item','settle-manual-task'].includes(command.type),'EXECUTION_UNSETTLED');
 }
 export function applyWorkflow(state: KanbanState, command: KanbanWorkflowCommand, actor: KanbanActor, now: number, apply: ApplyWorkCommand): boolean {
     state.workflow ??= {plans:{},dispatches:{},ready:[],completedPlans:[]};

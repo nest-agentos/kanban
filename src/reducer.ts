@@ -2,6 +2,7 @@ import {manualChildKey,validateManualChecklist} from './recurrence-validation';
 import {requireCoordinator} from './workflow-plans';
 import {sha256HexSync} from './utils';
 import {kanbanTaskType} from './contracts/task-type';
+import {isGeneratedChecklistId,isKanbanRecurringRunBoard} from './contracts/contracts';
 import {updateDeferredVerification} from './deferred-verification';
 import {configureBoardSettings} from './board-settings';
 import {prepareItemCleanup} from './item-cleanup';
@@ -28,6 +29,7 @@ import {plan, setStage, validatePlan, terminal} from './planning';
 import {executable,workType} from './configuration';
 import {validateCandidates} from './identity';
 import {archiveExpired} from './archives';
+import {settleManualTask} from './manual-task-settlement';
 
 export function reduce(state: KanbanState, command: KanbanCommand, actor: KanbanActor,
     operationId: string, now: number, token: string, workflowInternal = false, restartReferences?: import('./ports').KanbanModuleOptions['restartReferences']): KanbanState {
@@ -68,6 +70,7 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     else if (planningCommand(command)) applyPlanningCommand(state, command, now, actor, workflowInternal);
     else if (command.type === 'create-item') createItem(state, command, actor, now, token);
     else if(command.type==='create-manual-children')manualIds=createManualChildren(state,command,actor,now,token);
+    else if(command.type==='settle-manual-task')settleManualTask(state,itemFor(board,command.itemId),command,actor,now);
     else if(command.type==='defer-verification'||command.type==='record-verification-result')updateDeferredVerification(board,command,actor,now);
     else if(command.type==='configure-board-settings')configureBoardSettings(board,command,actor);
     else if (command.type === 'configure-automation') configureAutomation(board, command.settings, actor);
@@ -89,9 +92,10 @@ export function reduce(state: KanbanState, command: KanbanCommand, actor: Kanban
     scan(state, actor, operationId, now);
     return state;
 }
-function createItem(state: KanbanState, command: Extract<KanbanCommand, { type: 'create-item' }>, actor: KanbanActor, now: number, token: string): void {
+function createItem(state: KanbanState, command: Extract<KanbanCommand, { type: 'create-item' }>, actor: KanbanActor, now: number, token: string, checklist = false): void {
     const {id: requestedId, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose,taskType} = command.item;
     const id = requestedId ?? allocateTaskId(state);
+    requireValue(checklist||!isKanbanRecurringRunBoard(state.board)||!isGeneratedChecklistId(id),'RESERVED_TASK_ID');
     const input = {id, title, responsibility, acceptance, eligibleAgentIds, eligiblePrincipals, externalRefs,purpose:purpose??(!command.planning?.parentId&&taskType!=='execution'?'planning' as const:undefined),taskType:taskType??(command.planning?.parentId?'execution' as const:'coordination' as const)}, board = state.board;
     requireValue(taskType===undefined||['coordination','execution'].includes(taskType),'INVALID_TASK_TYPE');
     requireValue(purpose===undefined||purpose==='planning','INVALID_ITEM_PURPOSE');
@@ -130,7 +134,7 @@ function createManualChildren(state:KanbanState,command:Extract<KanbanCommand,{t
         }
         const id='manual-'+sha256HexSync(JSON.stringify([parent.id,token,key])).slice(0,40);
         createItem(state,{type:'create-item',item:{id,title:child.title.trim(),responsibility:child.title.trim(),acceptance:child.acceptance.trim(),externalRefs:command.externalRefs},
-            launch:{mode:'manual'},planning:{kind:kind.id,parentId:parent.id,priority:parent.planning.priority,dependencies:[],references:[]}},actor,now,token);
+            launch:{mode:'manual'},planning:{kind:kind.id,parentId:parent.id,priority:parent.planning.priority,dependencies:[],references:[]}},actor,now,token,true);
         ids.push(id);
     }
     return ids;
