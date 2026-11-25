@@ -6,6 +6,7 @@ export interface KanbanPlanning {
     priority: number; dependencies: string[]; references: string[];
 }
 export interface KanbanItemSummary {
+    recurring?:true;
     executionCheckWaivers?:Array<Pick<import('./task-state').KanbanExecutionCheckWaiver,'id'|'dispatchId'>>;
     acceptanceResult?: import('./operation-waiver').KanbanAcceptanceResult;
     taskType?:import('./task-type').KanbanTaskType;
@@ -40,7 +41,7 @@ export interface KanbanItemQuery {
 export interface KanbanProgress {total:number;completed:number;cancelled:number;inProgress:number;waitingInput:number;errors:number;review:number;paused:number;waiting:number;
     phases?:Partial<Record<import('./task-state').KanbanTaskPhase,number>>}
 export interface KanbanTaskGroup {parentId:string; total:number; items:KanbanItemSummary[]}
-export interface KanbanItemPage {groups?:KanbanTaskGroup[];attentionItems?:KanbanItemSummary[];parentTask?:import('./task-state').KanbanTaskProjection;progress?:KanbanProgress;revision: number; total: number; items: KanbanItemSummary[]; nextCursor?: string}
+export interface KanbanItemPage {boardNumber?:number;groups?:KanbanTaskGroup[];attentionItems?:KanbanItemSummary[];parentTask?:import('./task-state').KanbanTaskProjection;progress?:KanbanProgress;revision: number; total: number; items: KanbanItemSummary[]; nextCursor?: string}
 export interface KanbanOverview {
     attention?:{board:number;decision:number;log:number};
     revision: number; visible: number; active: number; archived: number; ready: number; inProgress: number; backlog: number;

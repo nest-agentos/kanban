@@ -22,7 +22,7 @@ export function queryItems(state: KanbanState, query: KanbanItemQuery = {}, all 
     all=all.map(item=>({...item,taskType:kanbanTaskType(item),...(progress.has(item.id)?{progress:progress.get(item.id)}:{})}));
     const enriched=new Map(all.map(item=>[item.id,item]));
     const items = matches.slice(start, start + limit).map(item => enriched.get(item.id)!);
-    return {revision,total:matches.length,items,...(managementGrouping(query)?{groups:managementGroups(items,all,new Set(selected.map(row=>row.id)))}:{}),...(query.parentId?{progress:childProgress(matches),attentionItems:matches.filter(item=>['waiting-input','error','unknown','review'].includes(item.task?.phase??'')),parentTask:all.find(item=>item.id===query.parentId)?.task}:{}), ...(start + items.length < matches.length ? {
+    return {revision,boardNumber:state.board.number,total:matches.length,items,...(managementGrouping(query)?{groups:managementGroups(items,all,new Set(selected.map(row=>row.id)))}:{}),...(query.parentId?{progress:childProgress(matches),attentionItems:matches.filter(item=>['waiting-input','error','unknown','review'].includes(item.task?.phase??'')),parentTask:all.find(item=>item.id===query.parentId)?.task}:{}), ...(start + items.length < matches.length ? {
         nextCursor: JSON.stringify({revision, after: items.at(-1)!.id, filter: fingerprint}),
     } : {})};
 }

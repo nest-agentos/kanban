@@ -3,10 +3,11 @@ import {withRecordProgress} from './record-progress';
 import {validateDecisionDependencies,decisionDependencyStates} from './record-dependencies';
 import type {DecisionContext} from './work-context';
 import {kanbanVerificationMode} from '../contracts/verification';
+import {isRecurringTask} from '../contracts/references';
 import {recordArchival} from './record-archive';
 import {cleanupRecordTasks} from './record-cleanup';
 import {advanceRecordControl, requestRecordControl, recordControlKey, type RecordControl} from './record-controls';
-import {DEFAULT_KANBAN_WORK_TYPES,projectKanbanTask} from '../contracts';
+import {DEFAULT_KANBAN_WORK_TYPES,projectKanbanTask,kanbanReference} from '../contracts';
 import {journalCommand} from './journal-command';
 import {sha256HexSync} from '../utils';
 import type {KanbanResourceCatalog} from './ports';
@@ -345,9 +346,11 @@ async function readManagementTasks(options:Options,boardId:string,runs:KanbanRec
         const batch=ids.slice(offset,offset+200),started=Date.now();
         try{
             const page=await options.service.query(boardId,{ids:batch,view:'all',limit:200});
-            await Promise.all(page.items.map(async ({id,title,task})=>{
+            await Promise.all(page.items.map(async item=>{
+                const {id,title,task}=item;
                 const projected=task?.reason==='GROUP_SETTLEMENT_PENDING'&&options.projectManagementTask ? await options.projectManagementTask(boardId,id,task) : task;
-                tasks.set(id,{id,title,task:projected});
+                const reference = page.boardNumber && isRecurringTask(item) ? kanbanReference({id:boardId,number:page.boardNumber},item) : undefined;
+                tasks.set(id,{id,title,reference,task:projected});
             }));
             options.log({operationId:runs[0].id,boardId,stage:'record.management-tasks.read',result:'success',durationMs:Date.now()-started});
         }catch(error){

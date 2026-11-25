@@ -1,5 +1,6 @@
 import type {KanbanState} from './ports';
 import {requireValue} from './rules';
+import {isRecurringTask} from './contracts/references';
 
 export const boardCounterKey = 'counter/board';
 export const boardNumberKey = (number: number): string => `reference/board/${number}`;
@@ -20,6 +21,7 @@ export function patchBoardNumber(raw: string, number: number): string {
 export function numberEntities(state: KanbanState): void {
     const high = state.numbering ??= {item: 0, log: 0, decision: 0};
     const items = [...state.board.items, ...(state.archiveIndex ?? []), ...(state.archiveWrites ?? []).flatMap(write => write.value ? [write.value.item] : [])];
+    for (const item of items) if (isRecurringTask(item)) item.recurring = true;
     high.item = assign(items, high.item);
     for (const kind of ['log', 'decision'] as const) high[kind] = assign((state.records ?? []).filter(record => record.kind === kind), high[kind]);
 }

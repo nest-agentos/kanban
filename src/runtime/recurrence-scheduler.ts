@@ -22,7 +22,8 @@ export function createRecurrenceScheduler(service:KanbanClient,journal:KanbanAut
         const run=await records.runRecurring(intent);return {state:'admitted',runId:run.id};
     },inspect:async intent=>{
         const run=await journal.run<KanbanRecordExecution>(intent.boardId,intent.id);
-        if(!run)return {state:'unknown',code:'RECURRENCE_RECEIPT_UNKNOWN'};
+        // The recurring run is committed before task creation or any external execution.
+        if(!run)return intent.phase==='admitted'?{state:'unknown',code:'RECURRENCE_RECEIPT_UNKNOWN'}:{state:'absent'};
         return {state:['completed','failed','cancelled'].includes(run.state)?'settled':'admitted',runId:run.id,settledAt:run.updatedAt};
     }});
     async function scan() {

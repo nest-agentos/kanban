@@ -1,3 +1,4 @@
+import {isRecurringTask} from './contracts/references';
 import {kanbanTaskType} from './contracts/task-type';
 import {assertDefinitionEditable} from './task-commands';
 import type {KanbanActor, KanbanCommand, KanbanExternalReference, KanbanItem} from './contracts';
@@ -54,7 +55,9 @@ function updatePlan(state: KanbanState, item: KanbanItem, command: PlanCommand, 
         item.title = command.title; item.responsibility = command.responsibility; item.acceptance = command.acceptance;
         if (item.status === 'open') return setStage(state, item, 'backlog', now);
     } else if (command.type === 'plan-item') {
-        validatePlan(state, item, command.planning); item.planning = command.planning;if(command.planning.execution==='children')item.taskType='coordination';
+        validatePlan(state, item, command.planning);
+        if (isRecurringTask(item)) item.recurring = true;
+        item.planning = command.planning;if(command.planning.execution==='children')item.taskType='coordination';
         if (item.status === 'open') return setStage(state, item, 'backlog', now);
     } else {
         requireValue(catalog(state).filter(i => i.planning.parentId === item.id).every(terminal), 'CHILDREN_UNFINISHED');

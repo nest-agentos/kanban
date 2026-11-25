@@ -18,6 +18,7 @@ export interface KanbanParticipant {
 }
 export interface KanbanAssignment extends KanbanActor { principalId?: string; token: string; leaseUntil: number; claimedAt: number; }
 export interface KanbanItem {
+    recurring?:true;
     executionCheckWaivers?:import('./task-state').KanbanExecutionCheckWaiver[];
     operationWaivers?: import('./operation-waiver').KanbanOperationWaiver[];
     acceptanceResult?: import('./operation-waiver').KanbanAcceptanceResult;
