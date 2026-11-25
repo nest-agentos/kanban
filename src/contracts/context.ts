@@ -16,6 +16,7 @@ export interface KanbanProjectRecord {
     recurrenceRevision?:number;
     /** Read-only projection of the persisted scheduler cursor. */
     recurrenceNextAt?:number;
+    recurrenceAdmissionCode?:string;
     recurrenceFence?:import('./recurrence').KanbanRecurrenceFence;
     dependsOn?:KanbanDecisionDependency[];
     priority?: 0 | 1 | 2 | 3 | 4;

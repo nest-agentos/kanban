@@ -13,7 +13,7 @@ import {KanbanAutomationJournal} from './automation-journal';
 import {KanbanWorkLog} from './work-log';
 import {defaultReferences} from './ports';
 import {createRecordExecution} from './record-execution';
-import {createRecurrenceScheduler,recurrenceNextTime} from './recurrence-scheduler';
+import {createRecurrenceScheduler,recurrenceNextTime,recurrenceAdmissionCode} from './recurrence-scheduler';
 import {createKanbanAutomation} from './automation';
 import {createBoardDeletion,withBoardDeletion} from './board-deletion';
 import {scanBoardStopWork} from './board-stop-work';
@@ -49,7 +49,7 @@ function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeConte
     const {service,journal,workLog}=context,directory=options.directory??'/kanban';
     const restarts=createTaskRestart({service,journal,assertIdle:options.assertRestartIdle});
     const capabilities:Partial<import('../contracts').KanbanClient>=Object.assign({},...extensions.map(extension=>extension.capabilities));
-    const records=options.resources?createRecordExecution({service,journal,dependencyRecords:async board=>(await client.records(board,{kind:'decision',includeArchived:true,limit:200})).items,dismissAttention:(board,request):Promise<void>=>dismissRecordAttention(client,journal,board,request),archiveSession:options.archiveSession,archiveItemResources:async(board,item,operation)=>{for(const extension of extensions)await extension.archiveItemResources?.(board,item,operation);},resources:options.resources,requiresItemResource:options.requiresItemResource,planningSession:capabilities.planningSession,projectManagementTask:async(board,item,task)=>{
+    const records=options.resources?createRecordExecution({service,journal,recurringAutomation:options.recurringAutomation,dependencyRecords:async board=>(await client.records(board,{kind:'decision',includeArchived:true,limit:200})).items,dismissAttention:(board,request):Promise<void>=>dismissRecordAttention(client,journal,board,request),archiveSession:options.archiveSession,archiveItemResources:async(board,item,operation)=>{for(const extension of extensions)await extension.archiveItemResources?.(board,item,operation);},resources:options.resources,requiresItemResource:options.requiresItemResource,planningSession:capabilities.planningSession,projectManagementTask:async(board,item,task)=>{
         for(const extension of extensions)if(extension.projectManagementTask)task=await extension.projectManagementTask(board,item,task);
         return task;
     },log:options.log??(()=>{})}):undefined;
@@ -71,7 +71,11 @@ function assembleRuntime(options:KanbanRuntimeOptions,context:KanbanRuntimeConte
             for(const extension of extensions)if(extension.projectRecords)page=await extension.projectRecords(board,page);
             return withRecordAttention(page,board,journal);
         },
-        record:async(board:string,id:string)=>{const record=await workLog.record(service,board,id),next=await recurrenceNextTime(journal,board,record);return next===undefined?record:{...record,recurrenceNextAt:next};}};
+        record:async(board:string,id:string)=>{
+            const record=await workLog.record(service,board,id);
+            const [next,code]=await Promise.all([recurrenceNextTime(journal,board,record),recurrenceAdmissionCode(journal,record)]);
+            return {...record,...(next===undefined?{}:{recurrenceNextAt:next}),...(code?{recurrenceAdmissionCode:code}:{})};
+        }};
     const deletion=createBoardDeletion({service:client,journal});setDeletion(deletion.assertSettled);
     const recurrence=records?createRecurrenceScheduler(service,journal,records,options.log??(()=>{}),options.now??Date.now):undefined;
     const participants=[restarts,archival,...extensions,...records?[records]:[],...recurrence?[recurrence]:[],...automation?[automation]:[]];

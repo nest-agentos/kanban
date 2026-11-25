@@ -113,6 +113,9 @@ export type KanbanCommand = import('./deferred-verification').KanbanVerification
     | {type: 'unblock-item'; itemId: string; token?: string};
 export interface KanbanRequest { operationId: string; expectedRevision: number; command: KanbanCommand; }
 /** Board directory metadata with item labels; coordination bodies require read()/item(). */
+export function isKanbanRecurringRunBoard(board:Pick<KanbanBoard,'scope'>):boolean {
+    return board.scope?.kind==='collection'&&board.scope.namespace==='recurring-run';
+}
 export type KanbanBoardSummary = Omit<KanbanBoard, 'items' | 'deferredVerifications'> & {attention?:{board:number;decision:number;log:number};executionPhase?: ReturnType<typeof import('./board-control').boardControlPhase>; items: Array<Pick<KanbanItem, 'id' | 'title' | 'number' | 'taskType'>>};
 export interface KanbanService {
     workflow(boardId: string): Promise<import('./workflow').KanbanWorkflowState>;

@@ -2,6 +2,7 @@ export type {KanbanDeferredVerification} from './deferred-verification';
 export type {KanbanTaskGroup, KanbanPlanning, KanbanProgress, KanbanItemSummary, KanbanArchivedItem, KanbanItemQuery, KanbanItemPage, KanbanOverview} from './planning';
 export type {KanbanReferenceTarget} from './references';
 export {kanbanReference} from './references';
+export {isKanbanRecurringRunBoard} from './contracts';
 export type {KanbanPrincipal, KanbanMember, KanbanWorkType, KanbanColumn, KanbanNotificationPolicy, KanbanExternalReference} from './configuration';
 import type {KanbanPolicy} from './contracts';
 export function kanbanExecutionLimits(policy:Pick<KanbanPolicy,'maxInProgress'|'maxInProgressPerAssignee'|'maxInProgressPerAgent'>) {

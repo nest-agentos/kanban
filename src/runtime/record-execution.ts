@@ -7,7 +7,7 @@ import {isRecurringTask} from '../contracts/references';
 import {recordArchival} from './record-archive';
 import {cleanupRecordTasks} from './record-cleanup';
 import {advanceRecordControl, requestRecordControl, recordControlKey, type RecordControl} from './record-controls';
-import {DEFAULT_KANBAN_WORK_TYPES,projectKanbanTask,kanbanReference} from '../contracts';
+import {DEFAULT_KANBAN_WORK_TYPES,projectKanbanTask,kanbanReference,isKanbanRecurringRunBoard} from '../contracts';
 import {journalCommand} from './journal-command';
 import {sha256HexSync} from '../utils';
 import type {KanbanResourceCatalog} from './ports';
@@ -26,6 +26,7 @@ interface SavedRun extends KanbanRecordExecution {
     sourceBoardId: string; record: KanbanProjectRecord; automation: NonNullable<KanbanBoard['automation']>}
 type RunReceipt = Pick<SavedRun, 'id' | 'sourceBoardId' | 'recordId' | 'recordRevision' | 'requestRevision' | 'placement'> & {schema?: 2};
 interface Options {
+    recurringAutomation?:import('./runtime-ports').KanbanRuntimeOptions['recurringAutomation'];
     projectManagementTask?(boardId:string,itemId:string,task:import('../contracts').KanbanTaskProjection):Promise<import('../contracts').KanbanTaskProjection>;
     dependencyRecords?(board:string):Promise<import('../contracts').KanbanRecordSummary[]>;
     dismissAttention?(boardId:string,request:Parameters<NonNullable<KanbanClient['controlRecord']>>[1]):Promise<void>;
@@ -89,8 +90,10 @@ export function createRecordExecution(options: Options) {
             const current=await options.service.record(intent.boardId,intent.recordId);
             const reservation=current.recurrenceFence?.pending.find(row=>row.id===intent.id);
             requireValue(reservation&&reservation.configRevision===intent.configRevision&&reservation.scheduledAt===intent.scheduledAt&&JSON.stringify(reservation.record)===JSON.stringify(intent.record),'RECURRENCE_RESERVATION_MISSING');
-            const request={operationId:intent.id,recordId:intent.recordId,expectedRevision:intent.record.revision};
-            return resume(await prepare(options,intent.boardId,request,frozen));
+            const existing=await options.journal.run<SavedRun>(intent.boardId,intent.id);
+            const placement=existing ? existing.placement : options.recurringAutomation?'new-board':undefined;
+            const request={operationId:intent.id,recordId:intent.recordId,expectedRevision:intent.record.revision,placement} as const;
+            return resume(existing ? await freezeOperation(options,request,existing) : await prepare(options,intent.boardId,request,frozen));
         },
         controlRecord: async (boardId: string, request: Parameters<NonNullable<KanbanClient['controlRecord']>>[1]) => {
             const started=Date.now();
@@ -133,6 +136,7 @@ export function createRecordExecution(options: Options) {
             const errors: unknown[] = [];
             for (const board of await options.service.catalog()) {
                 if (stopped) return;
+                if (isKanbanRecurringRunBoard(board)) continue;
                 for (const run of await options.journal.activeRuns<SavedRun>(board.id)) {
                     if (stopped) return;
                     if (!['completed', 'failed', 'cancelled'].includes(run.state)) {try {await resume(run);} catch (error) {errors.push(error);}}
@@ -171,14 +175,15 @@ async function prepare(options: Options, boardId: string, request: KanbanRecordR
     requireValue(current.kind === 'decision' && current.status === 'confirmed' && record.status==='confirmed', 'DECISION_NOT_CONFIRMED');
     requireValue(round||record.revision === request.expectedRevision, 'REVISION_CONFLICT');
     const board = await options.service.read(boardId);
-    requireValue(board.automation, 'AUTOMATION_BINDING_REQUIRED');
+    const automation=round&&options.recurringAutomation?await options.recurringAutomation(board):board.automation;
+    requireValue(automation, 'AUTOMATION_BINDING_REQUIRED');
     await validateResourceReferences(options.resources, record);
     requireValue(record.externalRefs?.some(ref => ref.system === options.resources.system), 'REMOTE_PROJECT_REQUIRED');
     const id = round?.id??sha256HexSync(JSON.stringify([boardId, record.id, record.revision]));
     const placement = request.placement ?? 'current-board';
     requireValue(['current-board', 'new-board'].includes(placement), 'INVALID_EXECUTION_PLACEMENT');
     if(round){
-        const candidate:SavedRun={...newRun(board,record,request,id),recurring:true,scheduledAt:round.scheduledAt,recurrenceRevision:round.configRevision};
+        const candidate:SavedRun={...newRun({...board,automation},record,request,id),recurring:true,scheduledAt:round.scheduledAt,recurrenceRevision:round.configRevision};
         const context={sourceBoardId:boardId,recordId:record.id,recordRevision:record.revision,runId:id};
         return freezeOperation(options,request,await options.journal.appendRecurringRun(boardId,candidate,context));
     }
@@ -297,7 +302,7 @@ function blockedCode(items:KanbanItem[]):string|undefined {
 async function materialize(options: Options, run: SavedRun): Promise<void> {
     if (run.boardId !== run.sourceBoardId) {
         const actor = await options.service.currentPrincipal(), source = await options.service.read(run.sourceBoardId);
-        await options.service.create({id: run.boardId, title: run.record.title, scope: {kind: 'collection', namespace: 'decision-run', id: run.id},
+        await options.service.create({id: run.boardId, title: run.record.title, scope: {kind: 'collection', namespace: run.recurring?'recurring-run':'decision-run', id: run.id},
             members: [{...actor, responsibility: 'Review decision execution', roles: ['coordinator', 'reviewer', 'worker']}],
             ...(run.placement && source.workTypes ? {workTypes: source.workTypes, defaultWorkType: source.defaultWorkType} : {}),
             policy: {requireEstimate: false, review: 'independent'}});

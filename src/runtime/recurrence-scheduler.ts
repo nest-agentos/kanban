@@ -1,6 +1,7 @@
+import {isKanbanRecurringRunBoard} from '../contracts';
 import type {KanbanClient,KanbanProjectRecord,KanbanRecordExecution,KanbanRecurrence} from '../contracts';
 import type {KanbanAutomationJournal} from './automation-journal';
-import {recurrenceAdmission,recurrenceIntentId} from './recurrence-admission';
+import {recurrenceAdmission,recurrenceIntentId,recurrenceIntentKey,type RecurrenceIntent} from './recurrence-admission';
 import {nextRecurrence} from './recurrence-time';
 import {journalCommand} from './journal-command';
 import {safeCode} from './diagnostics';
@@ -13,6 +14,13 @@ export async function recurrenceNextTime(journal:KanbanAutomationJournal,board:s
     if(record.recurrence?.state!=='active'||record.recurrence.trigger==='after-settlement'&&record.recurrenceFence?.pending.length)return;
     const cursor=await journal.get<Cursor>(cursorKey(board,record.id));
     return cursor&&cursor.revision===record.recurrenceRevision?cursor.nextAt:undefined;
+}
+
+export async function recurrenceAdmissionCode(journal:KanbanAutomationJournal,record:KanbanProjectRecord):Promise<string|undefined> {
+    const pending=record.recurrenceFence?.pending[0];
+    if(!pending)return;
+    const intent=await journal.get<RecurrenceIntent>(recurrenceIntentKey(pending.id));
+    return intent?.phase==='unknown'?intent.code:undefined;
 }
 
 /** Runtime scans share the durable board fence and reconcile existing reservations first. */
@@ -29,6 +37,7 @@ export function createRecurrenceScheduler(service:KanbanClient,journal:KanbanAut
     async function scan() {
         if(stopped)return;
         for(const board of await service.catalog()){
+            if(isKanbanRecurringRunBoard(board))continue;
             let cursor:string|undefined;
             do{
                 const page=await service.records(board.id,{kind:'decision',limit:200,cursor});
